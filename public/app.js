@@ -86,6 +86,11 @@ function showTab(t) {
   if (t === 'vegas') loadVegasWeatherData();
   if (t === 'backtest') loadHistory();
   if (t === 'portfolio') renderPortfolioTeamSelectors();
+  if (t === 'players' && POOL.length && !Object.keys(confirmedLineups).length) {
+    // Auto-fetch confirmed lineups once per session when switching to Players tab
+    const today = new Date().toISOString().split('T')[0].replace(/-/g, '');
+    loadConfirmedLineups(today);
+  }
 }
 
 // ── Drag & Drop ───────────────────────────────────────────────────────────────
@@ -449,6 +454,7 @@ function updateUI() {
   renderPlayers(); renderLineup(); renderLuPool(); renderStacks();
   renderValueScatter();
   renderBlendControls();
+  applyPendingLineupRestore();
 }
 
 function setFileStatus(type, fname, count, warnMode) {
@@ -514,7 +520,16 @@ function renderPlayers() {
   const gf = document.getElementById('game-sel').value;
   const sf = document.getElementById('sort-sel').value;
   const q = (document.getElementById('search-inp').value || '').toLowerCase().trim();
-  let data = POOL.filter(p => posMatchFilter(p, curPos) && (tf === 'ALL' || p.team === tf) && (gf === 'ALL' || !p.game || p.game === gf) && (!q || p.name.toLowerCase().includes(q)));
+  const filterConfirmed = document.getElementById('filter-confirmed')?.checked;
+  const filterHideInjured = document.getElementById('filter-hide-injured')?.checked;
+  let data = POOL.filter(p =>
+    posMatchFilter(p, curPos) &&
+    (tf === 'ALL' || p.team === tf) &&
+    (gf === 'ALL' || !p.game || p.game === gf) &&
+    (!q || p.name.toLowerCase().includes(q)) &&
+    (!filterConfirmed || p.isConfirmed) &&
+    (!filterHideInjured || p.injuryType !== 'IL')
+  );
   const sc = sf || sortCol;
   data.sort((a, b) => {
     if (sc === 'name') return sortDir * (a.name.localeCompare(b.name));
@@ -665,7 +680,7 @@ function addToLineup(p) {
     if (lineup[i]) continue;
     if (!DK_SLOTS[i].eligible(p)) continue;
     if (getSalaryUsed() + p.salary > CAP) return;
-    lineup[i] = p; renderLineup(); renderLuPool(); return;
+    lineup[i] = p; renderLineup(); renderLuPool(); saveSession(); return;
   }
 }
 function useStackById(id) {
@@ -674,8 +689,8 @@ function useStackById(id) {
   s.players.forEach(name => { const p = POOL.find(r => r.name === name); if (p) addToLineup(p); });
   showTab('lineup');
 }
-function removeFromLineup(i) { lineup[i] = null; renderLineup(); renderLuPool(); }
-function clearLineup() { lineup = new Array(ROSTER_SIZE).fill(null); renderLineup(); renderLuPool(); document.getElementById('export-out').style.display = 'none'; }
+function removeFromLineup(i) { lineup[i] = null; renderLineup(); renderLuPool(); saveSession(); }
+function clearLineup() { lineup = new Array(ROSTER_SIZE).fill(null); renderLineup(); renderLuPool(); document.getElementById('export-out').style.display = 'none'; saveSession(); }
 
 // ── Auto-fill / Generate Lineups (using Engine) ──────────────────────────────
 function autoFill() {
@@ -690,7 +705,7 @@ function autoFill() {
 
   const stackBonusFn = contestType === 'gpp' ? lu => Engine.gppStackBonus(lu, null) : null;
   lineup = Engine.optimizeLineup(pool, scoreFn, { iterations: OPTIMIZER_ITERATIONS, stackBonusFn }) || new Array(ROSTER_SIZE).fill(null);
-  renderLineup(); renderLuPool();
+  renderLineup(); renderLuPool(); saveSession();
 }
 
 function generateThreeLineups() {
@@ -2075,13 +2090,83 @@ function renderBlendControls() {
         <label style="font-size:11px;color:var(--tt)">${esc(s.name)} <span style="color:var(--ts)">(${s.count})</span></label>
         <div style="display:flex;align-items:center;gap:6px">
           <input type="range" id="${wKey}" min="0" max="100" value="${current}" style="flex:1"
-            oninput="blendWeights['${esc(s.name)}']=parseInt(this.value);document.getElementById('${wKey}-lbl').textContent=this.value+'%'">
+            oninput="blendWeights['${esc(s.name)}']=parseInt(this.value);document.getElementById('${wKey}-lbl').textContent=this.value+'%';saveSession()">
           <span id="${wKey}-lbl" style="font-size:11px;color:var(--ts);width:32px">${current}%</span>
         </div>
       </div>`;
     }).join('')}
   </div>
   <div style="font-size:10px;color:var(--tt);margin-top:6px">Weights adjust the scoring multipliers in optimizer. Re-run Auto-fill or Generate to apply.</div>`;
+}
+
+// ── localStorage Persistence ──────────────────────────────────────────────────
+const LS_KEY = 'mlbdfs_session';
+
+function saveSession() {
+  try {
+    const session = {
+      blendWeights,
+      contestSize,
+      lineup: lineup.map(p => p ? { name: p.name } : null),
+      portConfig: {
+        numLineups: document.getElementById('port-num-lineups')?.value,
+        maxExposure: document.getElementById('port-max-exposure')?.value,
+        maxPitcher: document.getElementById('port-max-pitcher')?.value,
+        contestType: document.getElementById('port-contest-type')?.value,
+        contestSize: document.getElementById('port-contest-size')?.value,
+        maxOverlap: document.getElementById('port-max-overlap')?.value,
+        requireBringBack: document.getElementById('port-require-bringback')?.checked,
+      }
+    };
+    localStorage.setItem(LS_KEY, JSON.stringify(session));
+  } catch (e) { /* quota or private-mode error — ignore */ }
+}
+
+function restoreSession() {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (!raw) return;
+    const session = JSON.parse(raw);
+
+    // Restore blend weights
+    if (session.blendWeights) {
+      blendWeights = session.blendWeights;
+      // Re-render sliders if they're already on screen
+      renderBlendControls();
+    }
+
+    // Restore contest size
+    if (session.contestSize) contestSize = session.contestSize;
+
+    // Restore portfolio config inputs
+    const pc = session.portConfig || {};
+    if (pc.numLineups) { const el = document.getElementById('port-num-lineups'); if (el) el.value = pc.numLineups; }
+    if (pc.maxExposure) { const el = document.getElementById('port-max-exposure'); if (el) el.value = pc.maxExposure; }
+    if (pc.maxPitcher) { const el = document.getElementById('port-max-pitcher'); if (el) el.value = pc.maxPitcher; }
+    if (pc.contestType) { const el = document.getElementById('port-contest-type'); if (el) el.value = pc.contestType; }
+    if (pc.contestSize) { const el = document.getElementById('port-contest-size'); if (el) el.value = pc.contestSize; }
+    if (pc.maxOverlap != null) { const el = document.getElementById('port-max-overlap'); if (el) el.value = pc.maxOverlap; }
+    if (pc.requireBringBack != null) { const el = document.getElementById('port-require-bringback'); if (el) el.checked = pc.requireBringBack; }
+
+    // Restore lineup slots — resolved against POOL once POOL is loaded
+    if (session.lineup) {
+      window._pendingLineupRestore = session.lineup;
+    }
+  } catch (e) { /* corrupt or old session — ignore */ }
+}
+
+// Called after POOL is populated to hydrate the saved lineup
+function applyPendingLineupRestore() {
+  if (!window._pendingLineupRestore || !POOL.length) return;
+  const pending = window._pendingLineupRestore;
+  window._pendingLineupRestore = null;
+  pending.forEach((entry, i) => {
+    if (!entry) return;
+    const p = POOL.find(pl => pl.name === entry.name);
+    if (p && !lineup[i]) lineup[i] = p;
+  });
+  renderLineup();
+  renderLuPool();
 }
 
 // ── Init: Load park factors on startup ────────────────────────────────────────
@@ -2093,4 +2178,5 @@ function renderBlendControls() {
     const cal = await fetch('/api/calibration').then(r => r.json());
     Engine.setCalibration(cal);
   } catch (e) { /* Server may not be running during dev */ }
+  restoreSession();
 })();

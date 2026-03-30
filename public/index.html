@@ -200,6 +200,12 @@ tr:hover td{background:var(--bs)}
         <option value="avgppg">DK Avg PPG</option>
       </select>
       <input type="text" id="search-inp" placeholder="Search player..." oninput="debouncedRenderPlayers()" style="width:130px">
+      <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--tt);cursor:pointer;white-space:nowrap">
+        <input type="checkbox" id="filter-confirmed" onchange="renderPlayers()"> Confirmed only
+      </label>
+      <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--tt);cursor:pointer;white-space:nowrap">
+        <input type="checkbox" id="filter-hide-injured" onchange="renderPlayers()"> Hide IL
+      </label>
     </div>
     <div class="tbl-wrap">
       <table>
@@ -380,21 +386,21 @@ tr:hover td{background:var(--bs)}
   <div class="config-grid">
     <div class="config-item">
       <label>Number of Lineups</label>
-      <input type="number" id="port-num-lineups" value="20" min="1" max="150" oninput="validatePortfolioSettings()">
+      <input type="number" id="port-num-lineups" value="20" min="1" max="150" oninput="validatePortfolioSettings();saveSession()">
     </div>
     <div class="config-item">
       <label>Max Batter Exposure %</label>
-      <input type="range" id="port-max-exposure" value="60" min="10" max="100" step="5" oninput="document.getElementById('exp-label').textContent=this.value+'%';validatePortfolioSettings()">
+      <input type="range" id="port-max-exposure" value="60" min="10" max="100" step="5" oninput="document.getElementById('exp-label').textContent=this.value+'%';validatePortfolioSettings();saveSession()">
       <span id="exp-label" style="font-size:11px;color:var(--ts)">60%</span>
     </div>
     <div class="config-item">
       <label>Max Pitcher Exposure %</label>
-      <input type="range" id="port-max-pitcher" value="60" min="10" max="100" step="5" oninput="document.getElementById('pitcher-exp-label').textContent=this.value+'%';validatePortfolioSettings()">
+      <input type="range" id="port-max-pitcher" value="60" min="10" max="100" step="5" oninput="document.getElementById('pitcher-exp-label').textContent=this.value+'%';validatePortfolioSettings();saveSession()">
       <span id="pitcher-exp-label" style="font-size:11px;color:var(--ts)">60%</span>
     </div>
     <div class="config-item">
       <label>Contest Type</label>
-      <select id="port-contest-type">
+      <select id="port-contest-type" onchange="saveSession()">
         <option value="gpp">GPP</option>
         <option value="cash">Cash</option>
         <option value="single">Single Entry</option>
@@ -402,11 +408,11 @@ tr:hover td{background:var(--bs)}
     </div>
     <div class="config-item">
       <label>Contest Size</label>
-      <input type="number" id="port-contest-size" value="1000" min="10" max="500000">
+      <input type="number" id="port-contest-size" value="1000" min="10" max="500000" onchange="saveSession()">
     </div>
     <div class="config-item">
       <label>Max Lineup Overlap <span style="font-weight:400;text-transform:none;letter-spacing:0">(0=off)</span></label>
-      <input type="number" id="port-max-overlap" value="7" min="0" max="10" title="Max players shared between any two lineups. 0 = disabled.">
+      <input type="number" id="port-max-overlap" value="7" min="0" max="10" title="Max players shared between any two lineups. 0 = disabled." onchange="saveSession()">
     </div>
     <div class="config-item" style="justify-content:center">
       <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
