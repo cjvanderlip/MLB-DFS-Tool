@@ -736,23 +736,70 @@ function optimizeLineup(pool, scoreFn, opts = {}) {
     if (total > bestScore) { bestScore = total; bestLineup = [...lu]; }
   }
 
-  return bestLineup || greedyFill(pool, scoreFn, excludeNames, requiredSlots);
+  const result = bestLineup || greedyFill(pool, scoreFn, excludeNames, requiredSlots);
+  // Post-optimization salary upgrade: push any unused cap into better players
+  return result ? upgradeSalary(result, pool, scoreFn, excludeNames) : result;
 }
 
 function greedyFill(pool, scoreFn, excludeNames = new Set(), requiredSlots = new Array(ROSTER_SIZE).fill(null)) {
   const lu = [...requiredSlots];
   const sorted = [...pool].filter(p => !excludeNames.has(p.name) && p.salary > 0)
     .sort((a, b) => scoreFn(b) - scoreFn(a));
+  // Precompute realistic minimum per remaining slot (10th-pct of eligible pool)
+  const realisticMin = DK_SLOTS.map((slot, i) => {
+    if (lu[i]) return 0;
+    const eligible = pool.filter(p => slot.eligible(p) && !excludeNames.has(p.name) && p.salary > 0)
+      .sort((a, b) => a.salary - b.salary);
+    if (!eligible.length) return MIN_SALARY_PER_SLOT;
+    return eligible[Math.max(0, Math.floor(eligible.length * 0.10))].salary;
+  });
   for (let i = 0; i < ROSTER_SIZE; i++) {
     if (lu[i]) continue;
     for (const p of sorted) {
       if (lu.some(lp => lp && lp.name === p.name)) continue;
       if (!DK_SLOTS[i].eligible(p)) continue;
       const salSoFar = lu.reduce((s, lp) => s + (lp ? lp.salary : 0), 0);
-      const left = DK_SLOTS.filter((_, j) => j > i && !lu[j]).length;
-      if (salSoFar + p.salary > SALARY_CAP - left * MIN_SALARY_PER_SLOT) continue;
+      const reserveRemaining = realisticMin.reduce((s, m, j) => j > i && !lu[j] ? s + m : s, 0);
+      if (salSoFar + p.salary > SALARY_CAP - reserveRemaining) continue;
       lu[i] = p;
       break;
+    }
+  }
+  return lu;
+}
+
+// Post-optimization salary upgrade pass: after the main optimizer finds its
+// best lineup, sweep each slot and try to replace the player with a higher-
+// salary alternative that fits in cap and scores at least 92% as well.
+// Repeats until no further upgrades are possible. Directly closes the
+// "leaving money on the table" gap without touching diversity mechanics.
+function upgradeSalary(lu, pool, scoreFn, excludeNames) {
+  let changed = true;
+  while (changed) {
+    changed = false;
+    const salaryUsed = lu.reduce((s, p) => s + (p?.salary || 0), 0);
+    const headroom = SALARY_CAP - salaryUsed;
+    if (headroom <= 0) break;
+    const luNames = new Set(lu.filter(Boolean).map(p => p.name));
+    for (let i = 0; i < ROSTER_SIZE; i++) {
+      const cur = lu[i];
+      if (!cur) continue;
+      const curScore = scoreFn(cur);
+      const upgrade = pool.filter(p =>
+        !excludeNames.has(p.name) &&
+        !luNames.has(p.name) &&
+        p.salary > cur.salary &&
+        p.salary <= cur.salary + headroom &&
+        DK_SLOTS[i].eligible(p) &&
+        scoreFn(p) >= curScore * 0.92
+      ).sort((a, b) => b.salary - a.salary)[0];
+      if (upgrade) {
+        luNames.delete(cur.name);
+        lu[i] = upgrade;
+        luNames.add(upgrade.name);
+        changed = true;
+        break; // restart pass — headroom has changed
+      }
     }
   }
   return lu;
@@ -831,8 +878,10 @@ function tryPlaceStack(stackPlayers, requiredSlots, pool) {
     }
     if (!placed) return false;
   }
+  // Use a realistic per-slot minimum ($3,500) rather than the absolute floor
+  // so stacks that would leave no budget for quality fillers are rejected
   const openCount = tempLu.filter(p => !p).length;
-  if (stackSalary + openCount * MIN_SALARY_PER_SLOT > SALARY_CAP) return false;
+  if (stackSalary + openCount * 3500 > SALARY_CAP) return false;
   for (let i = 0; i < ROSTER_SIZE; i++) { if (tempLu[i] !== requiredSlots[i]) requiredSlots[i] = tempLu[i]; }
   return true;
 }
