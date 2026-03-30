@@ -1,35 +1,71 @@
-# MLB DFS Local Tool
-checking in firt commit
+# MLB DFS Tool v2.0
 
-A local website for uploading, managing, and analyzing MLB Daily Fantasy Sports (DFS) files. Built with Node.js/Express backend and a modern responsive frontend.
+A local web tool for building and analyzing MLB Daily Fantasy Sports lineups. Runs entirely on your machine — no subscription, no cloud, no data leaving your computer.
 
 ## Features
 
-✨ **File Upload**
-- Drag-and-drop CSV file uploads
-- Support for multiple files at once
-- Automatic file detection and validation
+### Player Pool
 
-📁 **File Management**
-- View uploaded files with details (size, upload date)
-- Delete files you no longer need
-- Download files anytime
+- Upload DraftKings salary CSV + ROO projection export (auto-detected)
+- Merged view: salary, projections, ownership, leverage, GPP score, optimal exposure
+- Statcast data: barrel rate, hard hit%, xwOBA badges (fetched from Baseball Savant)
+- 14-day form: recent DK avg coloring (green = hot, red = cold)
+- Confirmed batting orders from MLB Stats API with order badges
+- Salary vs median scatter plot — click any dot to add player to lineup
+- Position filter, team/game filter, sort by any column
 
-👀 **File Viewer**
-- Preview CSV files in a formatted table
-- View first 50 rows of data
-- Copy preview to clipboard
+### Stacks
 
-📊 **Analytics**
-- File statistics dashboard
-- Total files, sizes, and types
+- Upload 3-man and 5-man stack CSV files
+- Ranked by projected points, salary, ownership, or optimal frequency
+- Click any player chip or "Use" to push stack into lineup builder
+
+### Vegas & Weather
+
+- Auto-fetch implied team totals via The Odds API
+- Live weather via wttr.in for all outdoor parks
+- Park-orientation-aware wind model (blowing out / in / neutral)
+- Game Environment Rankings: O/U, implied totals, park factor, wind, rain risk ranked by scoring environment
+- Park factors table (all 30 teams)
+- Team scoring percentages upload (avg score, 8+ run%, win%)
+
+### Lineup Builder
+
+- Manual and auto-fill (Cash / Single Entry / GPP modes)
+- Salary cap enforcement with remaining budget display
+- Position scarcity alerts when thin positions drop below viable threshold
+- One-click: Generate Cash + Single + GPP lineup set
+- DraftKings upload format export (Name+ID)
+
+### Portfolio Builder
+
+- Generate 1–150 lineups with configurable exposure caps (batters + pitchers separately)
+- Max lineup overlap enforcement (no two lineups share more than N players)
+- Lock teams (rotated across lineups) / Ban teams (fully excluded)
+- Exposure tables with over-cap flagging
+- Export all lineups to DraftKings multi-entry CSV
+- Save all portfolio lineups to Backtest History in one click
+
+### Monte Carlo Simulator
+
+- Cholesky-decomposed correlated player sampling
+- 5k–50k simulations
+- Score distribution histogram, P10/P25/P50/P75/P90/P99
+- Per-player bust rate, boom rate, std dev
+
+### Backtesting
+
+- Save any lineup to history with contest type, buy-in, slate date
+- Load actual DK scores from MLB Stats API (auto-matched by name)
+- ROI tracking, projection accuracy, net profit
+- Model Analysis: bias, RMSE, Spearman rank correlation, calibration suggestions
 
 ## Quick Start
 
 ### 1. Install Dependencies
 
 ```bash
-cd c:\Users\cjevi\projects\mlb-dfs-local
+cd "c:\Users\cjevi\MLB DFS Tool"
 npm install
 ```
 
@@ -39,147 +75,67 @@ npm install
 npm start
 ```
 
-You'll see:
-```
-🚀 MLB DFS Local Tool running on http://localhost:3000
-📁 Uploads directory: c:\Users\cjevi\projects\mlb-dfs-local\uploads
+Output:
+
+```text
+MLB DFS Tool v2.0 running on http://localhost:3000
 ```
 
 ### 3. Open in Browser
 
 Navigate to: **http://localhost:3000**
 
-## File Organization
+Or double-click `start.bat` / run `start.ps1` to launch automatically.
 
-```
-mlb-dfs-local/
-├── server.js           # Express server with file upload API
-├── package.json        # Dependencies
-├── public/
-│   └── index.html      # Frontend interface
-└── uploads/            # Stored uploaded files (auto-created)
-```
+## File Types Accepted
 
-## Supported File Types
-
-- **DraftKings Salaries** (`DKSalaries.csv`)
-- **ROO Exports** (`MLB_ROO_export.csv`)
-- **Stack Files** (`*_3man*.csv`, `*_5man*.csv`)
-- **Any CSV file** (CSV format support)
-
-## Usage
-
-### Upload Files
-1. Click the dropzone or drag files
-2. Select one or more CSV files
-3. Files are instantly uploaded and processed
-
-### View Files
-1. Go to "File Viewer" tab
-2. Select a file from the dropdown
-3. See preview with first 50 rows
-4. Download or copy to clipboard
-
-### Delete Files
-1. Click "Delete" button on any file
-2. Confirm deletion
-3. File removed from server
+| File | Headers detected |
+| --- | --- |
+| DraftKings Salaries | `Name + ID`, `TeamAbbrev`, `Roster Position`, `Salary` |
+| ROO Projection Export | `Floor`, `Median`, `Ceiling`, `Position` |
+| 3-man Stack file | `B1`–`B3` columns + `Salary` |
+| 5-man Stack file | `B1`–`B5` columns + `Salary` |
+| Team Scoring | `OppSP`, `AvgScore`, `8+Runs`, `WinPercentage` |
+| Optimal Lineups | `SP1`, `SP2`, `C`, `1B`, `2B`, `3B`, `SS`, `OF1`–`OF3`, `Stack` |
 
 ## API Endpoints
 
-### POST `/api/upload`
-Upload multiple CSV files
-```javascript
-const formData = new FormData();
-formData.append('files', file1);
-formData.append('files', file2);
-fetch('/api/upload', { method: 'POST', body: formData });
+| Endpoint | Description |
+| --- | --- |
+| `GET /api/odds/fetch` | Fetch live Vegas implied totals (The Odds API) |
+| `GET /api/weather/batch` | Batch weather for multiple cities |
+| `GET /api/park-factors` | All 30 park factors |
+| `GET /api/lineups/:date` | Confirmed batting orders from MLB Stats API |
+| `GET /api/statcast` | Statcast leaderboard (barrel%, hard hit%, xwOBA) |
+| `GET /api/form` | Last-14-day player performance aggregates |
+| `GET /api/actuals/:date` | Actual DK scores from completed games |
+| `POST /api/actuals/apply` | Auto-populate history entries with actuals |
+| `GET /api/history` | Saved lineup history |
+| `GET /api/history/summary` | ROI + accuracy summary stats |
+| `GET /api/history/analysis` | Projection bias + calibration analysis |
+
+## Project Structure
+
+```text
+MLB DFS Tool/
+├── server.js           # Express API server
+├── package.json
+├── public/
+│   ├── index.html      # UI shell + styles
+│   ├── engine.js       # Analytics engine (Monte Carlo, optimizer, scoring)
+│   └── app.js          # UI layer (state, rendering, data loading)
+├── data/               # Persisted data (vegas, history, statcast cache)
+├── uploads/            # Uploaded CSV files
+├── start.bat
+└── start.ps1
 ```
-
-### GET `/api/files`
-List all uploaded files with metadata
-
-### GET `/api/files/:filename/content`
-Get file content as text
-
-### GET `/api/files/:filename/download`
-Download file
-
-### DELETE `/api/files/:filename`
-Delete a file
-
-## Features Overview
-
-### Upload & Manage Tab
-- Drag-and-drop interface
-- File list with metadata
-- Quick actions (View, Download, Delete)
-- Upload statistics dashboard
-
-### File Viewer Tab
-- dropdown selector
-- Formatted CSV preview
-- Copy to clipboard
-- Download option
-
-### Analyze Tab
-- File statistics
-- Summary metrics
-- Data insights
-
-## Keyboard Shortcuts
-
-- `Ctrl+Click` - Select multiple files (when uploading)
-- `Escape` - Close alerts
-
-## Performance
-
-- Handles multiple large CSV files efficiently
-- Preview limited to 50 rows for performance
-- Streaming uploads support
-- Real-time file synchronization
-
-## Storage
-
-Files are stored in the `uploads/` directory in the project root. You can:
-- Access files via the web interface
-- Delete through the app
-- Manually delete from filesystem
 
 ## Troubleshooting
 
-### Port 3000 already in use?
-Change the port in `server.js`:
-```javascript
-const PORT = 3001; // Change to another port
-```
+**Port 3000 in use** — change `const PORT = 3000` in `server.js`
 
-### Files not uploading?
-- Check file is CSV format
-- Verify file size (max 10 files at once)
-- Check browser console for errors
+**Statcast fetch fails** — Baseball Savant may be temporarily unavailable; cached data from `data/statcast_cache.json` will be used if present
 
-### Preview not showing?
-- Ensure CSV has headers
-- Check file is valid CSV format
+**Confirmed lineups show 0/N confirmed** — batting orders aren't posted until ~1 hour before first pitch; run again closer to lock
 
-## Future Enhancements
-
-- CSV data analysis and filtering
-- Player pool visualization
-- Lineup builder integration
-- Export to DraftKings format
-- Dark mode toggle
-- Mobile optimization
-
-## License
-
-Personal project for DFS analysis
-
-## Support
-
-For issues, check:
-1. Browser console (F12)
-2. Server console output
-3. Verify CSV file format
-4. Check file permissions
+**ROO players not matching DK** — check that team abbreviations match; the tool shows a mismatch warning with match percentage

@@ -445,6 +445,8 @@ function updateUI() {
   document.getElementById('lineup-empty').style.display = 'none';
   document.getElementById('lineup-content').style.display = 'block';
   renderPlayers(); renderLineup(); renderLuPool(); renderStacks();
+  renderValueScatter();
+  renderBlendControls();
 }
 
 function setFileStatus(type, fname, count, warnMode) {
@@ -975,6 +977,11 @@ function renderWeatherDisplay() {
     const wm = Engine.weatherMultiplier(w);
     const teams = cityToTeams[city] || [];
     const isDome = teams.some(t => domes.includes(t));
+    // Find wind direction effect for home team at this city
+    const homeTeam = teams.find(t => !isDome) || teams[0];
+    const we = homeTeam ? (windEffects[homeTeam] ?? null) : null;
+    const windDirLabel = we !== null ? (we > 0.3 ? 'Out' : we < -0.3 ? 'In' : 'Neutral') : '';
+    const windDirColor = we !== null ? (we > 0.3 ? 'var(--tsu)' : we < -0.3 ? 'var(--td)' : 'var(--ts)') : 'var(--ts)';
     return `<div class="sk-card">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
         <strong style="font-size:12px">${esc(city)}</strong>
@@ -982,9 +989,10 @@ function renderWeatherDisplay() {
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;font-size:11px">
         <div>Temp: <strong>${w.temp_f || '?'}F</strong></div>
-        <div>Wind: <strong>${w.wind_mph || '?'} mph</strong></div>
+        <div>Wind: <strong>${w.wind_mph || '?'} mph ${w.wind_dir ? esc(w.wind_dir) : ''}</strong></div>
         <div>Precip: <strong>${w.precip_chance || 0}%</strong></div>
         <div>Hit mult: <strong style="color:${wm.hitting > 1.02 ? 'var(--tsu)' : wm.hitting < 0.98 ? 'var(--td)' : 'var(--ts)'}">${isDome ? '1.00' : wm.hitting.toFixed(2)}</strong></div>
+        ${windDirLabel ? `<div style="grid-column:1/-1">Dir effect: <strong style="color:${windDirColor}">${windDirLabel}</strong></div>` : ''}
       </div>
     </div>`;
   }).join('')}</div>`;
@@ -1237,7 +1245,10 @@ function renderPortfolioResults(result) {
   });
   html += '</div>';
 
-  html += `<div style="margin-top:12px"><button class="btn-p" onclick="exportPortfolio()">Export All Lineups CSV</button></div>`;
+  html += `<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+    <button class="btn-p" onclick="exportPortfolio()">Export All Lineups CSV</button>
+    <button class="btn-g" onclick="savePortfolioToHistory()">Save All to Backtest History</button>
+  </div>`;
 
   el.innerHTML = html;
 }
@@ -1245,6 +1256,46 @@ function renderPortfolioResults(result) {
 function togglePortfolioLineups() {
   const el = document.getElementById('portfolio-lineup-list');
   el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
+async function savePortfolioToHistory() {
+  if (!portfolioLineups.length) return;
+  const contest = document.getElementById('port-contest-type')?.value?.toUpperCase() || 'GPP';
+  const slateDate = new Date().toISOString().substring(0, 10);
+  const buyin = 0; // can be updated later in backtest tab
+
+  const btn = document.querySelector('[onclick="savePortfolioToHistory()"]');
+  if (btn) { btn.textContent = 'Saving...'; btn.disabled = true; }
+
+  let saved = 0, failed = 0;
+  for (const lu of portfolioLineups) {
+    const players = lu.filter(Boolean);
+    if (!players.length) continue;
+    const lineupSnapshot = players.map(p => ({
+      name: p.name, team: p.team, pos: p.dkPos, salary: p.salary,
+      median: p.median || 0, floor: p.floor || 0, ceiling: p.ceiling || 0,
+      own: p.own || 0, order: p.order || 0, hand: p.hand || ''
+    }));
+    try {
+      await fetch('/api/history', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contest, buyin, slateDate,
+          projectedPts: players.reduce((s, p) => s + (p.median || 0), 0),
+          projectedOwn: players.reduce((s, p) => s + (p.own || 0), 0),
+          salary: players.reduce((s, p) => s + p.salary, 0),
+          lineup: lineupSnapshot
+        })
+      });
+      saved++;
+    } catch (e) { failed++; }
+  }
+
+  if (btn) {
+    btn.textContent = failed ? `Saved ${saved}, ${failed} failed` : `Saved ${saved} lineups!`;
+    btn.className = failed ? 'btn' : 'btn-g';
+    setTimeout(() => { btn.textContent = 'Save All to Backtest History'; btn.className = 'btn-g'; btn.disabled = false; }, 2500);
+  }
 }
 
 function exportPortfolio() {
@@ -1681,6 +1732,7 @@ async function loadStatcast() {
     }
     if (btn) { btn.textContent = 'Refresh Statcast'; btn.disabled = false; }
     renderPlayers();
+    renderBlendControls();
   } catch (e) {
     if (el) el.innerHTML = `<div class="ib warn">Statcast failed: ${esc(e.message)}</div>`;
     if (btn) { btn.textContent = 'Fetch Statcast'; btn.disabled = false; }
@@ -1722,6 +1774,7 @@ async function loadRecentForm() {
     }
     if (btn) { btn.textContent = 'Refresh Form'; btn.disabled = false; }
     renderPlayers();
+    renderBlendControls();
   } catch (e) {
     if (el) el.innerHTML = `<div class="ib warn">Form fetch failed: ${esc(e.message)}</div>`;
     if (btn) { btn.textContent = 'Fetch Form'; btn.disabled = false; }
@@ -1833,20 +1886,25 @@ function renderValueScatter() {
   const scaleX = (s) => PAD.left + (s - minSal) / (maxSal - minSal) * (W - PAD.left - PAD.right);
   const scaleY = (m) => H - PAD.bottom - (m / maxMed) * (H - PAD.top - PAD.bottom);
 
-  const dots = data.map(p => {
+  // Store data reference for click handler
+  el._scatterData = data;
+
+  const dots = data.map((p, idx) => {
     const x = scaleX(p.salary), y = scaleY(p.median);
     const pos = (p.dkPos || '').split('/')[0];
     const col = posColors[pos] || posColors[rp(p, 'P') ? 'P' : 'OF'] || '#888';
     const isInLu = lineup.some(lp => lp && lp.name === p.name);
-    return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${isInLu ? 6 : 3.5}" fill="${col}" opacity="${isInLu ? 1 : 0.55}" stroke="${isInLu ? '#fff' : 'none'}" stroke-width="1.5">
-      <title>${esc(p.name)} (${esc(p.dkPos)}) $${p.salary.toLocaleString()} / ${p.median.toFixed(1)}pts${p.own > 0 ? ' / ' + p.own.toFixed(1) + '%own' : ''}</title>
+    const cursor = isInLu ? 'default' : 'pointer';
+    return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${isInLu ? 6 : 3.5}" fill="${col}" opacity="${isInLu ? 1 : 0.6}" stroke="${isInLu ? '#fff' : 'none'}" stroke-width="1.5" style="cursor:${cursor}" data-idx="${idx}" class="scatter-dot">
+      <title>${esc(p.name)} (${esc(p.dkPos)}) $${p.salary.toLocaleString()} / ${p.median.toFixed(1)}pts${p.own > 0 ? ' / ' + p.own.toFixed(1) + '%own' : ''}${isInLu ? ' ✓ in lineup' : ' — click to add'}</title>
     </circle>`;
   }).join('');
 
-  el.innerHTML = `<svg width="${W}" height="${H}" style="display:block;overflow:visible">
+  el.innerHTML = `<div style="font-size:10px;color:var(--tt);margin-bottom:4px">Click a dot to add player to lineup</div>
+  <svg width="${W}" height="${H}" style="display:block;overflow:visible">
     <line x1="${PAD.left}" y1="${H - PAD.bottom}" x2="${W - PAD.right}" y2="${H - PAD.bottom}" stroke="var(--brd-t)" stroke-width="0.5"/>
     <line x1="${PAD.left}" y1="${PAD.top}" x2="${PAD.left}" y2="${H - PAD.bottom}" stroke="var(--brd-t)" stroke-width="0.5"/>
-    <text x="${(W + PAD.left - PAD.right) / 2}" y="${H - 5}" font-size="10" fill="var(--tt)" text-anchor="middle">Salary</text>
+    <text x="${(W + PAD.left - PAD.right) / 2}" y="${H - 5}" font-size="10" fill="var(--tt)" text-anchor="middle">Salary →</text>
     <text x="10" y="${(H + PAD.top - PAD.bottom) / 2}" font-size="10" fill="var(--tt)" text-anchor="middle" transform="rotate(-90 10 ${(H + PAD.top - PAD.bottom) / 2})">Median</text>
     ${dots}
     <g transform="translate(${PAD.left + 5}, ${PAD.top + 5})">
@@ -1855,6 +1913,15 @@ function renderValueScatter() {
       ).join('')}
     </g>
   </svg>`;
+
+  // Wire up click handler
+  el.querySelector('svg').addEventListener('click', e => {
+    const dot = e.target.closest('.scatter-dot');
+    if (!dot) return;
+    const idx = parseInt(dot.dataset.idx);
+    const p = el._scatterData[idx];
+    if (p) { addToLineup(p); renderValueScatter(); }
+  });
 }
 
 // ── Position Scarcity ─────────────────────────────────────────────────────────
@@ -1889,8 +1956,35 @@ function checkPositionScarcity() {
 function renderBlendControls() {
   const el = document.getElementById('blend-controls');
   if (!el) return;
-  if (!ROO.length) { el.innerHTML = '<span style="font-size:11px;color:var(--tt)">Upload additional projection CSVs to enable blending.</span>'; return; }
-  el.innerHTML = `<span style="font-size:11px;color:var(--tt)">Upload additional projection CSVs to enable blending.</span>`;
+
+  const sources = [];
+  if (ROO.length) sources.push({ name: 'ROO', count: ROO.length });
+  if (statcastData && Object.keys(statcastData).length) sources.push({ name: 'Statcast', count: Object.keys(statcastData).length });
+  if (formData && Object.keys(formData).length) sources.push({ name: 'Form (14d)', count: Object.keys(formData).length });
+
+  if (sources.length < 2) {
+    el.innerHTML = `<span style="font-size:11px;color:var(--tt)">
+      ${ROO.length ? 'Load Statcast or 14-Day Form data above to enable blending.' : 'Upload a ROO projection file to begin.'}
+    </span>`;
+    return;
+  }
+
+  el.innerHTML = `<div style="font-size:11px;color:var(--ts);margin-bottom:6px">Active data sources — adjust projection scoring weights:</div>
+  <div style="display:flex;flex-wrap:wrap;gap:12px">
+    ${sources.map(s => {
+      const wKey = 'blend-' + s.name.replace(/\W/g, '');
+      const current = blendWeights[s.name] ?? 100;
+      return `<div style="display:flex;flex-direction:column;gap:3px;min-width:120px">
+        <label style="font-size:11px;color:var(--tt)">${esc(s.name)} <span style="color:var(--ts)">(${s.count})</span></label>
+        <div style="display:flex;align-items:center;gap:6px">
+          <input type="range" id="${wKey}" min="0" max="100" value="${current}" style="flex:1"
+            oninput="blendWeights['${esc(s.name)}']=parseInt(this.value);document.getElementById('${wKey}-lbl').textContent=this.value+'%'">
+          <span id="${wKey}-lbl" style="font-size:11px;color:var(--ts);width:32px">${current}%</span>
+        </div>
+      </div>`;
+    }).join('')}
+  </div>
+  <div style="font-size:10px;color:var(--tt);margin-top:6px">Weights adjust the scoring multipliers in optimizer. Re-run Auto-fill or Generate to apply.</div>`;
 }
 
 // ── Init: Load park factors on startup ────────────────────────────────────────
