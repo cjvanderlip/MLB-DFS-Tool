@@ -658,6 +658,19 @@ function optimizeLineup(pool, scoreFn, opts = {}) {
     ).sort((a, b) => scoreFn(b) - scoreFn(a)).slice(0, 40);
   });
 
+  // Fix 1: realistic per-slot reserve — use actual 5th-percentile salary per
+  // position rather than the hard-coded $3k floor, so budget headroom is
+  // calculated accurately and high-salary players aren't incorrectly filtered.
+  const slotMinSalary = DK_SLOTS.map((slot, i) => {
+    if (requiredSlots[i]) return 0;
+    const eligible = candidatePools[i];
+    if (!eligible || !eligible.length) return MIN_SALARY_PER_SLOT;
+    const sorted = [...eligible].sort((a, b) => a.salary - b.salary);
+    // Use the 10th-percentile salary so we reserve a realistic floor
+    const idx = Math.max(0, Math.floor(sorted.length * 0.10));
+    return sorted[idx].salary;
+  });
+
   const openSlots = [];
   for (let i = 0; i < ROSTER_SIZE; i++) {
     if (!requiredSlots[i]) openSlots.push(i);
@@ -679,17 +692,32 @@ function optimizeLineup(pool, scoreFn, opts = {}) {
 
     for (let oi = 0; oi < order.length; oi++) {
       const si = order[oi];
-      const pool = candidatePools[si];
-      if (!pool || !pool.length) { valid = false; break; }
+      const cPool = candidatePools[si];
+      if (!cPool || !cPool.length) { valid = false; break; }
 
-      const slotsLeft = order.length - oi - 1;
-      const budgetForThis = SALARY_CAP - salaryUsed - slotsLeft * MIN_SALARY_PER_SLOT;
-      const available = pool.filter(p => !usedNames.has(p.name) && p.salary <= budgetForThis);
+      // Fix 1: sum realistic minimums for remaining slots instead of flat $3k
+      let reserveForRemaining = 0;
+      for (let ri = oi + 1; ri < order.length; ri++) {
+        reserveForRemaining += slotMinSalary[order[ri]];
+      }
+      const budgetForThis = SALARY_CAP - salaryUsed - reserveForRemaining;
+      const available = cPool.filter(p => !usedNames.has(p.name) && p.salary <= budgetForThis);
       if (!available.length) { valid = false; break; }
 
-      // Weighted random from top candidates
+      // Fix 3: rank-weighted sampling — rank 1 is (topN)x more likely than
+      // last rank, distributing probability as 1/rank so top picks win most
+      // often while still allowing diversity across iterations.
       const topN = Math.min(available.length, 5 + Math.floor(Math.random() * 6));
-      const pick = available[Math.floor(Math.random() * topN)];
+      const topCands = available.slice(0, topN);
+      const weights = topCands.map((_, k) => 1 / (k + 1));
+      const totalW = weights.reduce((s, w) => s + w, 0);
+      let r = Math.random() * totalW;
+      let pick = topCands[topCands.length - 1];
+      for (let k = 0; k < topCands.length; k++) {
+        r -= weights[k];
+        if (r <= 0) { pick = topCands[k]; break; }
+      }
+
       lu[si] = pick;
       usedNames.add(pick.name);
       salaryUsed += pick.salary;
@@ -699,8 +727,10 @@ function optimizeLineup(pool, scoreFn, opts = {}) {
     if (salaryUsed > SALARY_CAP) continue;
 
     let total = lu.reduce((s, p) => s + scoreFn(p), 0);
-    // Salary efficiency bonus
-    total += (salaryUsed / SALARY_CAP) * 4;
+    // Fix 2: meaningful salary efficiency bonus — scales to ~15pts at full cap,
+    // which is large enough to consistently prefer $49,800 over $46,000 when
+    // player scores are otherwise equal, without overriding score differences.
+    total += (salaryUsed / SALARY_CAP) * 15;
     if (stackBonusFn) total += stackBonusFn(lu);
 
     if (total > bestScore) { bestScore = total; bestLineup = [...lu]; }
