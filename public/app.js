@@ -35,6 +35,8 @@ let statcastData = {};      // { normalizedName: { barrelRate, hardHitRate, xwOB
 let formData = {};          // { normalizedName: { avgDK, ba, ... } }
 let blendWeights = {};      // { sourceName: weight }
 let windEffects = {};       // { homeTeam: windEffect (-1 to +1) }
+let injuryData = [];        // [{ name, team, type: 'IL'|'GTD', description, date }]
+let umpireData = {};        // { homeTeam: { name, score, k, bb } }
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
 const n = v => parseFloat(v) || 0;
@@ -61,7 +63,7 @@ function getPitcherMatchupBonus(pitcher) {
 
 function getEngineContext() {
   const pool = Engine.calibratePool(POOL);
-  return { vegasData, parkFactors, weatherData, stadiums: stadiumData, teamScoring: TEAM_SCORING, contestSize, pool, optimalExposure, optimalStacks };
+  return { vegasData, parkFactors, weatherData, stadiums: stadiumData, teamScoring: TEAM_SCORING, contestSize, pool, optimalExposure, optimalStacks, umpireData };
 }
 
 // Returns calibrated pool for optimizer calls — scoring functions score individual
@@ -537,9 +539,10 @@ function renderPlayers() {
     const optExpVal = p.optExp > 0 ? `<span class="pill ${p.optExp > 30 ? 'psu' : p.optExp > 10 ? 'pi' : 'pg'}">${p.optExp.toFixed(1)}%</span>` : '\u2014';
     const confirmedBadge = p.isConfirmed ? `<span class="pill psu" style="font-size:9px;margin-left:3px">${p.confirmedOrder ? '#' + p.confirmedOrder : 'SP'}</span>` : '';
     const scBadge = p.barrelRate > 0 ? `<span class="pill ${p.barrelRate >= 10 ? 'psu' : p.barrelRate >= 7 ? 'pi' : 'pg'}" style="font-size:9px;margin-left:3px">Brl:${p.barrelRate.toFixed(0)}%</span>` : '';
+    const injuryBadge = p.injuryFlag ? `<span class="pill ${p.injuryType === 'IL' ? 'pd' : 'pw'}" style="font-size:9px;margin-left:3px" title="${escAttr(p.injuryDesc || '')}">${p.injuryType || 'INJ'}</span>` : '';
     const formColor = p.recentAvgDK && p.median > 0 ? (p.recentAvgDK / p.median >= 1.2 ? 'var(--tsu)' : p.recentAvgDK / p.median <= 0.8 ? 'var(--td)' : '') : '';
     const kDisplay = rp(p, 'P') && p.kRate > 0 ? `<span style="font-size:11px;color:${p.kRate > 25 ? 'var(--tsu)' : p.kRate > 20 ? 'var(--ti)' : 'var(--ts)'}">${p.kRate.toFixed(0)}%</span>` : '\u2014';
-    return `<tr style="${inLu ? 'opacity:.38;' : ''}"><td><strong style="${formColor ? 'color:' + formColor : ''}">${esc(p.name)}</strong>${MODE === 'dk' && !p.hasRoo ? '<span style="font-size:10px;background:var(--bw);color:var(--tw);border-radius:3px;padding:1px 4px;margin-left:4px">no proj</span>' : ''}${confirmedBadge}${scBadge} ${platoonLabel}</td><td><span class="pill pi" style="font-size:10px">${esc(p.dkPos) || '\u2014'}</span></td><td>${esc(p.team)}</td><td>${p.salary > 0 ? '$' + p.salary.toLocaleString() : '\u2014'}</td><td>${p.order > 0 ? '#' + p.order : '\u2014'}</td><td>${p.floor > 0 ? p.floor.toFixed(1) : '\u2014'}</td><td>${p.median > 0 ? '<strong>' + p.median.toFixed(1) + '</strong>' : '\u2014'}</td><td>${p.ceiling > 0 ? `<div class="bar-w"><div class="bar" style="width:${bw}px"></div><span style="font-size:11px;color:var(--ts)">${p.ceiling.toFixed(1)}</span></div>` : '\u2014'}</td><td>${p.own > 0 ? `<span class="pill ${ow}">${p.own.toFixed(1)}%</span>` : '\u2014'}</td><td class="${lc}">${p.lev !== 0 ? (p.lev > 0 ? '+' : '') + p.lev.toFixed(1) : '\u2014'}</td><td style="color:var(--ti);font-weight:500">${gppS > 0 ? gppS.toFixed(1) : '\u2014'}</td><td>${optExpVal}</td><td>${p.avgPpg > 0 ? p.avgPpg.toFixed(1) : '\u2014'}</td><td>${kDisplay}</td><td><button class="btn" style="padding:3px 8px;font-size:11px" ${inLu ? 'disabled' : ''} onclick="addPlayerByPoolIdx(${idx})">+</button></td></tr>`;
+    return `<tr style="${inLu ? 'opacity:.38;' : ''}"><td><strong style="${formColor ? 'color:' + formColor : ''}">${esc(p.name)}</strong>${MODE === 'dk' && !p.hasRoo ? '<span style="font-size:10px;background:var(--bw);color:var(--tw);border-radius:3px;padding:1px 4px;margin-left:4px">no proj</span>' : ''}${confirmedBadge}${scBadge}${injuryBadge} ${platoonLabel}</td><td><span class="pill pi" style="font-size:10px">${esc(p.dkPos) || '\u2014'}</span></td><td>${esc(p.team)}</td><td>${p.salary > 0 ? '$' + p.salary.toLocaleString() : '\u2014'}</td><td>${p.order > 0 ? '#' + p.order : '\u2014'}</td><td>${p.floor > 0 ? p.floor.toFixed(1) : '\u2014'}</td><td>${p.median > 0 ? '<strong>' + p.median.toFixed(1) + '</strong>' : '\u2014'}</td><td>${p.ceiling > 0 ? `<div class="bar-w"><div class="bar" style="width:${bw}px"></div><span style="font-size:11px;color:var(--ts)">${p.ceiling.toFixed(1)}</span></div>` : '\u2014'}</td><td>${p.own > 0 ? `<span class="pill ${ow}">${p.own.toFixed(1)}%</span>` : '\u2014'}</td><td class="${lc}">${p.lev !== 0 ? (p.lev > 0 ? '+' : '') + p.lev.toFixed(1) : '\u2014'}</td><td style="color:var(--ti);font-weight:500">${gppS > 0 ? gppS.toFixed(1) : '\u2014'}</td><td>${optExpVal}</td><td>${p.avgPpg > 0 ? p.avgPpg.toFixed(1) : '\u2014'}</td><td>${kDisplay}</td><td><button class="btn" style="padding:3px 8px;font-size:11px" ${inLu ? 'disabled' : ''} onclick="addPlayerByPoolIdx(${idx})">+</button></td></tr>`;
   }).join('');
   document.getElementById('player-more').style.display = data.length > playerLimit ? 'block' : 'none';
 }
@@ -1798,6 +1801,67 @@ function applyFormToPool() {
   });
 }
 
+// ── Injury Feed ───────────────────────────────────────────────────────────────
+async function loadInjuries() {
+  const btn = document.getElementById('fetch-injuries-btn');
+  const status = document.getElementById('injuries-status');
+  if (btn) { btn.textContent = 'Loading…'; btn.disabled = true; }
+  try {
+    const res = await fetch('/api/injuries');
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error || 'Failed');
+    injuryData = data.flagged || [];
+    applyInjuriesToPool();
+    renderPlayers();
+    const gtd = injuryData.filter(p => p.type === 'GTD').length;
+    const il = injuryData.filter(p => p.type === 'IL').length;
+    if (status) status.innerHTML = `<span class="pill ${injuryData.length ? 'pw' : 'pg'}">${injuryData.length} flags: ${il} IL, ${gtd} GTD (last 48h)</span>`;
+  } catch (e) {
+    if (status) status.innerHTML = `<span class="pill pd">Injury fetch failed: ${esc(e.message)}</span>`;
+  } finally {
+    if (btn) { btn.textContent = 'Fetch Injuries'; btn.disabled = false; }
+  }
+}
+
+function applyInjuriesToPool() {
+  const flagMap = {};
+  injuryData.forEach(f => { flagMap[f.name.toLowerCase()] = f; });
+  POOL.forEach(p => {
+    const key = p.name.toLowerCase();
+    const match = flagMap[key] || Object.keys(flagMap).find(k => key.includes(k) || k.includes(key));
+    const flag = match ? (flagMap[match] || flagMap[key]) : null;
+    p.injuryFlag = !!flag;
+    p.injuryType = flag?.type || null;
+    p.injuryDesc = flag?.description || null;
+  });
+}
+
+// ── Umpire Data ────────────────────────────────────────────────────────────────
+async function loadUmpires() {
+  const btn = document.getElementById('fetch-umpires-btn');
+  const status = document.getElementById('umpires-status');
+  if (btn) { btn.textContent = 'Loading…'; btn.disabled = true; }
+  try {
+    const today = new Date().toISOString().split('T')[0].replace(/-/g, '');
+    const res = await fetch(`/api/umpires/${today}`);
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error || 'Failed');
+    // Build homeTeam → tendency map
+    umpireData = {};
+    (data.games || []).forEach(g => {
+      if (g.homeTeam && g.umpire) umpireData[g.homeTeam] = g.umpire;
+    });
+    const known = Object.values(umpireData).filter(u => u.score !== undefined).length;
+    const total = Object.keys(umpireData).length;
+    if (status) status.innerHTML = `<span class="pill ${known ? 'psu' : 'pi'}">${total} games — ${known} umpires in DB</span>`;
+    renderSlateEnvironment();
+  } catch (e) {
+    if (status) status.innerHTML = `<span class="pill pd">Umpire fetch failed: ${esc(e.message)}</span>`;
+  } finally {
+    if (btn) { btn.textContent = 'Fetch Umpires'; btn.disabled = false; }
+  }
+}
+
 // ── Wind Effects ──────────────────────────────────────────────────────────────
 async function loadWindEffects() {
   if (!weatherData || !stadiumData) return;
@@ -1849,11 +1913,15 @@ function renderSlateEnvironment() {
   }
 
   el.innerHTML = `<div class="tbl-wrap"><table>
-    <thead><tr><th>Game</th><th>O/U</th><th>Away Impl</th><th>Home Impl</th><th>Park</th><th>Weather</th><th>Wind</th><th>Rain</th><th>Env Score</th></tr></thead>
+    <thead><tr><th>Game</th><th>O/U</th><th>Away Impl</th><th>Home Impl</th><th>Park</th><th>Weather</th><th>Wind</th><th>Rain</th><th>HP Ump</th><th>Env Score</th></tr></thead>
     <tbody>${gameEnvs.map((g, i) => {
       const rankColor = i === 0 ? 'var(--tsu)' : i < 3 ? 'var(--ti)' : 'var(--ts)';
       const rainRisk = g.weather?.precip_chance || 0;
       const rainColor = rainRisk >= 50 ? 'var(--td)' : rainRisk >= 30 ? 'var(--tw)' : 'var(--tsu)';
+      const ump = umpireData[g.home];
+      const umpCell = ump
+        ? `<span title="${escAttr(ump.name || '')}" class="pill ${ump.score >= 1 ? 'pd' : ump.score <= -1 ? 'psu' : 'pg'}" style="font-size:10px">${esc(ump.name || 'Unk')} ${ump.score > 0 ? '+' : ''}${ump.score ?? ''}</span>`
+        : '\u2014';
       return `<tr>
         <td><strong style="color:${rankColor}">#${i+1} ${esc(g.away)}@${esc(g.home)}</strong></td>
         <td><strong>${g.total > 0 ? g.total.toFixed(1) : '\u2014'}</strong></td>
@@ -1863,6 +1931,7 @@ function renderSlateEnvironment() {
         <td>${g.isDome ? '<span class="pill pg">Dome</span>' : g.weather ? `${g.weather.temp_f}F` : '\u2014'}</td>
         <td><span class="pill ${g.windLabel === 'OUT' ? 'psu' : g.windLabel === 'IN' ? 'pd' : 'pg'}">${g.windLabel}</span></td>
         <td style="color:${rainColor}">${rainRisk > 0 ? rainRisk + '%' : '\u2014'}</td>
+        <td>${umpCell}</td>
         <td style="color:${rankColor};font-weight:500">${g.envScore > 0 ? g.envScore.toFixed(1) : '\u2014'}</td>
       </tr>`;
     }).join('')}</tbody>

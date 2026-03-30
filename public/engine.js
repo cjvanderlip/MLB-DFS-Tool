@@ -1206,7 +1206,7 @@ return {
   weatherMultiplier, weatherMultiplierDirectional, parkMultiplier,
   vegasAdjustment, vegasPitcherAdjustment,
   teamScoringAdjustment,
-  statcastCeilingBoost, formMultiplier, calcPortfolioOverlap,
+  statcastCeilingBoost, formMultiplier, calcPortfolioOverlap, umpireMultiplier,
 
   // Projection blending
   blendProjections,

@@ -234,10 +234,12 @@ tr:hover td{background:var(--bs)}
       <button class="btn-dk" id="fetch-lineups-btn" onclick="loadConfirmedLineups()">Fetch Confirmed Lineups</button>
       <button class="btn" id="fetch-statcast-btn" onclick="loadStatcast()">Fetch Statcast</button>
       <button class="btn" id="fetch-form-btn" onclick="loadRecentForm()">Fetch 14-Day Form</button>
+      <button class="btn" id="fetch-injuries-btn" onclick="loadInjuries()">Fetch Injuries</button>
     </div>
     <div id="lineups-status"></div>
     <div id="statcast-status"></div>
     <div id="form-status"></div>
+    <div id="injuries-status"></div>
     <div id="blend-controls" style="margin-top:8px"></div>
   </div>
 </div>
@@ -294,7 +296,11 @@ tr:hover td{background:var(--bs)}
     </div>
   </div>
   <div style="margin-top:20px">
-    <div class="sec-label">Game Environment Rankings</div>
+    <div class="sec-label" style="display:flex;align-items:center;gap:10px">
+      Game Environment Rankings
+      <button class="btn" id="fetch-umpires-btn" onclick="loadUmpires()" style="font-size:11px;padding:3px 10px">Fetch Umpires</button>
+      <span id="umpires-status" style="font-size:11px"></span>
+    </div>
     <div id="slate-environment"><div class="empty" style="padding:12px">Load player data and Vegas lines to see game environment rankings.</div></div>
   </div>
   <div style="margin-top:20px">
