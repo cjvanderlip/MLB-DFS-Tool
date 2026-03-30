@@ -839,12 +839,24 @@ function renderVegasPanel() {
     if (away && home) gameTeams[g] = { away, home };
   });
 
+  function moveBadge(curr, open) {
+    if (open == null || curr == null) return '';
+    const diff = +(curr - open).toFixed(1);
+    if (Math.abs(diff) < 0.1) return `<span style="font-size:10px;color:var(--tt)">Open: ${open.toFixed(1)}</span>`;
+    const up = diff > 0;
+    return `<span style="font-size:10px;color:${up ? 'var(--tsu)' : 'var(--td)'}">
+      ${up ? '▲' : '▼'} ${Math.abs(diff).toFixed(1)} (was ${open.toFixed(1)})
+    </span>`;
+  }
+
   let html = '<div style="display:grid;gap:8px">';
   if (Object.keys(gameTeams).length) {
     Object.entries(gameTeams).forEach(([game, { away, home }]) => {
       const awayData = vegasData?.[away] || {};
       const homeData = vegasData?.[home] || {};
       const pf = parkFactors?.[home] || { overall: 1.0, hr: 1.0, run: 1.0 };
+      const awayMove = moveBadge(awayData.impliedTotal, awayData.openTotal);
+      const homeMove = moveBadge(homeData.impliedTotal, homeData.openTotal);
       html += `<div class="sk-card">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
           <strong>${esc(away)} @ ${esc(home)}</strong>
@@ -852,11 +864,11 @@ function renderVegasPanel() {
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
           <div>
-            <label style="font-size:11px;color:var(--tt)">${esc(away)} Implied Total</label>
+            <label style="font-size:11px;color:var(--tt);display:flex;justify-content:space-between">${esc(away)} Implied${awayMove ? ' ' + awayMove : ''}</label>
             <input type="number" step="0.1" min="0" max="15" class="vegas-input" data-team="${escAttr(away)}" data-field="impliedTotal" value="${awayData.impliedTotal || ''}" placeholder="4.5" style="width:100%;padding:5px 8px;border-radius:var(--r);border:0.5px solid var(--brd-s);background:var(--bp);color:var(--tp);font-size:12px">
           </div>
           <div>
-            <label style="font-size:11px;color:var(--tt)">${esc(home)} Implied Total</label>
+            <label style="font-size:11px;color:var(--tt);display:flex;justify-content:space-between">${esc(home)} Implied${homeMove ? ' ' + homeMove : ''}</label>
             <input type="number" step="0.1" min="0" max="15" class="vegas-input" data-team="${escAttr(home)}" data-field="impliedTotal" value="${homeData.impliedTotal || ''}" placeholder="4.5" style="width:100%;padding:5px 8px;border-radius:var(--r);border:0.5px solid var(--brd-s);background:var(--bp);color:var(--tp);font-size:12px">
           </div>
         </div>
@@ -889,6 +901,12 @@ function saveVegas() {
     if (team && !isNaN(val)) {
       if (!data[team]) data[team] = {};
       data[team][field] = val;
+      // Carry open line through manual saves so movement tracking is preserved
+      const prev = vegasData?.[team] || {};
+      if (field === 'impliedTotal') {
+        data[team].openTotal = prev.openTotal ?? val;
+        data[team].openAt = prev.openAt ?? new Date().toISOString();
+      }
     }
   });
   vegasData = Object.keys(data).length ? data : null;
@@ -920,10 +938,15 @@ async function fetchOdds() {
       return;
     }
 
-    // Store as vegasData and populate inputs
+    // Store as vegasData and populate inputs; preserve open lines on re-fetch
     if (!vegasData) vegasData = {};
     Object.entries(teams).forEach(([abbr, info]) => {
-      vegasData[abbr] = { impliedTotal: info.impliedTotal };
+      const prev = vegasData[abbr] || {};
+      vegasData[abbr] = {
+        impliedTotal: info.impliedTotal,
+        openTotal: prev.openTotal ?? info.impliedTotal,
+        openAt: prev.openAt ?? new Date().toISOString()
+      };
     });
 
     // Populate input fields if the panel is rendered
@@ -2097,6 +2120,49 @@ function renderBlendControls() {
     }).join('')}
   </div>
   <div style="font-size:10px;color:var(--tt);margin-top:6px">Weights adjust the scoring multipliers in optimizer. Re-run Auto-fill or Generate to apply.</div>`;
+}
+
+// ── Pool CSV Export ───────────────────────────────────────────────────────────
+function exportPool() {
+  if (!POOL.length) return;
+  const headers = [
+    'Name','Pos','Team','Opp','Game','Salary','BatOrder',
+    'Floor','Median','Ceiling','Own%','Leverage','GPPScore','OptExp%','AvgPPG',
+    'BarrelRate','HardHit%','xwOBA','RecentAvgDK','RecentGames','KRate',
+    'IsConfirmed','ConfirmedOrder','InjuryType','InjuryDesc','PlatoonAdj'
+  ];
+  const rows = POOL.map(p => [
+    p.name, p.dkPos || p.rosterPos || '', p.team || '', p.opp || '', p.game || '',
+    p.salary || 0, p.order || 0,
+    p.floor != null ? p.floor.toFixed(2) : '',
+    p.median != null ? p.median.toFixed(2) : '',
+    p.ceiling != null ? p.ceiling.toFixed(2) : '',
+    p.own != null ? p.own.toFixed(2) : '',
+    p.lev != null ? p.lev.toFixed(2) : '',
+    Engine.calcGppScore(p, contestSize).toFixed(2),
+    p.optExp != null ? p.optExp.toFixed(1) : '',
+    p.avgPpg != null ? p.avgPpg.toFixed(2) : '',
+    p.barrelRate != null ? p.barrelRate.toFixed(1) : '',
+    p.hardHitRate != null ? p.hardHitRate.toFixed(1) : '',
+    p.xwOBA != null ? p.xwOBA.toFixed(3) : '',
+    p.recentAvgDK != null ? p.recentAvgDK.toFixed(2) : '',
+    p.recentGames || '',
+    p.kRate != null ? p.kRate.toFixed(1) : '',
+    p.isConfirmed ? 'Y' : '',
+    p.confirmedOrder || '',
+    p.injuryType || '',
+    p.injuryDesc ? `"${p.injuryDesc.replace(/"/g, '""')}"` : '',
+    p.platoonAdj != null ? p.platoonAdj.toFixed(3) : ''
+  ].map(v => (String(v).includes(',') && !String(v).startsWith('"')) ? `"${v}"` : v));
+
+  const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  const date = new Date().toISOString().split('T')[0];
+  a.download = `mlb_dfs_pool_${date}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
 }
 
 // ── localStorage Persistence ──────────────────────────────────────────────────

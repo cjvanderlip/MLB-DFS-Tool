@@ -185,7 +185,33 @@ app.get('/api/vegas', (req, res) => {
 
 app.post('/api/vegas', (req, res) => {
   try {
-    fs.writeFileSync(vegasFile, JSON.stringify(req.body, null, 2));
+    // Preserve open lines from any existing saved data
+    let existing = {};
+    if (fs.existsSync(vegasFile)) {
+      try { existing = JSON.parse(fs.readFileSync(vegasFile, 'utf8')); } catch (e) {}
+    }
+    const incoming = req.body;
+    const merged = {};
+    const allTeams = new Set([...Object.keys(existing), ...Object.keys(incoming)]);
+    allTeams.forEach(team => {
+      const prev = existing[team] || {};
+      const curr = incoming[team] || {};
+      merged[team] = { ...curr };
+      // If we have a new implied total and an open line isn't set yet, snapshot it
+      if (curr.impliedTotal != null) {
+        merged[team].impliedTotal = curr.impliedTotal;
+        if (prev.openTotal == null) {
+          // First time saving — set open line to current
+          merged[team].openTotal = curr.impliedTotal;
+          merged[team].openAt = prev.openAt || new Date().toISOString();
+        } else {
+          // Preserve the original open line
+          merged[team].openTotal = prev.openTotal;
+          merged[team].openAt = prev.openAt;
+        }
+      }
+    });
+    fs.writeFileSync(vegasFile, JSON.stringify(merged, null, 2));
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ error: 'Failed to save Vegas data' });
