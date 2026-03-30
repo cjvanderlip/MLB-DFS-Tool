@@ -63,7 +63,7 @@ function getPitcherMatchupBonus(pitcher) {
 
 function getEngineContext() {
   const pool = Engine.calibratePool(POOL);
-  return { vegasData, parkFactors, weatherData, stadiums: stadiumData, teamScoring: TEAM_SCORING, contestSize, pool, optimalExposure, optimalStacks, umpireData };
+  return { vegasData, parkFactors, weatherData, stadiums: stadiumData, teamScoring: TEAM_SCORING, contestSize, pool, optimalExposure, optimalStacks, umpireData, blendWeights };
 }
 
 // Returns calibrated pool for optimizer calls — scoring functions score individual
@@ -618,6 +618,32 @@ function renderLineup() {
   const wEl = document.getElementById('lineup-warns');
   wEl.style.display = warns.length ? 'block' : 'none';
   if (warns.length) { wEl.className = 'ib warn'; wEl.innerHTML = warns.map(w => w).join('<br>'); }
+
+  // Live lineup analysis: correlation, stacks, bring-backs
+  const analysisEl = document.getElementById('lineup-analysis');
+  if (analysisEl && playersInLineup.length >= 4) {
+    const analysis = Engine.analyzeLineup(lineup);
+    if (analysis) {
+      const corrColor = analysis.correlationScore >= 0.6 ? 'var(--tsu)' : analysis.correlationScore >= 0.35 ? 'var(--ti)' : 'var(--td)';
+      const stackBadges = analysis.stacks.map(s =>
+        `<span class="pill psu" style="font-size:10px">${esc(s.team)} ${s.count}-stack</span>`
+      ).join(' ');
+      const bbBadges = analysis.bringBacks.map(b =>
+        `<span class="pill pi" style="font-size:10px">BB: ${esc(b.name)}</span>`
+      ).join(' ');
+      analysisEl.style.display = 'block';
+      analysisEl.innerHTML = `<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;font-size:11px">
+        <span>Corr: <strong style="color:${corrColor}">${analysis.correlationScore.toFixed(2)}</strong></span>
+        <span>Ceil: <strong>${analysis.ceilingPts.toFixed(1)}</strong></span>
+        <span>Floor: <strong>${analysis.floorPts.toFixed(1)}</strong></span>
+        <span>Val: <strong>${analysis.salaryEfficiency}</strong>x</span>
+        ${stackBadges}${bbBadges ? ' ' + bbBadges : '<span style="color:var(--tt)">no bring-back</span>'}
+      </div>`;
+    }
+  } else if (analysisEl) {
+    analysisEl.style.display = 'none';
+  }
+
   checkPositionScarcity();
 }
 
@@ -1128,6 +1154,7 @@ function generatePortfolio() {
   const contestType = document.getElementById('port-contest-type').value || 'gpp';
   const portContestSize = parseInt(document.getElementById('port-contest-size').value) || 1000;
   const maxOverlapVal = parseInt(document.getElementById('port-max-overlap')?.value) || 0;
+  const requireBringBack = document.getElementById('port-require-bringback')?.checked || false;
   const lockedTeams = getCheckedTeams('port-lock-teams');
   const bannedTeams = getCheckedTeams('port-ban-teams');
 
@@ -1143,6 +1170,7 @@ function generatePortfolio() {
     const result = Engine.buildPortfolio(getCalibratedPool(), {
       numLineups, maxExposure, maxExposurePitcher, contestType, contestSize: portContestSize,
       maxOverlap: maxOverlapVal,
+      requireBringBack,
       stacks3: STACKS3, stacks5: STACKS5,
       lockedTeams, bannedTeams,
       context: ctx, iterations: OPTIMIZER_ITERATIONS

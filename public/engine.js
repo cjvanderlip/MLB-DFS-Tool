@@ -473,7 +473,7 @@ function optimalExposureBoost(p, context, mode) {
 }
 
 function scoreCash(p, context = {}) {
-  const { vegasData, parkFactors, weatherData, stadiums, teamScoring, umpireData } = context;
+  const { vegasData, parkFactors, weatherData, stadiums, teamScoring, umpireData, blendWeights } = context;
   const isP = rp(p, 'P');
 
   let vegasAdj = 1.0;
@@ -501,8 +501,10 @@ function scoreCash(p, context = {}) {
   const tsAdj = teamScoringAdjustment(p, teamScoring);
 
   const optBoost = optimalExposureBoost(p, context, 'cash');
-  const scBoost = !isP ? statcastCeilingBoost(p) : 1.0;
-  const fmBoost = formMultiplier(p);
+  const scW = (blendWeights?.Statcast ?? 100) / 100;
+  const fmW = (blendWeights?.['Form (14d)'] ?? 100) / 100;
+  const scBoost = !isP ? (1.0 + (statcastCeilingBoost(p) - 1.0) * scW) : 1.0;
+  const fmBoost = 1.0 + (formMultiplier(p) - 1.0) * fmW;
   const homeTeam2 = p.game ? p.game.split('@')[1] : p.team;
   const umpTend = umpireData?.[homeTeam2] || null;
   const umpBoost = umpireMultiplier(umpTend, isP);
@@ -524,7 +526,7 @@ function scoreCash(p, context = {}) {
 }
 
 function scoreSingle(p, context = {}) {
-  const { vegasData, parkFactors, weatherData, stadiums, teamScoring, umpireData } = context;
+  const { vegasData, parkFactors, weatherData, stadiums, teamScoring, umpireData, blendWeights } = context;
   const isP = rp(p, 'P');
 
   let vegasAdj = isP ? vegasPitcherAdjustment(p, vegasData) : vegasAdjustment(p, vegasData);
@@ -544,8 +546,10 @@ function scoreSingle(p, context = {}) {
   const value = p.salary > 0 ? (p.median || 0) / p.salary * 1000 : 0;
 
   const optBoost = optimalExposureBoost(p, context, 'single');
-  const scBoost = !isP ? statcastCeilingBoost(p) : 1.0;
-  const fmBoost = formMultiplier(p);
+  const scW = (blendWeights?.Statcast ?? 100) / 100;
+  const fmW = (blendWeights?.['Form (14d)'] ?? 100) / 100;
+  const scBoost = !isP ? (1.0 + (statcastCeilingBoost(p) - 1.0) * scW) : 1.0;
+  const fmBoost = 1.0 + (formMultiplier(p) - 1.0) * fmW;
   const umpTend = umpireData?.[homeTeam] || null;
   const umpBoost = umpireMultiplier(umpTend, isP);
 
@@ -563,7 +567,7 @@ function scoreSingle(p, context = {}) {
 }
 
 function scoreGpp(p, context = {}) {
-  const { vegasData, parkFactors, weatherData, stadiums, teamScoring, contestSize = 1000, umpireData } = context;
+  const { vegasData, parkFactors, weatherData, stadiums, teamScoring, contestSize = 1000, umpireData, blendWeights } = context;
   const isP = rp(p, 'P');
 
   let vegasAdj = isP ? vegasPitcherAdjustment(p, vegasData) : vegasAdjustment(p, vegasData);
@@ -582,8 +586,10 @@ function scoreGpp(p, context = {}) {
   const tsAdj = teamScoringAdjustment(p, teamScoring);
 
   const optBoost = optimalExposureBoost(p, context, 'gpp');
-  const scBoost = !isP ? statcastCeilingBoost(p) : 1.0;
-  const fmBoost = formMultiplier(p);
+  const scW = (blendWeights?.Statcast ?? 100) / 100;
+  const fmW = (blendWeights?.['Form (14d)'] ?? 100) / 100;
+  const scBoost = !isP ? (1.0 + (statcastCeilingBoost(p) - 1.0) * scW) : 1.0;
+  const fmBoost = 1.0 + (formMultiplier(p) - 1.0) * fmW;
   const umpTend = umpireData?.[homeTeam] || null;
   const umpBoost = umpireMultiplier(umpTend, isP);
 
@@ -811,6 +817,7 @@ function buildPortfolio(pool, opts = {}) {
     stacks3 = [],
     stacks5 = [],
     maxOverlap = 7,        // max players shared between any two lineups (0 = disabled)
+    requireBringBack = false, // GPP: reject lineups without at least one bring-back batter
     lockedTeams = [],      // teams whose stacks are prioritised every lineup
     bannedTeams = [],      // teams fully excluded from the portfolio
     context = {},
@@ -868,6 +875,42 @@ function buildPortfolio(pool, opts = {}) {
         iterations, contestSize,
         targetLockedTeam, pool
       );
+
+      // Hard bring-back enforcement: if required and lineup has a stack but no
+      // bring-back batter, attempt to swap in the best available bring-back
+      if (lu && requireBringBack) {
+        const players = lu.filter(Boolean);
+        const teamCounts = {};
+        players.forEach(p => { if (!rp(p, 'P')) teamCounts[p.team] = (teamCounts[p.team] || 0) + 1; });
+        const stackTeams = Object.entries(teamCounts).filter(([, c]) => c >= 3).map(([t]) => t);
+        if (stackTeams.length > 0) {
+          const oppTeams = new Set();
+          players.forEach(p => { if (stackTeams.includes(p.team) && p.opp) oppTeams.add(p.opp); });
+          const hasBB = players.some(p => !rp(p, 'P') && oppTeams.has(p.team));
+          if (!hasBB) {
+            // Find best bring-back candidate not already in lineup
+            const luNames = new Set(players.map(p => p.name));
+            const bbCandidates = pool.filter(p =>
+              !rp(p, 'P') && oppTeams.has(p.team) &&
+              !luNames.has(p.name) && !excludeOverExposed.has(p.name) && p.salary > 0
+            ).sort((a, b) => (b.median || 0) - (a.median || 0));
+            for (const bb of bbCandidates) {
+              // Try replacing the lowest-scoring non-stacked batter
+              const swapCandidates = lu.map((p, idx) => ({ p, idx }))
+                .filter(({ p }) => p && !rp(p, 'P') && !stackTeams.includes(p?.team))
+                .sort((a, b) => (a.p.median || 0) - (b.p.median || 0));
+              for (const { idx } of swapCandidates) {
+                if (!DK_SLOTS[idx].eligible(bb)) continue;
+                const newSalary = lu.reduce((s, p, i) => s + (i === idx ? bb.salary : (p?.salary || 0)), 0);
+                if (newSalary <= SALARY_CAP) { lu[idx] = bb; break; }
+              }
+              const updatedPlayers = lu.filter(Boolean);
+              const hasBBNow = updatedPlayers.some(p => !rp(p, 'P') && oppTeams.has(p.team));
+              if (hasBBNow) break;
+            }
+          }
+        }
+      }
     }
 
     if (lu && lu.every(Boolean)) {
