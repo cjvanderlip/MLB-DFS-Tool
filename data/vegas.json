@@ -1,0 +1,95 @@
+{
+  "DET": {
+    "impliedTotal": 4.32
+  },
+  "SD": {
+    "impliedTotal": 4.42
+  },
+  "KC": {
+    "impliedTotal": 5.93
+  },
+  "ATL": {
+    "impliedTotal": 4.98
+  },
+  "LAA": {
+    "impliedTotal": 3.46
+  },
+  "HOU": {
+    "impliedTotal": 4.12
+  },
+  "CLE": {
+    "impliedTotal": 3.21
+  },
+  "SEA": {
+    "impliedTotal": 3.75
+  },
+  "ARI": {
+    "impliedTotal": 4.68
+  },
+  "LAD": {
+    "impliedTotal": 5.29
+  },
+  "ATH": {
+    "impliedTotal": 3.5
+  },
+  "TOR": {
+    "impliedTotal": 5.99
+  },
+  "COL": {
+    "impliedTotal": 2.51
+  },
+  "MIA": {
+    "impliedTotal": 4.42
+  },
+  "BAL": {
+    "impliedTotal": 4.8
+  },
+  "MIN": {
+    "impliedTotal": 4.07
+  },
+  "PHI": {
+    "impliedTotal": 5.56
+  },
+  "TEX": {
+    "impliedTotal": 4.2
+  },
+  "OAK": {
+    "impliedTotal": 4.02
+  },
+  "CIN": {
+    "impliedTotal": 4.34
+  },
+  "BOS": {
+    "impliedTotal": 4.38
+  },
+  "NYM": {
+    "impliedTotal": 4.88
+  },
+  "PIT": {
+    "impliedTotal": 3.66
+  },
+  "MIL": {
+    "impliedTotal": 4.71
+  },
+  "CWS": {
+    "impliedTotal": 3.58
+  },
+  "STL": {
+    "impliedTotal": 3.62
+  },
+  "TB": {
+    "impliedTotal": 3.29
+  },
+  "CHC": {
+    "impliedTotal": 6.04
+  },
+  "WSH": {
+    "impliedTotal": 3.44
+  },
+  "NYY": {
+    "impliedTotal": 3.75
+  },
+  "SF": {
+    "impliedTotal": 4.08
+  }
+}

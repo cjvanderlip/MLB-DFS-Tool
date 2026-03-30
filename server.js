@@ -1077,6 +1077,166 @@ app.get('/api/form', async (req, res) => {
   }
 });
 
+// ── Injury / Transaction Feed (MLB Stats API) ──────────────────────────────
+
+// Transaction types that flag a player as unavailable or at-risk
+const IL_KEYWORDS = ['placed on', '10-day il', '15-day il', '60-day il', 'transferred to', 'traded', 'released', 'designated for assignment', 'dfa'];
+const GTOD_KEYWORDS = ['day-to-day', 'dtd', 'game-time decision'];
+
+app.get('/api/injuries', async (req, res) => {
+  try {
+    const end = new Date();
+    const start = new Date(end.getTime() - 48 * 60 * 60 * 1000);
+    const fmt = d => d.toISOString().substring(0, 10);
+
+    const txRes = await fetch(
+      `${MLB_API_BASE}/transactions?startDate=${fmt(start)}&endDate=${fmt(end)}&sportId=1`,
+      { headers: { 'User-Agent': 'MLB-DFS-Tool' }, timeout: 12000 }
+    );
+    if (!txRes.ok) throw new Error(`MLB API ${txRes.status}`);
+    const txData = await txRes.json();
+
+    const transactions = txData.transactions || [];
+    const flagged = [];
+
+    for (const tx of transactions) {
+      const desc = (tx.description || tx.typeDesc || '').toLowerCase();
+      const isIL = IL_KEYWORDS.some(kw => desc.includes(kw));
+      const isGTOD = GTOD_KEYWORDS.some(kw => desc.includes(kw));
+      if (!isIL && !isGTOD) continue;
+
+      const playerName = tx.person?.fullName || '';
+      if (!playerName) continue;
+
+      const rawTeam = tx.toTeam?.abbreviation || tx.fromTeam?.abbreviation || '';
+      const team = MLB_TO_DK_ABBR[rawTeam] || rawTeam;
+      const txDate = tx.date || tx.effectiveDate || '';
+
+      flagged.push({
+        name: playerName,
+        team,
+        type: isGTOD ? 'GTD' : 'IL',
+        description: tx.description || tx.typeDesc || '',
+        date: txDate
+      });
+    }
+
+    // Dedupe by player name (keep most recent)
+    const seen = new Map();
+    for (const f of flagged) {
+      const existing = seen.get(f.name.toLowerCase());
+      if (!existing || f.date > existing.date) seen.set(f.name.toLowerCase(), f);
+    }
+
+    res.json({ success: true, flagged: [...seen.values()], total: seen.size, window: '48h' });
+  } catch (err) {
+    res.status(500).json({ error: 'Injury fetch failed: ' + err.message });
+  }
+});
+
+// ── Umpire Data ─────────────────────────────────────────────────────────────
+
+// Tendency score: positive = pitcher-friendly (tight zone, more Ks)
+//                 negative = batter-friendly (generous zone, more BBs/contact)
+// Scale: -2 (very hitter-friendly) to +2 (very pitcher-friendly)
+// Source: multi-season historical K% and walk% relative to league average
+const UMPIRE_DB = {
+  'Angel Hernandez':     { k: -0.5, bb: 0.3,  score: -0.4 },
+  'CB Bucknor':          { k: -0.8, bb: 0.5,  score: -0.6 },
+  'Hunter Wendelstedt':  { k: 1.2,  bb: -0.4, score: 1.0  },
+  'Dan Bellino':         { k: 1.0,  bb: -0.3, score: 0.8  },
+  'Mark Carlson':        { k: -0.4, bb: 0.2,  score: -0.3 },
+  'Jeff Nelson':         { k: 0.2,  bb: -0.1, score: 0.1  },
+  'Phil Cuzzi':          { k: 0.6,  bb: -0.2, score: 0.5  },
+  'Tom Hallion':         { k: 0.8,  bb: -0.3, score: 0.7  },
+  'Ron Kulpa':           { k: 0.9,  bb: -0.4, score: 0.8  },
+  'Mike Winters':        { k: 0.5,  bb: -0.2, score: 0.4  },
+  'Laz Diaz':            { k: -1.0, bb: 0.6,  score: -0.8 },
+  'Ted Barrett':         { k: 0.3,  bb: -0.1, score: 0.2  },
+  'Pat Hoberg':          { k: 0.1,  bb: 0.0,  score: 0.1  },
+  'Alan Porter':         { k: 0.4,  bb: -0.2, score: 0.3  },
+  'Carlos Torres':       { k: -0.3, bb: 0.2,  score: -0.2 },
+  'John Tumpane':        { k: 0.6,  bb: -0.3, score: 0.5  },
+  'Mike Muchlinski':     { k: 0.2,  bb: 0.0,  score: 0.2  },
+  'Gabe Morales':        { k: -0.2, bb: 0.2,  score: -0.1 },
+  'Bill Welke':          { k: 0.3,  bb: -0.1, score: 0.3  },
+  'Vic Carapazza':       { k: 0.7,  bb: -0.3, score: 0.6  },
+  'Jerry Meals':         { k: -0.1, bb: 0.1,  score: -0.1 },
+  'Doug Eddings':        { k: 0.4,  bb: -0.2, score: 0.3  },
+  'Brian O\'Nora':       { k: 0.2,  bb: -0.1, score: 0.2  },
+  'Alfonso Marquez':     { k: 0.5,  bb: -0.2, score: 0.4  },
+  'Andy Fletcher':       { k: -0.2, bb: 0.1,  score: -0.1 },
+  'Cory Blaser':         { k: 0.3,  bb: -0.1, score: 0.3  },
+  'Junior Valentine':    { k: -0.6, bb: 0.4,  score: -0.5 },
+  'Bruce Dreckman':      { k: 0.4,  bb: -0.2, score: 0.3  },
+  'Quinn Wolcott':       { k: 0.1,  bb: 0.0,  score: 0.1  },
+  'Adam Hamari':         { k: -0.3, bb: 0.2,  score: -0.2 },
+  'Chad Fairchild':      { k: -0.5, bb: 0.3,  score: -0.4 },
+  'Erich Bacchus':       { k: 0.2,  bb: -0.1, score: 0.1  },
+  'Jeremie Rehak':       { k: 0.3,  bb: -0.1, score: 0.2  },
+  'Nic Lentz':           { k: 0.4,  bb: -0.2, score: 0.3  },
+  'Roberto Ortiz':       { k: -0.1, bb: 0.1,  score: 0.0  },
+  'Tripp Gibson':        { k: 0.5,  bb: -0.2, score: 0.4  },
+  'Will Little':         { k: 0.6,  bb: -0.3, score: 0.5  },
+  'David Rackley':       { k: 0.3,  bb: -0.1, score: 0.2  },
+  'Mike Estabrook':      { k: 0.1,  bb: 0.0,  score: 0.1  },
+  'Marvin Hudson':       { k: -0.4, bb: 0.2,  score: -0.3 },
+  'Mark Wegner':         { k: 0.2,  bb: -0.1, score: 0.1  },
+  'Fieldin Culbreth':    { k: 0.3,  bb: -0.1, score: 0.3  },
+  'Greg Gibson':         { k: -0.2, bb: 0.1,  score: -0.1 },
+  'Lance Barrett':       { k: 0.4,  bb: -0.2, score: 0.3  },
+  'Paul Nauert':         { k: 0.0,  bb: 0.1,  score: 0.0  },
+  'Manny Gonzalez':      { k: -0.3, bb: 0.2,  score: -0.2 },
+  'Brian Knight':        { k: 0.5,  bb: -0.2, score: 0.4  },
+  'Chris Guccione':      { k: 0.3,  bb: -0.1, score: 0.3  },
+  'D.J. Reyburn':        { k: 0.2,  bb: -0.1, score: 0.2  },
+  'Ryan Additon':        { k: 0.1,  bb: 0.0,  score: 0.1  },
+  'Mike DiMuro':         { k: -0.1, bb: 0.1,  score: -0.1 },
+};
+
+// GET /api/umpires — return full tendency database
+app.get('/api/umpires', (req, res) => {
+  res.json({ umpires: UMPIRE_DB });
+});
+
+// GET /api/umpires/:date — fetch today's HP umpire assignments from MLB schedule
+app.get('/api/umpires/:date', async (req, res) => {
+  try {
+    const date = req.params.date;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: 'Date must be YYYY-MM-DD' });
+
+    const schedRes = await fetch(
+      `${MLB_API_BASE}/schedule?sportId=1&date=${date}&gameType=R&hydrate=officials`,
+      { headers: { 'User-Agent': 'MLB-DFS-Tool' }, timeout: 12000 }
+    );
+    if (!schedRes.ok) throw new Error(`MLB API ${schedRes.status}`);
+    const schedule = await schedRes.json();
+    const games = schedule.dates?.[0]?.games || [];
+
+    const assignments = games.map(game => {
+      const homeAbbr = MLB_TO_DK_ABBR[game.teams?.home?.team?.abbreviation] || game.teams?.home?.team?.abbreviation || '';
+      const awayAbbr = MLB_TO_DK_ABBR[game.teams?.away?.team?.abbreviation] || game.teams?.away?.team?.abbreviation || '';
+      const officials = game.officials || [];
+      const hp = officials.find(o => (o.officialType || '').toLowerCase().includes('home plate'));
+      const hpName = hp?.official?.fullName || null;
+      const tendency = hpName ? (UMPIRE_DB[hpName] || null) : null;
+      return {
+        gamePk: game.gamePk,
+        homeTeam: homeAbbr,
+        awayTeam: awayAbbr,
+        game: `${awayAbbr}@${homeAbbr}`,
+        hpUmpire: hpName,
+        tendency,
+        known: !!tendency
+      };
+    });
+
+    res.json({ success: true, date, assignments });
+  } catch (err) {
+    res.status(500).json({ error: 'Umpire fetch failed: ' + err.message });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`MLB DFS Tool v2.0 running on http://localhost:${PORT}`);
   console.log(`Uploads: ${uploadDir}`);

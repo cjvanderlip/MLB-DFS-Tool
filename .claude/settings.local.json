@@ -4,7 +4,25 @@
       "WebFetch(domain:jona.substack.com)",
       "WebFetch(domain:medium.com)",
       "WebFetch(domain:www.mlbdatawarehouse.com)",
-      "WebFetch(domain:drroto.com)"
+      "WebFetch(domain:drroto.com)",
+      "WebSearch",
+      "Bash(node -c server.js)",
+      "Bash(node -c public/app.js)",
+      "Bash(node -c public/engine.js)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:appac.github.io)",
+      "WebFetch(domain:baseballsavant.mlb.com)",
+      "WebFetch(domain:www.legalsportsreport.com)",
+      "WebFetch(domain:sportsbook.draftkings.com)",
+      "WebFetch(domain:www.draftkings.com)",
+      "WebFetch(domain:gacolitti.github.io)",
+      "WebFetch(domain:seandrummy.medium.com)",
+      "WebFetch(domain:www.lineups.com)",
+      "WebFetch(domain:www.retrosheet.org)",
+      "Bash(node -e \"require\\(''''./server.js''''\\)\")",
+      "Bash(node --check server.js)",
+      "Bash(node --check public/engine.js)",
+      "Bash(node --check public/app.js)"
     ]
   }
 }

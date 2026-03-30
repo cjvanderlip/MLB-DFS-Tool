@@ -473,7 +473,7 @@ function optimalExposureBoost(p, context, mode) {
 }
 
 function scoreCash(p, context = {}) {
-  const { vegasData, parkFactors, weatherData, stadiums, teamScoring } = context;
+  const { vegasData, parkFactors, weatherData, stadiums, teamScoring, umpireData } = context;
   const isP = rp(p, 'P');
 
   let vegasAdj = 1.0;
@@ -503,13 +503,16 @@ function scoreCash(p, context = {}) {
   const optBoost = optimalExposureBoost(p, context, 'cash');
   const scBoost = !isP ? statcastCeilingBoost(p) : 1.0;
   const fmBoost = formMultiplier(p);
+  const homeTeam2 = p.game ? p.game.split('@')[1] : p.team;
+  const umpTend = umpireData?.[homeTeam2] || null;
+  const umpBoost = umpireMultiplier(umpTend, isP);
 
   if (isP) {
     const kBonus = (p.kRate || 0) > 25 ? 2.0 : (p.kRate || 0) > 20 ? 1.0 : 0;
     const winProb = p.winProb || 0.5;
     const matchup = getPitcherMatchupScore(p, context);
     return ((p.median || 0) * 2.5 + (p.floor || 0) * 1.5 + matchup * 2 + kBonus + winProb * 3)
-      * vegasAdj * wm.pitching * tsAdj.pitching * optBoost * fmBoost;
+      * vegasAdj * wm.pitching * tsAdj.pitching * optBoost * fmBoost * umpBoost;
   }
 
   // Batter
@@ -517,11 +520,11 @@ function scoreCash(p, context = {}) {
   const variance = (p.ceiling || 0) - (p.floor || 0);
   const platoon = p.platoonAdj || 1.0;
   return ((p.median || 0) * 2.0 + (p.floor || 0) * 1.5 - variance * 0.3 + orderBonus)
-    * vegasAdj * pf.run * wm.hitting * platoon * tsAdj.batting * optBoost * scBoost * fmBoost;
+    * vegasAdj * pf.run * wm.hitting * platoon * tsAdj.batting * optBoost * scBoost * fmBoost * umpBoost;
 }
 
 function scoreSingle(p, context = {}) {
-  const { vegasData, parkFactors, weatherData, stadiums, teamScoring } = context;
+  const { vegasData, parkFactors, weatherData, stadiums, teamScoring, umpireData } = context;
   const isP = rp(p, 'P');
 
   let vegasAdj = isP ? vegasPitcherAdjustment(p, vegasData) : vegasAdjustment(p, vegasData);
@@ -543,22 +546,24 @@ function scoreSingle(p, context = {}) {
   const optBoost = optimalExposureBoost(p, context, 'single');
   const scBoost = !isP ? statcastCeilingBoost(p) : 1.0;
   const fmBoost = formMultiplier(p);
+  const umpTend = umpireData?.[homeTeam] || null;
+  const umpBoost = umpireMultiplier(umpTend, isP);
 
   if (isP) {
     const kBonus = (p.kRate || 0) > 25 ? 1.5 : (p.kRate || 0) > 20 ? 0.7 : 0;
     const matchup = getPitcherMatchupScore(p, context);
     return ((p.median || 0) * 1.5 + (p.ceiling || 0) * 0.8 + value * 0.3 + matchup + kBonus)
-      * vegasAdj * wm.pitching * tsAdj.pitching * optBoost * fmBoost;
+      * vegasAdj * wm.pitching * tsAdj.pitching * optBoost * fmBoost * umpBoost;
   }
 
   const orderBonus = p.order > 0 && p.order <= 5 ? (6 - p.order) * 0.8 : 0;
   const platoon = p.platoonAdj || 1.0;
   return ((p.median || 0) * 1.2 + (p.ceiling || 0) * 0.6 + value * 0.4 + orderBonus)
-    * vegasAdj * pf.run * wm.hitting * platoon * tsAdj.batting * optBoost * scBoost * fmBoost;
+    * vegasAdj * pf.run * wm.hitting * platoon * tsAdj.batting * optBoost * scBoost * fmBoost * umpBoost;
 }
 
 function scoreGpp(p, context = {}) {
-  const { vegasData, parkFactors, weatherData, stadiums, teamScoring, contestSize = 1000 } = context;
+  const { vegasData, parkFactors, weatherData, stadiums, teamScoring, contestSize = 1000, umpireData } = context;
   const isP = rp(p, 'P');
 
   let vegasAdj = isP ? vegasPitcherAdjustment(p, vegasData) : vegasAdjustment(p, vegasData);
@@ -579,6 +584,8 @@ function scoreGpp(p, context = {}) {
   const optBoost = optimalExposureBoost(p, context, 'gpp');
   const scBoost = !isP ? statcastCeilingBoost(p) : 1.0;
   const fmBoost = formMultiplier(p);
+  const umpTend = umpireData?.[homeTeam] || null;
+  const umpBoost = umpireMultiplier(umpTend, isP);
 
   if (isP) {
     const kBonus = (p.kRate || 0) > 25 ? 2.0 : (p.kRate || 0) > 20 ? 1.0 : 0;
@@ -586,14 +593,14 @@ function scoreGpp(p, context = {}) {
     const matchup = getPitcherMatchupScore(p, context);
     const ownPenalty = (p.own || 0) * 0.1 * (Math.log10(Math.max(contestSize, 10)) / 3);
     return ((p.ceiling || 0) * 1.2 + (p.median || 0) * 0.5 + matchup - ownPenalty + kBonus + winProb * 2)
-      * vegasAdj * wm.pitching * tsAdj.pitching * optBoost * fmBoost;
+      * vegasAdj * wm.pitching * tsAdj.pitching * optBoost * fmBoost * umpBoost;
   }
 
   // GPP batter scoring: ceiling-weighted with ownership leverage
   const gppScore = calcGppScore(p, contestSize);
   const orderBonus = p.order > 0 && p.order <= 5 ? (6 - p.order) * 0.5 : 0;
   const platoon = p.platoonAdj || 1.0;
-  return (gppScore + orderBonus) * pf.hr * wm.hitting * platoon * tsAdj.batting * optBoost * scBoost * fmBoost;
+  return (gppScore + orderBonus) * pf.hr * wm.hitting * platoon * tsAdj.batting * optBoost * scBoost * fmBoost * umpBoost;
 }
 
 function getPitcherMatchupScore(pitcher, context) {
@@ -1081,6 +1088,23 @@ function calibratePool(pool) {
       ceiling: parseFloat(((p.ceiling || 0) * scale).toFixed(2))
     };
   });
+}
+
+// ── Umpire Multiplier ───────────────────────────────────────────────────────
+
+// tendency.score: -2 (batter-friendly) to +2 (pitcher-friendly)
+// For pitchers: positive score = more Ks = ceiling boost
+// For batters:  positive score = tighter zone = slight penalty to floor/median
+function umpireMultiplier(umpireTendency, isP) {
+  if (!umpireTendency || umpireTendency.score === undefined) return 1.0;
+  const score = umpireTendency.score; // -2 to +2
+  if (isP) {
+    // Pitcher ceiling boost: +2 score → +8%, -2 score → -8%
+    return 1.0 + score * 0.04;
+  } else {
+    // Batter: inverse — tight zone (positive) slightly hurts, generous zone helps
+    return 1.0 - score * 0.02;
+  }
 }
 
 // ── Wind Direction Model (park-orientation-aware) ───────────────────────────
