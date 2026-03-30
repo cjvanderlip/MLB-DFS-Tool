@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MLB DFS Tool v2.0</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#fff;color:#1a1a1a;padding:16px}
+@media(prefers-color-scheme:dark){body{background:#1a1a1a;color:#e8e6de}}
+:root{
+  --bp:#fff;--bs:#f1efe8;--bt:#e8e6de;
+  --bi:#e6f1fb;--bsu:#eaf3de;--bw:#faeeda;--bd:#fcebeb;
+  --tp:#1a1a1a;--ts:#5f5e5a;--tt:#888780;
+  --ti:#185fa5;--tsu:#3b6d11;--tw:#854f0b;--td:#a32d2d;
+  --brd-t:rgba(0,0,0,0.15);--brd-s:rgba(0,0,0,0.3);--brd-p:rgba(0,0,0,0.4);
+  --brd-i:#85b7eb;--brd-su:#97c459;--brd-w:#ef9f27;--brd-d:#f09595;
+  --r:8px;--rl:12px;--mono:'SF Mono','Fira Code',monospace;
+}
+@media(prefers-color-scheme:dark){:root{
+  --bp:#222220;--bs:#2c2c2a;--bt:#1a1a18;
+  --bi:#0c447c;--bsu:#27500a;--bw:#633806;--bd:#791f1f;
+  --tp:#e8e6de;--ts:#b4b2a9;--tt:#888780;
+  --ti:#85b7eb;--tsu:#97c459;--tw:#ef9f27;--td:#f09595;
+  --brd-t:rgba(255,255,255,0.15);--brd-s:rgba(255,255,255,0.3);--brd-p:rgba(255,255,255,0.4);
+}}
+.app{max-width:1200px;margin:0 auto}
+.hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem;flex-wrap:wrap;gap:8px}
+.logo{font-size:18px;font-weight:500;color:var(--tp);display:flex;align-items:center;gap:8px}
+.ver{font-size:11px;color:var(--tt);font-weight:400}
+.tab-bar{display:flex;gap:2px;border-bottom:0.5px solid var(--brd-t);margin-bottom:1.25rem;overflow-x:auto}
+.tab{padding:7px 14px;font-size:13px;color:var(--ts);cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;transition:all .12s}
+.tab:hover{color:var(--tp)}.tab.active{color:var(--tp);font-weight:500;border-bottom-color:var(--tp)}
+.panel{display:none}.panel.active{display:block}
+.file-list{display:flex;flex-direction:column;gap:6px;margin-bottom:12px}
+.fi{display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--bs);border-radius:var(--r);font-size:12px;transition:background .2s}
+.fi.ok{background:var(--bsu)}.fi.warn{background:var(--bw)}
+.fdot{width:8px;height:8px;border-radius:50%;background:var(--brd-s);flex-shrink:0;transition:background .2s}
+.fdot.ok{background:var(--tsu)}.fdot.warn{background:var(--tw)}
+.fn{flex:1;color:var(--ts)}.fn.ok{color:var(--tsu)}.fn.warn{color:var(--tw)}
+.fc{font-size:11px;color:var(--tt)}
+.drop{border:1.5px dashed var(--brd-s);border-radius:var(--rl);padding:24px 20px;text-align:center;cursor:pointer;transition:all .15s;margin-bottom:10px}
+.drop:hover,.drop.drag{border-color:var(--brd-p);background:var(--bs)}
+.drop input{display:none}
+.mc-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;margin-bottom:1rem}
+.mc{background:var(--bs);border-radius:var(--r);padding:10px 12px}
+.mc-l{font-size:11px;color:var(--tt);text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px}
+.mc-v{font-size:20px;font-weight:500;color:var(--tp)}
+.mc-s{font-size:11px;color:var(--tt);margin-top:2px}
+.tbl-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{text-align:left;padding:6px 8px;font-size:11px;font-weight:500;color:var(--tt);border-bottom:0.5px solid var(--brd-t);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap;cursor:pointer;user-select:none}
+th:hover{color:var(--ts)}
+td{padding:7px 8px;border-bottom:0.5px solid var(--brd-t);color:var(--tp);vertical-align:middle;white-space:nowrap}
+tr:hover td{background:var(--bs)}
+.pill{display:inline-block;padding:2px 7px;border-radius:10px;font-size:11px;font-weight:500}
+.pi{background:var(--bi);color:var(--ti)}.psu{background:var(--bsu);color:var(--tsu)}
+.pw{background:var(--bw);color:var(--tw)}.pd{background:var(--bd);color:var(--td)}
+.pg{background:var(--bs);color:var(--ts)}
+.frow{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center}
+.frow select,.frow input[type=text]{font-size:12px;padding:5px 9px;border-radius:var(--r);border:0.5px solid var(--brd-s);background:var(--bp);color:var(--tp)}
+.pbs{display:flex;gap:3px;flex-wrap:wrap}
+.pb{padding:3px 9px;font-size:12px;border-radius:var(--r);border:0.5px solid var(--brd-s);cursor:pointer;background:transparent;color:var(--ts);transition:all .1s}
+.pb.active{border-color:var(--brd-p);color:var(--tp);font-weight:500}
+.bar-w{display:flex;align-items:center;gap:5px}
+.bar{height:5px;border-radius:3px;background:var(--bi);min-width:2px}
+.lu-slot{display:flex;align-items:center;gap:10px;padding:9px 12px;border:0.5px solid var(--brd-t);border-radius:var(--r);margin-bottom:5px;background:var(--bp)}
+.lu-slot.filled{border-color:var(--brd-su);background:var(--bsu)}
+.slot-pos{font-size:11px;font-weight:500;color:var(--tt);width:34px;flex-shrink:0;text-transform:uppercase}
+.slot-name{font-size:13px;font-weight:500;color:var(--tp)}
+.slot-info{font-size:11px;color:var(--ts)}
+.slot-rm{padding:2px 6px;font-size:11px;border-radius:4px;border:0.5px solid var(--brd-s);cursor:pointer;background:transparent;color:var(--ts)}
+.slot-rm:hover{background:var(--bd);color:var(--td);border-color:var(--brd-d)}
+.slot-empty{flex:1;font-size:12px;color:var(--tt)}
+.sal-bar{height:4px;border-radius:2px;background:var(--bsu)}
+.sal-bar.warn{background:var(--bw)}.sal-bar.over{background:var(--bd)}
+.sk-card{background:var(--bp);border:0.5px solid var(--brd-t);border-radius:var(--rl);padding:12px 14px;margin-bottom:8px}
+.sk-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.chips{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px}
+.chip{background:var(--bs);border-radius:var(--r);padding:3px 8px;font-size:11px;color:var(--ts);cursor:pointer;transition:all .1s}
+.chip:hover{background:var(--bi);color:var(--ti)}
+.chip.off-slate{opacity:.4;cursor:default;text-decoration:line-through}
+.chip.selected{background:var(--bsu);color:var(--tsu);border:0.5px solid var(--brd-su)}
+#port-ban-teams .chip.selected{background:var(--bd);color:var(--td);border:0.5px solid var(--brd-d)}
+.sk-meta{display:flex;gap:14px;font-size:11px;flex-wrap:wrap;align-items:center}
+.ib{border-radius:var(--rl);padding:10px 14px;font-size:12px;line-height:1.6;margin-bottom:12px}
+.ib.blue{background:var(--bi);border:0.5px solid var(--brd-i);color:var(--ti)}
+.ib.warn{background:var(--bw);border:0.5px solid var(--brd-w);color:var(--tw)}
+.ib.success{background:var(--bsu);border:0.5px solid var(--brd-su);color:var(--tsu)}
+.empty{text-align:center;padding:40px 20px;color:var(--tt);font-size:13px}
+.btn{padding:6px 14px;font-size:12px;border-radius:var(--r);border:0.5px solid var(--brd-s);cursor:pointer;background:transparent;color:var(--ts);transition:all .1s}
+.btn:hover{background:var(--bs);color:var(--tp)}
+.btn-p{padding:7px 16px;font-size:13px;font-weight:500;border-radius:var(--r);border:0.5px solid var(--brd-p);cursor:pointer;background:var(--bp);color:var(--tp)}
+.btn-g{padding:7px 16px;font-size:13px;font-weight:500;border-radius:var(--r);border:0.5px solid var(--brd-su);cursor:pointer;background:var(--bsu);color:var(--tsu)}
+.btn-dk{padding:7px 16px;font-size:13px;font-weight:500;border-radius:var(--r);border:0.5px solid var(--brd-i);cursor:pointer;background:var(--bi);color:var(--ti)}
+.sec-label{font-size:12px;font-weight:500;color:var(--ts);margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em}
+.lp{color:var(--tsu)}.ln{color:var(--td)}.lz{color:var(--ts)}
+.sal-sum{display:flex;align-items:center;justify-content:space-between;padding:9px 12px;background:var(--bs);border-radius:var(--r);margin-bottom:8px;font-size:13px}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.mode-badge{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:500}
+.mode-badge.dk-mode{background:var(--bsu);color:var(--tsu)}
+.mode-badge.roo-mode{background:var(--bi);color:var(--ti)}
+.stack-type-hdr{display:flex;align-items:center;gap:10px;margin:16px 0 10px;padding-bottom:8px;border-bottom:0.5px solid var(--brd-t)}
+.stb{padding:4px 12px;border-radius:20px;font-size:12px;font-weight:500}
+.stb.s3{background:var(--bi);color:var(--ti)}.stb.s5{background:var(--bsu);color:var(--tsu)}
+.config-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:12px}
+.config-item label{display:block;font-size:11px;color:var(--tt);margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em}
+.config-item input,.config-item select{width:100%;padding:6px 10px;font-size:12px;border-radius:var(--r);border:0.5px solid var(--brd-s);background:var(--bp);color:var(--tp)}
+.config-item input[type=range]{padding:4px 0}
+.team-chip{cursor:pointer;transition:all .12s;border:0.5px solid transparent}
+.team-chip.selected{background:var(--bsu);color:var(--tsu);border-color:var(--brd-su);font-weight:500}
+#port-ban-teams .team-chip.selected{background:var(--bd);color:var(--td);border-color:var(--brd-d)}
+@media(max-width:640px){.two-col{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="app">
+
+<div class="hdr">
+  <div class="logo">
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="9" stroke="currentColor" stroke-width="1.5"/><path d="M3.5 13c1.8-3.5 7-7.5 13-5.5" stroke="currentColor" stroke-width="1" opacity=".5"/><circle cx="10" cy="10" r="1.8" fill="currentColor"/></svg>
+    MLB DFS Tool <span class="ver">v2.0</span>
+  </div>
+  <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+    <span id="mode-indicator" style="display:none"></span>
+    <span id="slate-badge" class="pill pg">No files loaded</span>
+  </div>
+</div>
+
+<div class="tab-bar">
+  <div class="tab active" onclick="showTab('upload')">Upload</div>
+  <div class="tab" onclick="showTab('players')">Player Pool</div>
+  <div class="tab" onclick="showTab('stacks')">Stacks</div>
+  <div class="tab" onclick="showTab('vegas')">Vegas & Weather</div>
+  <div class="tab" onclick="showTab('lineup')">Lineup Builder</div>
+  <div class="tab" onclick="showTab('portfolio')">Portfolio</div>
+  <div class="tab" onclick="showTab('simulator')">Simulator</div>
+  <div class="tab" onclick="showTab('backtest')">Backtest</div>
+</div>
+
+<!-- ═══ UPLOAD ═══ -->
+<div id="panel-upload" class="panel active">
+  <div class="ib blue" id="upload-tip">
+    Upload your files below. The tool auto-detects each type by its headers.<br>
+    <strong>Two modes:</strong> <em>DK Salaries + ROO</em> for merged view, or <em>ROO + Stacks</em> for projection-only mode.
+  </div>
+  <div id="upload-warnings" style="display:none"></div>
+  <div class="file-list">
+    <div class="fi" id="fi-dk"><div class="fdot" id="fd-dk"></div><div class="fn" id="fn-dk">DraftKings Salaries (DKSalaries.csv) -- optional</div><div class="fc" id="fc-dk">not loaded</div></div>
+    <div class="fi" id="fi-roo"><div class="fdot" id="fd-roo"></div><div class="fn" id="fn-roo">Player ROO export (MLB_ROO_export.csv)</div><div class="fc" id="fc-roo">not loaded</div></div>
+    <div class="fi" id="fi-s3"><div class="fdot" id="fd-s3"></div><div class="fn" id="fn-s3">3-man stack file</div><div class="fc" id="fc-s3">not loaded</div></div>
+    <div class="fi" id="fi-s5"><div class="fdot" id="fd-s5"></div><div class="fn" id="fn-s5">5-man stack file</div><div class="fc" id="fc-s5">not loaded</div></div>
+    <div class="fi" id="fi-ts"><div class="fdot" id="fd-ts"></div><div class="fn" id="fn-ts">Team Scoring Percentages</div><div class="fc" id="fc-ts">not loaded</div></div>
+    <div class="fi" id="fi-opt"><div class="fdot" id="fd-opt"></div><div class="fn" id="fn-opt">Optimal Lineups (optimizer export)</div><div class="fc" id="fc-opt">not loaded</div></div>
+  </div>
+  <div class="drop" id="dropzone" onclick="document.getElementById('file-input').click()" ondragover="handleDrag(event,true)" ondragleave="handleDrag(event,false)" ondrop="handleDrop(event)">
+    <input type="file" id="file-input" accept=".csv" multiple onchange="handleFiles(this.files)">
+    <div style="width:36px;height:36px;margin:0 auto 10px;opacity:.4;border:2px solid var(--ts);border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:18px">+</div>
+    <div style="font-size:13px;color:var(--ts)"><strong style="color:var(--tp)">Click to select</strong> or drag &amp; drop CSV files</div>
+    <div style="font-size:11px;color:var(--tt);margin-top:4px">Files process locally in your browser (no upload needed)</div>
+  </div>
+  <div id="upload-status" style="display:none;margin-top:8px">
+    <div id="upload-metrics" class="mc-row"></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+      <button class="btn" onclick="showTab('players')">Player Pool</button>
+      <button class="btn" onclick="showTab('stacks')">Stacks</button>
+      <button class="btn" onclick="showTab('vegas')">Vegas & Weather</button>
+      <button class="btn" onclick="showTab('lineup')">Lineup Builder</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ PLAYER POOL ═══ -->
+<div id="panel-players" class="panel">
+  <div id="player-empty" class="empty">Upload your ROO export or DK Salaries CSV to see the player pool.</div>
+  <div id="player-content" style="display:none">
+    <div class="frow">
+      <div class="pbs" id="pos-btns">
+        <button class="pb active" onclick="setPos('ALL',this)">All</button>
+        <button class="pb" onclick="setPos('SP',this)">P</button>
+        <button class="pb" onclick="setPos('C',this)">C</button>
+        <button class="pb" onclick="setPos('1B',this)">1B</button>
+        <button class="pb" onclick="setPos('2B',this)">2B</button>
+        <button class="pb" onclick="setPos('SS',this)">SS</button>
+        <button class="pb" onclick="setPos('3B',this)">3B</button>
+        <button class="pb" onclick="setPos('OF',this)">OF</button>
+      </div>
+      <select id="team-sel" onchange="renderPlayers()"><option value="ALL">All Teams</option></select>
+      <select id="game-sel" onchange="renderPlayers()" style="display:none"><option value="ALL">All Games</option></select>
+      <select id="sort-sel" onchange="renderPlayers()">
+        <option value="median">Median pts</option>
+        <option value="ceiling">Ceiling</option>
+        <option value="floor">Floor</option>
+        <option value="own">Ownership %</option>
+        <option value="salary">Salary</option>
+        <option value="value">Value (pts/$)</option>
+        <option value="lev">Leverage</option>
+        <option value="gppScore">GPP Score</option>
+        <option value="optExp">Optimal Exp%</option>
+        <option value="avgppg">DK Avg PPG</option>
+      </select>
+      <input type="text" id="search-inp" placeholder="Search player..." oninput="debouncedRenderPlayers()" style="width:130px">
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr>
+          <th onclick="setSortCol('name')">Player</th>
+          <th>Pos</th>
+          <th onclick="setSortCol('team')">Team</th>
+          <th onclick="setSortCol('salary')">Salary</th>
+          <th onclick="setSortCol('order')">Bat</th>
+          <th onclick="setSortCol('floor')">Floor</th>
+          <th onclick="setSortCol('median')">Median</th>
+          <th onclick="setSortCol('ceiling')">Ceil</th>
+          <th onclick="setSortCol('own')">Own%</th>
+          <th onclick="setSortCol('lev')">Lev</th>
+          <th>GPP</th>
+          <th onclick="setSortCol('optExp')">Opt%</th>
+          <th onclick="setSortCol('avgppg')">PPG</th>
+          <th>K%</th>
+          <th>Add</th>
+        </tr></thead>
+        <tbody id="player-tbody"></tbody>
+      </table>
+    </div>
+    <div id="player-more" style="display:none;text-align:center;padding:10px">
+      <button class="btn" onclick="showMorePlayers()">Show more players</button>
+    </div>
+    <div id="value-scatter" style="margin-top:12px;min-height:40px"></div>
+  </div>
+  <div style="margin-top:12px;padding:12px 14px;background:var(--bs);border-radius:var(--rl)">
+    <div class="sec-label" style="margin-bottom:8px">Live Data Enrichment</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+      <button class="btn-dk" id="fetch-lineups-btn" onclick="loadConfirmedLineups()">Fetch Confirmed Lineups</button>
+      <button class="btn" id="fetch-statcast-btn" onclick="loadStatcast()">Fetch Statcast</button>
+      <button class="btn" id="fetch-form-btn" onclick="loadRecentForm()">Fetch 14-Day Form</button>
+    </div>
+    <div id="lineups-status"></div>
+    <div id="statcast-status"></div>
+    <div id="form-status"></div>
+    <div id="blend-controls" style="margin-top:8px"></div>
+  </div>
+</div>
+
+<!-- ═══ STACKS ═══ -->
+<div id="panel-stacks" class="panel">
+  <div id="stacks-empty" class="empty">Upload your 3-man and/or 5-man stack CSV files to see stacks.</div>
+  <div id="stacks-content" style="display:none">
+    <div id="stacks-slate-warn" style="display:none"></div>
+    <div class="frow">
+      <select id="stack-team-sel" onchange="renderStacks()"><option value="ALL">All Teams</option></select>
+      <select id="stack-type-sel" onchange="renderStacks()">
+        <option value="ALL">3-man + 5-man</option>
+        <option value="3">3-man only</option>
+        <option value="5">5-man only</option>
+      </select>
+      <select id="stack-sort-sel" onchange="renderStacks()">
+        <option value="proj">Projected pts</option>
+        <option value="salary">Salary (low)</option>
+        <option value="own">Combined own% (low)</option>
+        <option value="optPrimary">Optimal frequency</option>
+      </select>
+    </div>
+    <div id="stacks-container"></div>
+  </div>
+</div>
+
+<!-- ═══ VEGAS & WEATHER ═══ -->
+<div id="panel-vegas" class="panel">
+  <div class="ib blue">
+    Enter Vegas implied team totals to boost/reduce projections. Fetch live weather for outdoor parks.
+    Park factors are loaded automatically.
+  </div>
+  <div class="two-col">
+    <div>
+      <div class="sec-label">Vegas Implied Totals</div>
+      <div style="margin-bottom:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <button class="btn-dk" id="fetch-odds-btn" onclick="fetchOdds()">Fetch Vegas Lines</button>
+        <span id="odds-credits" style="font-size:11px;color:var(--tt);display:none"></span>
+      </div>
+      <div id="vegas-entries"><div class="empty">Load player data first, then switch to this tab.</div></div>
+      <div style="margin-top:10px">
+        <button class="btn-p" id="save-vegas-btn" onclick="saveVegas()">Save Vegas Lines</button>
+      </div>
+    </div>
+    <div>
+      <div class="sec-label">Weather Conditions</div>
+      <div style="margin-bottom:8px">
+        <button class="btn-dk" id="fetch-weather-btn" onclick="fetchWeather()">Fetch Weather</button>
+      </div>
+      <div id="weather-display"><div class="empty" style="padding:16px">Click "Fetch Weather" to load conditions.</div></div>
+      <div class="sec-label" style="margin-top:16px">Park Factors</div>
+      <div id="park-factors-display"></div>
+    </div>
+  </div>
+  <div style="margin-top:20px">
+    <div class="sec-label">Game Environment Rankings</div>
+    <div id="slate-environment"><div class="empty" style="padding:12px">Load player data and Vegas lines to see game environment rankings.</div></div>
+  </div>
+  <div style="margin-top:20px">
+    <div class="sec-label">Team Scoring Percentages</div>
+    <div id="team-scoring-display"><div class="empty" style="padding:16px">Upload a Team Scoring CSV to see team-level metrics.</div></div>
+  </div>
+</div>
+
+<!-- ═══ LINEUP BUILDER ═══ -->
+<div id="panel-lineup" class="panel">
+  <div id="lineup-empty" class="empty">Upload your ROO export or DK Salaries CSV to start building lineups.</div>
+  <div id="lineup-content" style="display:none">
+    <div class="two-col">
+      <div>
+        <div class="sec-label">Current lineup -- DraftKings MLB</div>
+        <div class="sal-sum">
+          <span>Salary: <strong id="sal-used">$0</strong> / $50,000</span>
+          <span id="sal-remain" style="color:var(--tsu)">$50,000 left</span>
+        </div>
+        <div class="sal-sum" style="background:var(--bi);border:0.5px solid var(--brd-i)">
+          <span>Total Median: <strong id="median-total">0.0</strong> pts</span>
+          <span>Total Own%: <strong id="own-avg">0.0</strong>%</span>
+        </div>
+        <div style="margin-bottom:10px"><div style="height:4px;border-radius:2px;background:var(--brd-t);overflow:hidden"><div id="sal-bar" class="sal-bar" style="width:0%;height:4px;transition:width .3s"></div></div></div>
+        <div id="position-scarcity" style="display:none;gap:4px;flex-wrap:wrap;margin-bottom:8px;padding:6px 8px;background:var(--bw);border-radius:var(--r);font-size:11px;color:var(--tw)"></div>
+        <div id="lineup-slots"></div>
+        <div id="lineup-warns" style="display:none;margin-top:8px"></div>
+        <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;align-items:center">
+          <select id="contest-type-sel" style="font-size:12px;padding:5px 8px;border-radius:var(--r);border:0.5px solid var(--brd-s);background:var(--bp);color:var(--tp)">
+            <option value="single">Single Entry</option>
+            <option value="cash">Cash</option>
+            <option value="gpp">GPP</option>
+          </select>
+          <button class="btn-g" onclick="autoFill()">Auto-fill</button>
+          <button class="btn" onclick="clearLineup()">Clear</button>
+          <button class="btn-p" onclick="exportLineup()">Export CSV</button>
+          <button class="btn-dk" id="dk-export-btn" onclick="exportDK()" style="display:none">DK Upload</button>
+        </div>
+        <div style="margin-top:12px;padding-top:12px;border-top:0.5px solid var(--brd-t)">
+          <div class="sec-label">Generate 3 Contest Lineups</div>
+          <button class="btn-g" onclick="generateThreeLineups()" style="width:100%">Generate Cash + Single + GPP</button>
+          <div id="three-lineups-display" style="display:none;margin-top:12px"></div>
+        </div>
+        <div id="export-out" style="display:none"></div>
+      </div>
+      <div>
+        <div class="sec-label">Add players</div>
+        <div class="frow" style="margin-bottom:8px">
+          <div class="pbs" id="lu-pos-btns">
+            <button class="pb active" onclick="setLuPos('ALL',this)">All</button>
+            <button class="pb" onclick="setLuPos('SP',this)">P</button>
+            <button class="pb" onclick="setLuPos('C',this)">C</button>
+            <button class="pb" onclick="setLuPos('1B',this)">1B</button>
+            <button class="pb" onclick="setLuPos('2B',this)">2B</button>
+            <button class="pb" onclick="setLuPos('SS',this)">SS</button>
+            <button class="pb" onclick="setLuPos('3B',this)">3B</button>
+            <button class="pb" onclick="setLuPos('OF',this)">OF</button>
+          </div>
+        </div>
+        <div style="overflow-x:auto;max-height:520px;overflow-y:auto">
+          <table>
+            <thead><tr><th>Player</th><th>Pos</th><th>Team</th><th>Salary</th><th>Med</th><th>Own%</th><th></th></tr></thead>
+            <tbody id="lu-pool-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ PORTFOLIO BUILDER ═══ -->
+<div id="panel-portfolio" class="panel">
+  <div class="ib blue">
+    Generate multiple lineups with exposure limits for multi-entry contests. Lock teams to guarantee stacks, ban teams to exclude them, and set separate exposure caps for pitchers and batters.
+  </div>
+  <div class="config-grid">
+    <div class="config-item">
+      <label>Number of Lineups</label>
+      <input type="number" id="port-num-lineups" value="20" min="1" max="150" oninput="validatePortfolioSettings()">
+    </div>
+    <div class="config-item">
+      <label>Max Batter Exposure %</label>
+      <input type="range" id="port-max-exposure" value="60" min="10" max="100" step="5" oninput="document.getElementById('exp-label').textContent=this.value+'%';validatePortfolioSettings()">
+      <span id="exp-label" style="font-size:11px;color:var(--ts)">60%</span>
+    </div>
+    <div class="config-item">
+      <label>Max Pitcher Exposure %</label>
+      <input type="range" id="port-max-pitcher" value="60" min="10" max="100" step="5" oninput="document.getElementById('pitcher-exp-label').textContent=this.value+'%';validatePortfolioSettings()">
+      <span id="pitcher-exp-label" style="font-size:11px;color:var(--ts)">60%</span>
+    </div>
+    <div class="config-item">
+      <label>Contest Type</label>
+      <select id="port-contest-type">
+        <option value="gpp">GPP</option>
+        <option value="cash">Cash</option>
+        <option value="single">Single Entry</option>
+      </select>
+    </div>
+    <div class="config-item">
+      <label>Contest Size</label>
+      <input type="number" id="port-contest-size" value="1000" min="10" max="500000">
+    </div>
+    <div class="config-item">
+      <label>Max Lineup Overlap <span style="font-weight:400;text-transform:none;letter-spacing:0">(0=off)</span></label>
+      <input type="number" id="port-max-overlap" value="7" min="0" max="10" title="Max players shared between any two lineups. 0 = disabled.">
+    </div>
+  </div>
+
+  <!-- Team Lock / Ban -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+    <div>
+      <div style="font-size:11px;color:var(--tt);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px">Lock Teams <span style="font-size:10px;font-weight:400;text-transform:none;letter-spacing:0">(stacks rotated across lineups)</span></div>
+      <div id="port-lock-teams" style="display:flex;flex-wrap:wrap;gap:4px;min-height:28px;padding:6px 8px;border:0.5px solid var(--brd-s);border-radius:var(--r);background:var(--bp)">
+        <span style="font-size:11px;color:var(--tt)">Load players first</span>
+      </div>
+    </div>
+    <div>
+      <div style="font-size:11px;color:var(--tt);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px">Ban Teams <span style="font-size:10px;font-weight:400;text-transform:none;letter-spacing:0">(fully excluded)</span></div>
+      <div id="port-ban-teams" style="display:flex;flex-wrap:wrap;gap:4px;min-height:28px;padding:6px 8px;border:0.5px solid var(--brd-s);border-radius:var(--r);background:var(--bp)">
+        <span style="font-size:11px;color:var(--tt)">Load players first</span>
+      </div>
+    </div>
+  </div>
+  <div id="port-warnings" style="display:none;margin-bottom:10px"></div>
+
+  <button class="btn-g" id="gen-portfolio-btn" onclick="generatePortfolio()" style="width:100%;margin-bottom:12px">Generate Portfolio</button>
+  <div id="portfolio-results"><div class="empty">Configure settings above and generate a portfolio.</div></div>
+</div>
+
+<!-- ═══ SIMULATOR (Monte Carlo) ═══ -->
+<div id="panel-simulator" class="panel">
+  <div class="ib blue">
+    Run Monte Carlo simulations on your current lineup. Uses correlated player outcomes (Cholesky decomposition) to model realistic scoring distributions.
+  </div>
+  <div class="frow" style="margin-bottom:12px">
+    <div class="config-item">
+      <label>Simulations</label>
+      <select id="sim-count">
+        <option value="5000">5,000 (fast)</option>
+        <option value="10000" selected>10,000 (standard)</option>
+        <option value="25000">25,000 (detailed)</option>
+        <option value="50000">50,000 (high precision)</option>
+      </select>
+    </div>
+    <button class="btn-g" id="run-sim-btn" onclick="runSimulation()" style="align-self:flex-end">Run Simulation</button>
+  </div>
+  <div id="sim-results"><div class="empty">Build a lineup first (Lineup Builder tab), then run a simulation to see score distributions.</div></div>
+</div>
+
+<!-- ═══ BACKTESTING ═══ -->
+<div id="panel-backtest" class="panel">
+  <div class="ib blue">
+    Track your lineup performance over time. Save lineups, load actual scores from MLB Stats API, and use the Model Analysis section to calibrate projection weights.
+  </div>
+  <div id="backtest-summary" class="mc-row"></div>
+
+  <!-- Phase 1: Load Actuals -->
+  <div style="margin-bottom:16px;padding:12px 14px;background:var(--bs);border-radius:var(--rl)">
+    <div class="sec-label" style="margin-bottom:8px">Load Actual Scores from MLB Stats API</div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px">
+      <input type="date" id="actuals-date" style="font-size:12px;padding:5px 8px;border-radius:var(--r);border:0.5px solid var(--brd-s);background:var(--bp);color:var(--tp)">
+      <button class="btn-dk" id="load-actuals-btn" onclick="fetchAndApplyActuals()">Load Actuals</button>
+      <span style="font-size:11px;color:var(--tt)">Fetches real DK scores from MLB boxscores and auto-populates matching saved lineups</span>
+    </div>
+    <div id="actuals-status"></div>
+  </div>
+
+  <!-- Phase 3: Model Analysis -->
+  <div style="margin-bottom:16px;padding:12px 14px;background:var(--bs);border-radius:var(--rl)">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+      <div class="sec-label" style="margin:0">Model Analysis &amp; Calibration</div>
+      <button class="btn" onclick="loadModelAnalysis()">Analyze Projections</button>
+    </div>
+    <div id="model-analysis">
+      <div style="font-size:12px;color:var(--tt)">Click "Analyze Projections" after loading actuals to see bias, rank correlation, and calibration suggestions.</div>
+    </div>
+  </div>
+
+  <div id="backtest-history"></div>
+</div>
+
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="engine.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
