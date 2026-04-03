@@ -534,25 +534,23 @@ function optimalExposureBoost(p, context, mode) {
   }
 }
 
-function scoreCash(p, context = {}) {
+function buildPlayerContext(p, context = {}) {
   const { vegasData, parkFactors, weatherData, stadiums, teamScoring, umpireData, blendWeights, bullpenData, framingMap, sprintSpeedData } = context;
   const isP = rp(p, 'P');
+  const homeTeam = p.game ? p.game.split('@')[1] : p.team;
   const bpAdj = bullpenAdjustment(p, bullpenData);
   const cfAdj = catcherFramingAdjustment(p, framingMap);
   const ssBoost = sprintSpeedBoost(p, sprintSpeedData);
-
-  let vegasAdj = 1.0;
-  if (isP) {
-    vegasAdj = vegasPitcherAdjustment(p, vegasData);
-  } else {
-    vegasAdj = vegasAdjustment(p, vegasData);
-  }
-
-  // Park factor
-  const homeTeam = p.game ? p.game.split('@')[1] : p.team;
+  const vegasAdj = isP ? vegasPitcherAdjustment(p, vegasData) : vegasAdjustment(p, vegasData);
   const pf = parkMultiplier(homeTeam, parkFactors);
+  const tsAdj = teamScoringAdjustment(p, teamScoring);
+  const scW = (blendWeights?.Statcast ?? 100) / 100;
+  const fmW = (blendWeights?.['Form (14d)'] ?? 100) / 100;
+  const scBoost = isP ? (1.0 + (pitcherStuffBoost(p) - 1.0) * scW) : (1.0 + (statcastCeilingBoost(p) - 1.0) * scW);
+  const fmBoost = 1.0 + (formMultiplier(p) - 1.0) * fmW;
+  const umpTend = umpireData?.[homeTeam] || null;
+  const umpBoost = umpireMultiplier(umpTend, isP);
 
-  // Weather (only for outdoor stadiums)
   let wm = { hitting: 1.0, pitching: 1.0 };
   if (weatherData && stadiums && homeTeam) {
     const isDome = stadiums.domes?.includes(homeTeam);
@@ -562,122 +560,67 @@ function scoreCash(p, context = {}) {
     }
   }
 
-  // Team scoring adjustment
-  const tsAdj = teamScoringAdjustment(p, teamScoring);
+  const platoon = p.platoonAdj || 1.0;
+  // Common multiplier chain for batters and pitchers
+  const batterMult = vegasAdj * pf.run * wm.hitting * platoon * tsAdj.batting * scBoost * fmBoost * umpBoost * bpAdj * cfAdj * ssBoost;
+  const pitcherMult = vegasAdj * wm.pitching * tsAdj.pitching * scBoost * fmBoost * umpBoost * bpAdj * cfAdj * ssBoost;
+  const hrMult = pf.hr; // GPP batters use hr park factor instead of run
 
+  return { isP, homeTeam, pf, vegasAdj, wm, tsAdj, scBoost, fmBoost, umpBoost, bpAdj, cfAdj, ssBoost, platoon, batterMult, pitcherMult, hrMult };
+}
+
+function scoreCash(p, context = {}) {
+  const pc = buildPlayerContext(p, context);
   const optBoost = optimalExposureBoost(p, context, 'cash');
-  const scW = (blendWeights?.Statcast ?? 100) / 100;
-  const fmW = (blendWeights?.['Form (14d)'] ?? 100) / 100;
-  const scBoost = isP ? (1.0 + (pitcherStuffBoost(p) - 1.0) * scW) : (1.0 + (statcastCeilingBoost(p) - 1.0) * scW);
-  const fmBoost = 1.0 + (formMultiplier(p) - 1.0) * fmW;
-  const homeTeam2 = p.game ? p.game.split('@')[1] : p.team;
-  const umpTend = umpireData?.[homeTeam2] || null;
-  const umpBoost = umpireMultiplier(umpTend, isP);
 
-  if (isP) {
+  if (pc.isP) {
     const kBonus = (p.kRate || 0) > 25 ? 2.0 : (p.kRate || 0) > 20 ? 1.0 : 0;
     const winProb = p.winProb || 0.5;
     const matchup = getPitcherMatchupScore(p, context);
     return ((p.median || 0) * 2.5 + (p.floor || 0) * 1.5 + matchup * 2 + kBonus + winProb * 3)
-      * vegasAdj * wm.pitching * tsAdj.pitching * optBoost * scBoost * fmBoost * umpBoost * bpAdj * cfAdj * ssBoost;
+      * pc.pitcherMult * optBoost;
   }
 
-  // Batter
   const orderBonus = p.order > 0 && p.order <= 4 ? (5 - p.order) * 1.5 : 0;
   const variance = (p.ceiling || 0) - (p.floor || 0);
-  const platoon = p.platoonAdj || 1.0;
   return ((p.median || 0) * 2.0 + (p.floor || 0) * 1.5 - variance * 0.3 + orderBonus)
-    * vegasAdj * pf.run * wm.hitting * platoon * tsAdj.batting * optBoost * scBoost * fmBoost * umpBoost * bpAdj * cfAdj * ssBoost;
+    * pc.batterMult * optBoost;
 }
 
 function scoreSingle(p, context = {}) {
-  const { vegasData, parkFactors, weatherData, stadiums, teamScoring, umpireData, blendWeights, bullpenData, framingMap, sprintSpeedData } = context;
-  const isP = rp(p, 'P');
-  const bpAdj = bullpenAdjustment(p, bullpenData);
-  const cfAdj = catcherFramingAdjustment(p, framingMap);
-  const ssBoost = sprintSpeedBoost(p, sprintSpeedData);
-
-  let vegasAdj = isP ? vegasPitcherAdjustment(p, vegasData) : vegasAdjustment(p, vegasData);
-  const homeTeam = p.game ? p.game.split('@')[1] : p.team;
-  const pf = parkMultiplier(homeTeam, parkFactors);
-
-  let wm = { hitting: 1.0, pitching: 1.0 };
-  if (weatherData && stadiums && homeTeam) {
-    const isDome = stadiums.domes?.includes(homeTeam);
-    if (!isDome) {
-      const city = stadiums.cities?.[homeTeam];
-      if (city && weatherData[city]) wm = weatherMultiplier(weatherData[city]);
-    }
-  }
-
-  const tsAdj = teamScoringAdjustment(p, teamScoring);
+  const pc = buildPlayerContext(p, context);
+  const optBoost = optimalExposureBoost(p, context, 'single');
   const value = p.salary > 0 ? (p.median || 0) / p.salary * 1000 : 0;
 
-  const optBoost = optimalExposureBoost(p, context, 'single');
-  const scW = (blendWeights?.Statcast ?? 100) / 100;
-  const fmW = (blendWeights?.['Form (14d)'] ?? 100) / 100;
-  const scBoost = isP ? (1.0 + (pitcherStuffBoost(p) - 1.0) * scW) : (1.0 + (statcastCeilingBoost(p) - 1.0) * scW);
-  const fmBoost = 1.0 + (formMultiplier(p) - 1.0) * fmW;
-  const umpTend = umpireData?.[homeTeam] || null;
-  const umpBoost = umpireMultiplier(umpTend, isP);
-
-  if (isP) {
+  if (pc.isP) {
     const kBonus = (p.kRate || 0) > 25 ? 1.5 : (p.kRate || 0) > 20 ? 0.7 : 0;
     const matchup = getPitcherMatchupScore(p, context);
     return ((p.median || 0) * 1.5 + (p.ceiling || 0) * 0.8 + value * 0.3 + matchup + kBonus)
-      * vegasAdj * wm.pitching * tsAdj.pitching * optBoost * scBoost * fmBoost * umpBoost * bpAdj * cfAdj * ssBoost;
+      * pc.pitcherMult * optBoost;
   }
 
   const orderBonus = p.order > 0 && p.order <= 5 ? (6 - p.order) * 0.8 : 0;
-  const platoon = p.platoonAdj || 1.0;
   return ((p.median || 0) * 1.2 + (p.ceiling || 0) * 0.6 + value * 0.4 + orderBonus)
-    * vegasAdj * pf.run * wm.hitting * platoon * tsAdj.batting * optBoost * scBoost * fmBoost * umpBoost * bpAdj * cfAdj * ssBoost;
+    * pc.batterMult * optBoost;
 }
 
 function scoreGpp(p, context = {}) {
-  const { vegasData, parkFactors, weatherData, stadiums, teamScoring, contestSize = 1000, umpireData, blendWeights, bullpenData, framingMap, sprintSpeedData } = context;
-  const isP = rp(p, 'P');
-  const bpAdj = bullpenAdjustment(p, bullpenData);
-  const cfAdj = catcherFramingAdjustment(p, framingMap);
-  const ssBoost = sprintSpeedBoost(p, sprintSpeedData);
-
-  let vegasAdj = isP ? vegasPitcherAdjustment(p, vegasData) : vegasAdjustment(p, vegasData);
-  const homeTeam = p.game ? p.game.split('@')[1] : p.team;
-  const pf = parkMultiplier(homeTeam, parkFactors);
-
-  let wm = { hitting: 1.0, pitching: 1.0 };
-  if (weatherData && stadiums && homeTeam) {
-    const isDome = stadiums.domes?.includes(homeTeam);
-    if (!isDome) {
-      const city = stadiums.cities?.[homeTeam];
-      if (city && weatherData[city]) wm = weatherMultiplier(weatherData[city]);
-    }
-  }
-
-  const tsAdj = teamScoringAdjustment(p, teamScoring);
-
+  const { contestSize = 1000 } = context;
+  const pc = buildPlayerContext(p, context);
   const optBoost = optimalExposureBoost(p, context, 'gpp');
-  const scW = (blendWeights?.Statcast ?? 100) / 100;
-  const fmW = (blendWeights?.['Form (14d)'] ?? 100) / 100;
-  const scBoost = isP ? (1.0 + (pitcherStuffBoost(p) - 1.0) * scW) : (1.0 + (statcastCeilingBoost(p) - 1.0) * scW);
-  const fmBoost = 1.0 + (formMultiplier(p) - 1.0) * fmW;
-  const umpTend = umpireData?.[homeTeam] || null;
-  const umpBoost = umpireMultiplier(umpTend, isP);
 
-  if (isP) {
+  if (pc.isP) {
     const kBonus = (p.kRate || 0) > 25 ? 2.0 : (p.kRate || 0) > 20 ? 1.0 : 0;
     const winProb = p.winProb || 0.5;
     const matchup = getPitcherMatchupScore(p, context);
     const ownPenalty = (p.own || 0) * 0.1 * (Math.log10(Math.max(contestSize, 10)) / 3);
     return ((p.ceiling || 0) * 1.2 + (p.median || 0) * 0.5 + matchup - ownPenalty + kBonus + winProb * 2)
-      * vegasAdj * wm.pitching * tsAdj.pitching * optBoost * scBoost * fmBoost * umpBoost * bpAdj * cfAdj * ssBoost;
+      * pc.pitcherMult * optBoost;
   }
 
-  // GPP batter scoring: ceiling-weighted with ownership leverage
   const gppScore = calcGppScore(p, contestSize);
   const orderBonus = p.order > 0 && p.order <= 5 ? (6 - p.order) * 0.5 : 0;
-  const platoon = p.platoonAdj || 1.0;
-  return (gppScore + orderBonus) * pf.hr * wm.hitting * platoon * tsAdj.batting * optBoost * scBoost * fmBoost * umpBoost * bpAdj * cfAdj * ssBoost;
+  return (gppScore + orderBonus) * pc.hrMult * pc.batterMult / pc.pf.run * optBoost;
 }
 
 function getPitcherMatchupScore(pitcher, context) {
@@ -697,6 +640,22 @@ function getPitcherMatchupScore(pitcher, context) {
   if (avgMedian > 9) return -2;                       // Terrible matchup
   if (avgMedian > 8) return -1;                       // Bad matchup
   return 0;
+}
+
+// ── Placement Validation ──────────────────────────────────────────────────
+function validatePlacement(candidate, others, allowBvP, maxBattersPerTeam) {
+  if (!allowBvP) {
+    if (rp(candidate, 'P')) {
+      if (candidate.opp && others.some(p => !rp(p, 'P') && p.team === candidate.opp)) return false;
+    } else {
+      if (others.some(p => rp(p, 'P') && p.opp === candidate.team)) return false;
+    }
+  }
+  if (!rp(candidate, 'P')) {
+    const teamCount = others.filter(p => !rp(p, 'P') && p.team === candidate.team).length;
+    if (teamCount >= maxBattersPerTeam) return false;
+  }
+  return true;
 }
 
 // ── Enhanced Optimizer ──────────────────────────────────────────────────────
@@ -790,21 +749,12 @@ function optimizeLineup(pool, scoreFn, opts = {}) {
       const budgetForThis = SALARY_CAP - salaryUsed - reserveForRemaining;
 
       // Dynamic BvP and team-stack constraints based on already-placed players
-      const placedPitchers = lu.filter(p => p && rp(p, 'P'));
-      const placedBatters = lu.filter(p => p && !rp(p, 'P'));
-      const bvpBlockedBatterTeams = allowBvP ? null : new Set(placedPitchers.map(p => p.opp).filter(Boolean));
-      const bvpBlockedPitcherOpps  = allowBvP ? null : new Set(placedBatters.map(p => p.team));
-      const teamBatterCounts = {};
-      placedBatters.forEach(p => { teamBatterCounts[p.team] = (teamBatterCounts[p.team] || 0) + 1; });
+      const others = lu.filter(Boolean);
 
       const available = cPool.filter(p => {
         if (usedNames.has(p.name)) return false;
         if (p.salary > budgetForThis) return false;
-        if (!allowBvP) {
-          if (rp(p, 'P') && p.opp && bvpBlockedPitcherOpps.has(p.opp)) return false;
-          if (!rp(p, 'P') && bvpBlockedBatterTeams.has(p.team)) return false;
-        }
-        if (!rp(p, 'P') && (teamBatterCounts[p.team] || 0) >= maxBattersPerTeam) return false;
+        if (!validatePlacement(p, others, allowBvP, maxBattersPerTeam)) return false;
         return true;
       });
       if (!available.length) { valid = false; break; }
@@ -866,17 +816,7 @@ function greedyFill(pool, scoreFn, excludeNames = new Set(), requiredSlots = new
       const salSoFar = lu.reduce((s, lp) => s + (lp ? lp.salary : 0), 0);
       const reserveRemaining = realisticMin.reduce((s, m, j) => j > i && !lu[j] ? s + m : s, 0);
       if (salSoFar + p.salary > SALARY_CAP - reserveRemaining) continue;
-      // BvP and team-stack constraints
-      if (!allowBvP) {
-        const pitchers = lu.filter(lp => lp && rp(lp, 'P'));
-        const batters  = lu.filter(lp => lp && !rp(lp, 'P'));
-        if (rp(p, 'P') && p.opp && batters.some(b => b.team === p.opp)) continue;
-        if (!rp(p, 'P') && pitchers.some(pt => pt.opp === p.team)) continue;
-      }
-      if (!rp(p, 'P')) {
-        const teamCount = lu.filter(lp => lp && !rp(lp, 'P') && lp.team === p.team).length;
-        if (teamCount >= maxBattersPerTeam) continue;
-      }
+      if (!validatePlacement(p, lu.filter(Boolean), allowBvP, maxBattersPerTeam)) continue;
       lu[i] = p;
       break;
     }
@@ -901,8 +841,7 @@ function upgradeSalary(lu, pool, scoreFn, excludeNames, allowBvP = false, maxBat
       const cur = lu[i];
       if (!cur) continue;
       const curScore = scoreFn(cur);
-      const otherBatters  = lu.filter((p, j) => p && j !== i && !rp(p, 'P'));
-      const otherPitchers = lu.filter((p, j) => p && j !== i && rp(p, 'P'));
+      const others = lu.filter((p, j) => p && j !== i);
       const upgrade = pool.filter(p => {
         if (excludeNames.has(p.name)) return false;
         if (luNames.has(p.name)) return false;
@@ -910,14 +849,7 @@ function upgradeSalary(lu, pool, scoreFn, excludeNames, allowBvP = false, maxBat
         if (p.salary > cur.salary + headroom) return false;
         if (!DK_SLOTS[i].eligible(p)) return false;
         if (scoreFn(p) < curScore * 0.95) return false;
-        if (!allowBvP) {
-          if (rp(p, 'P') && p.opp && otherBatters.some(b => b.team === p.opp)) return false;
-          if (!rp(p, 'P') && otherPitchers.some(pt => pt.opp === p.team)) return false;
-        }
-        if (!rp(p, 'P')) {
-          const teamCount = otherBatters.filter(b => b.team === p.team).length;
-          if (teamCount >= maxBattersPerTeam) return false;
-        }
+        if (!validatePlacement(p, others, allowBvP, maxBattersPerTeam)) return false;
         return true;
       }).sort((a, b) => b.salary - a.salary)[0];
       if (upgrade) {

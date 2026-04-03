@@ -6,6 +6,12 @@ const fs = require('fs');
 const cors = require('cors');
 const fetch = require('node-fetch');
 
+// Centralized fetch wrapper — consistent User-Agent, default timeout, error format
+function apiFetch(url, opts = {}) {
+  const { timeout = 12000, headers = {}, ...rest } = opts;
+  return fetch(url, { ...rest, headers: { 'User-Agent': 'MLB-DFS-Tool/2.0', ...headers }, timeout });
+}
+
 const app = express();
 const PORT = 3000;
 
@@ -104,10 +110,7 @@ app.get('/api/files/:filename/content', (req, res) => {
 app.get('/api/weather/:city', async (req, res) => {
   try {
     const city = encodeURIComponent(req.params.city);
-    const response = await fetch(`https://wttr.in/${city}?format=j1`, {
-      headers: { 'User-Agent': 'MLB-DFS-Tool' },
-      timeout: 8000
-    });
+    const response = await apiFetch(`https://wttr.in/${city}?format=j1`, { timeout: 8000 });
     if (!response.ok) throw new Error(`Weather API returned ${response.status}`);
     const contentType = response.headers.get('content-type') || '';
     if (!contentType.includes('application/json') && !contentType.includes('text/json')) {
@@ -148,10 +151,7 @@ app.post('/api/weather/batch', async (req, res) => {
   const uniqueCities = [...new Set(cities)];
   await Promise.all(uniqueCities.map(async (city) => {
     try {
-      const response = await fetch(`https://wttr.in/${encodeURIComponent(city)}?format=j1`, {
-        headers: { 'User-Agent': 'MLB-DFS-Tool' },
-        timeout: 8000
-      });
+      const response = await apiFetch(`https://wttr.in/${encodeURIComponent(city)}?format=j1`, { timeout: 8000 });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const contentType = response.headers.get('content-type') || '';
       if (!contentType.includes('application/json') && !contentType.includes('text/json')) {
@@ -237,40 +237,9 @@ app.post('/api/vegas', (req, res) => {
   }
 });
 
-// ── Park Factors (static data, loaded once) ─────────────────────────────────
+// ── Park Factors (static data, loaded once from JSON) ───────────────────────
 
-const PARK_FACTORS = {
-  COL: { overall: 1.38, hr: 1.40, run: 1.27 },
-  CIN: { overall: 1.08, hr: 1.22, run: 1.06 },
-  TEX: { overall: 1.07, hr: 1.15, run: 1.05 },
-  BOS: { overall: 1.06, hr: 0.96, run: 1.08 },
-  MIL: { overall: 1.05, hr: 1.18, run: 1.04 },
-  PHI: { overall: 1.04, hr: 1.13, run: 1.03 },
-  ATL: { overall: 1.03, hr: 1.10, run: 1.02 },
-  CHC: { overall: 1.02, hr: 1.08, run: 1.02 },
-  NYY: { overall: 1.02, hr: 1.15, run: 1.01 },
-  BAL: { overall: 1.01, hr: 1.09, run: 1.00 },
-  MIN: { overall: 1.01, hr: 1.06, run: 1.00 },
-  ARI: { overall: 1.00, hr: 0.98, run: 1.01 },
-  TOR: { overall: 1.00, hr: 1.05, run: 0.99 },
-  LAA: { overall: 0.99, hr: 0.95, run: 0.99 },
-  WSH: { overall: 0.99, hr: 1.01, run: 0.98 },
-  DET: { overall: 0.98, hr: 0.92, run: 0.98 },
-  CLE: { overall: 0.98, hr: 0.90, run: 0.98 },
-  HOU: { overall: 0.97, hr: 0.98, run: 0.97 },
-  CWS: { overall: 0.97, hr: 1.04, run: 0.96 },
-  KC:  { overall: 0.97, hr: 0.88, run: 0.97 },
-  PIT: { overall: 0.96, hr: 0.85, run: 0.97 },
-  SEA: { overall: 0.96, hr: 0.93, run: 0.96 },
-  SD:  { overall: 0.95, hr: 0.86, run: 0.96 },
-  LAD: { overall: 0.95, hr: 0.95, run: 0.95 },
-  STL: { overall: 0.95, hr: 0.90, run: 0.96 },
-  NYM: { overall: 0.94, hr: 0.88, run: 0.95 },
-  SF:  { overall: 0.93, hr: 0.82, run: 0.94 },
-  TB:  { overall: 0.93, hr: 0.88, run: 0.94 },
-  MIA: { overall: 0.92, hr: 0.80, run: 0.93 },
-  OAK: { overall: 0.91, hr: 0.83, run: 0.92 }
-};
+const PARK_FACTORS = JSON.parse(fs.readFileSync(path.join(dataDir, 'park_factors.json'), 'utf8'));
 
 app.get('/api/park-factors', (req, res) => {
   res.json(PARK_FACTORS);
@@ -495,9 +464,7 @@ function calcPitcherDK(s, isWin, gameInnings) {
 }
 
 async function fetchGameActuals(gamePk) {
-  const boxRes = await fetch(`${MLB_API_BASE}/game/${gamePk}/boxscore`, {
-    headers: { 'User-Agent': 'MLB-DFS-Tool' }, timeout: 12000
-  });
+  const boxRes = await apiFetch(`${MLB_API_BASE}/game/${gamePk}/boxscore`);
   if (!boxRes.ok) return null;
   const boxscore = await boxRes.json();
 
@@ -551,9 +518,7 @@ app.get('/api/actuals/:date', async (req, res) => {
     const date = req.params.date;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: 'Date must be YYYY-MM-DD' });
 
-    const schedRes = await fetch(`${MLB_API_BASE}/schedule?sportId=1&date=${date}&gameType=R`, {
-      headers: { 'User-Agent': 'MLB-DFS-Tool' }, timeout: 15000
-    });
+    const schedRes = await apiFetch(`${MLB_API_BASE}/schedule?sportId=1&date=${date}&gameType=R`, { timeout: 15000 });
     if (!schedRes.ok) throw new Error(`MLB API returned ${schedRes.status}`);
     const schedule = await schedRes.json();
     const games = (schedule.dates?.[0]?.games || []).filter(g => g.status?.abstractGameState === 'Final');
@@ -583,9 +548,7 @@ app.post('/api/actuals/apply', async (req, res) => {
     const { date } = req.body;
     if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: 'date (YYYY-MM-DD) required' });
 
-    const schedRes = await fetch(`${MLB_API_BASE}/schedule?sportId=1&date=${date}&gameType=R`, {
-      headers: { 'User-Agent': 'MLB-DFS-Tool' }, timeout: 15000
-    });
+    const schedRes = await apiFetch(`${MLB_API_BASE}/schedule?sportId=1&date=${date}&gameType=R`, { timeout: 15000 });
     if (!schedRes.ok) throw new Error(`MLB API returned ${schedRes.status}`);
     const schedule = await schedRes.json();
     const games = (schedule.dates?.[0]?.games || []).filter(g => g.status?.abstractGameState === 'Final');
@@ -787,7 +750,7 @@ app.get('/api/odds/fetch', async (req, res) => {
   }
   try {
     const url = `https://api.the-odds-api.com/v4/sports/baseball_mlb/odds?regions=us&markets=h2h,totals&oddsFormat=american&apiKey=${ODDS_API_KEY}`;
-    const response = await fetch(url, { timeout: 12000 });
+    const response = await apiFetch(url);
     if (!response.ok) {
       const errBody = await response.text();
       throw new Error(`Odds API returned ${response.status}: ${errBody}`);
@@ -949,9 +912,7 @@ app.get('/api/lineups/:date', async (req, res) => {
     const date = req.params.date;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: 'Date must be YYYY-MM-DD' });
 
-    const schedRes = await fetch(`${MLB_API_BASE}/schedule?sportId=1&date=${date}&gameType=R&hydrate=probablePitcher(note)`, {
-      headers: { 'User-Agent': 'MLB-DFS-Tool' }, timeout: 12000
-    });
+    const schedRes = await apiFetch(`${MLB_API_BASE}/schedule?sportId=1&date=${date}&gameType=R&hydrate=probablePitcher(note)`);
     if (!schedRes.ok) throw new Error(`MLB API ${schedRes.status}`);
     const schedule = await schedRes.json();
     const games = schedule.dates?.[0]?.games || [];
@@ -969,14 +930,10 @@ app.get('/api/lineups/:date', async (req, res) => {
 
       if (status === 'Live' || status === 'Final' || status === 'Preview') {
         try {
-          const liveRes = await fetch(`${MLB_API_BASE}/game/${gamePk}/linescore`, {
-            headers: { 'User-Agent': 'MLB-DFS-Tool' }, timeout: 8000
-          });
+          const liveRes = await apiFetch(`${MLB_API_BASE}/game/${gamePk}/linescore`, { timeout: 8000 });
           if (liveRes.ok) {
             if (status !== 'Preview') {
-              const boxRes = await fetch(`${MLB_API_BASE}/game/${gamePk}/boxscore`, {
-                headers: { 'User-Agent': 'MLB-DFS-Tool' }, timeout: 10000
-              });
+              const boxRes = await apiFetch(`${MLB_API_BASE}/game/${gamePk}/boxscore`, { timeout: 10000 });
               if (boxRes.ok) {
                 const box = await boxRes.json();
                 const extractOrder = (teamData) => {
@@ -1015,10 +972,7 @@ const statcastCacheFile = path.join(dataDir, 'statcast_cache.json');
 async function fetchStatcastLeaderboard() {
   const year = new Date().getFullYear();
   const url = `https://baseballsavant.mlb.com/leaderboard/custom?year=${year}&type=batter&filter=&sort=4&sortDir=desc&min=q&selections=xba,xslg,xwoba,exit_velocity_avg,launch_angle_avg,barrel_batted_rate,hard_hit_percent&chart=false&x=xba&y=xba&r=no&chartType=beeswarm&csv=true`;
-  const resp = await fetch(url, {
-    headers: { 'User-Agent': 'MLB-DFS-Tool/2.0', 'Accept': 'text/csv' },
-    timeout: 20000
-  });
+  const resp = await apiFetch(url, { timeout: 20000, headers: { Accept: 'text/csv' } });
   if (!resp.ok) throw new Error(`Savant returned ${resp.status}`);
   const text = await resp.text();
   const lines = text.trim().split('\n');
@@ -1074,10 +1028,7 @@ const pitcherStatcastCacheFile = path.join(dataDir, 'pitcher_statcast_cache.json
 async function fetchPitcherStatcastLeaderboard() {
   const year = new Date().getFullYear();
   const url = `https://baseballsavant.mlb.com/leaderboard/custom?year=${year}&type=pitcher&filter=&sort=4&sortDir=desc&min=q&selections=p_k_percent,p_bb_percent,whiff_percent,fastball_avg_speed,hard_hit_percent,xera,xba&chart=false&x=xba&y=xba&r=no&chartType=beeswarm&csv=true`;
-  const resp = await fetch(url, {
-    headers: { 'User-Agent': 'MLB-DFS-Tool/2.0', 'Accept': 'text/csv' },
-    timeout: 20000
-  });
+  const resp = await apiFetch(url, { timeout: 20000, headers: { Accept: 'text/csv' } });
   if (!resp.ok) throw new Error(`Savant returned ${resp.status}`);
   const text = await resp.text();
   const lines = text.trim().split('\n');
@@ -1134,7 +1085,7 @@ const bullpenCacheFile = path.join(dataDir, 'bullpen_cache.json');
 async function fetchBullpenStats() {
   const year = new Date().getFullYear();
   const url = `https://statsapi.mlb.com/api/v1/teams/stats?stats=season&group=pitching&season=${year}&sportIds=1&sitCodes=rp&fields=stats,splits,stat,era,whip,strikeoutsPer9Inn,walksPer9Inn,homeRunsPer9Inn,inningsPitched,saves,blownSaves,team,name,id`;
-  const resp = await fetch(url, { timeout: 15000 });
+  const resp = await apiFetch(url, { timeout: 15000 });
   if (!resp.ok) throw new Error(`MLB API returned ${resp.status}`);
   const json = await resp.json();
   const splits = json.stats?.[0]?.splits || [];
@@ -1329,9 +1280,9 @@ app.get('/api/form', async (req, res) => {
       }
     }
 
-    const schedRes = await fetch(
+    const schedRes = await apiFetch(
       `${MLB_API_BASE}/schedule?sportId=1&startDate=${fmt(startDate)}&endDate=${fmt(endDate)}&gameType=R`,
-      { headers: { 'User-Agent': 'MLB-DFS-Tool' }, timeout: 15000 }
+      { timeout: 15000 }
     );
     if (!schedRes.ok) throw new Error(`MLB schedule API ${schedRes.status}`);
     const schedule = await schedRes.json();
@@ -1347,7 +1298,7 @@ app.get('/api/form', async (req, res) => {
     for (const batch of chunk(allGames.slice(0, 60), 8)) {
       await Promise.all(batch.map(async (gamePk) => {
         try {
-          const br = await fetch(`${MLB_API_BASE}/game/${gamePk}/boxscore`, { headers: { 'User-Agent': 'MLB-DFS-Tool' }, timeout: 10000 });
+          const br = await apiFetch(`${MLB_API_BASE}/game/${gamePk}/boxscore`, { timeout: 10000 });
           if (!br.ok) return;
           const box = await br.json();
           const decisions = box.decisions || {};
@@ -1441,9 +1392,9 @@ app.get('/api/injuries', async (req, res) => {
     const start = new Date(end.getTime() - 48 * 60 * 60 * 1000);
     const fmt = d => d.toISOString().substring(0, 10);
 
-    const txRes = await fetch(
+    const txRes = await apiFetch(
       `${MLB_API_BASE}/transactions?startDate=${fmt(start)}&endDate=${fmt(end)}&sportId=1`,
-      { headers: { 'User-Agent': 'MLB-DFS-Tool/2.0', 'Accept': 'application/json' }, timeout: 12000 }
+      { headers: { Accept: 'application/json' } }
     );
     if (!txRes.ok) throw new Error(`MLB API returned ${txRes.status}`);
     const contentType = txRes.headers.get('content-type') || '';
@@ -1614,9 +1565,8 @@ app.get('/api/umpires/:date', async (req, res) => {
     const date = req.params.date;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: 'Date must be YYYY-MM-DD' });
 
-    const schedRes = await fetch(
-      `${MLB_API_BASE}/schedule?sportId=1&date=${date}&gameType=R&hydrate=officials`,
-      { headers: { 'User-Agent': 'MLB-DFS-Tool' }, timeout: 12000 }
+    const schedRes = await apiFetch(
+      `${MLB_API_BASE}/schedule?sportId=1&date=${date}&gameType=R&hydrate=officials`
     );
     if (!schedRes.ok) throw new Error(`MLB API ${schedRes.status}`);
     const schedule = await schedRes.json();
@@ -1668,9 +1618,9 @@ app.get('/api/dvp', async (req, res) => {
       }
     }
 
-    const schedRes = await fetch(
+    const schedRes = await apiFetch(
       `${MLB_API_BASE}/schedule?sportId=1&startDate=${fmt(startDate)}&endDate=${fmt(endDate)}&gameType=R`,
-      { headers: { 'User-Agent': 'MLB-DFS-Tool' }, timeout: 15000 }
+      { timeout: 15000 }
     );
     if (!schedRes.ok) throw new Error(`MLB schedule API ${schedRes.status}`);
     const schedule = await schedRes.json();
@@ -1687,9 +1637,7 @@ app.get('/api/dvp', async (req, res) => {
     for (const batch of chunk(allGames.slice(0, 60), 8)) {
       await Promise.all(batch.map(async (gamePk) => {
         try {
-          const br = await fetch(`${MLB_API_BASE}/game/${gamePk}/boxscore`, {
-            headers: { 'User-Agent': 'MLB-DFS-Tool' }, timeout: 10000
-          });
+          const br = await apiFetch(`${MLB_API_BASE}/game/${gamePk}/boxscore`, { timeout: 10000 });
           if (!br.ok) return;
           const box = await br.json();
           const decisions = box.decisions || {};
