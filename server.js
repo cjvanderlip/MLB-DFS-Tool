@@ -9,7 +9,7 @@ const app = express();
 const PORT = 3000;
 
 // ── The Odds API Config ─────────────────────────────────────────────────────
-const ODDS_API_KEY = process.env.ODDS_API_KEY || 'a31ed2d99da8a1068c99c2aefb09a2ea';
+const ODDS_API_KEY = process.env.ODDS_API_KEY;
 
 // Full team name → abbreviation mapping for The Odds API
 const TEAM_NAME_TO_ABBR = {
@@ -108,7 +108,12 @@ app.get('/api/weather/:city', async (req, res) => {
       timeout: 8000
     });
     if (!response.ok) throw new Error(`Weather API returned ${response.status}`);
+    const contentType = response.headers.get('content-type') || '';
+    if (!contentType.includes('application/json') && !contentType.includes('text/json')) {
+      throw new Error('Weather API returned non-JSON response');
+    }
     const data = await response.json();
+    if (!data.current_condition) throw new Error('Unexpected response format from weather API');
     const current = data.current_condition?.[0] || {};
     const hourly = data.weather?.[0]?.hourly || [];
     // Find game-time weather (afternoon ~1-4pm)
@@ -146,8 +151,13 @@ app.post('/api/weather/batch', async (req, res) => {
         headers: { 'User-Agent': 'MLB-DFS-Tool' },
         timeout: 8000
       });
-      if (!response.ok) throw new Error(`${response.status}`);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const contentType = response.headers.get('content-type') || '';
+      if (!contentType.includes('application/json') && !contentType.includes('text/json')) {
+        throw new Error('non-JSON response from weather API');
+      }
       const data = await response.json();
+      if (!data.current_condition) throw new Error('unexpected weather API format');
       const current = data.current_condition?.[0] || {};
       const hourly = data.weather?.[0]?.hourly || [];
       const gameHour = hourly.find(h => parseInt(h.time) >= 1200 && parseInt(h.time) <= 1800) || hourly[2] || current;
@@ -169,6 +179,7 @@ app.post('/api/weather/batch', async (req, res) => {
 // ── Vegas / Game Data Storage ───────────────────────────────────────────────
 
 const vegasFile = path.join(dataDir, 'vegas.json');
+let vegasWriteLock = false; // simple in-process mutex — prevents concurrent overwrites
 
 app.get('/api/vegas', (req, res) => {
   try {
@@ -184,8 +195,13 @@ app.get('/api/vegas', (req, res) => {
 });
 
 app.post('/api/vegas', (req, res) => {
+  // Reject concurrent writes — the second caller retries from the client
+  if (vegasWriteLock) {
+    return res.status(409).json({ error: 'Vegas data is being updated — please retry in a moment.' });
+  }
+  vegasWriteLock = true;
   try {
-    // Preserve open lines from any existing saved data
+    // Re-read the file inside the lock so we always merge against the latest state
     let existing = {};
     if (fs.existsSync(vegasFile)) {
       try { existing = JSON.parse(fs.readFileSync(vegasFile, 'utf8')); } catch (e) {}
@@ -203,7 +219,7 @@ app.post('/api/vegas', (req, res) => {
         if (prev.openTotal == null) {
           // First time saving — set open line to current
           merged[team].openTotal = curr.impliedTotal;
-          merged[team].openAt = prev.openAt || new Date().toISOString();
+          merged[team].openAt = new Date().toISOString();
         } else {
           // Preserve the original open line
           merged[team].openTotal = prev.openTotal;
@@ -215,6 +231,8 @@ app.post('/api/vegas', (req, res) => {
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ error: 'Failed to save Vegas data' });
+  } finally {
+    vegasWriteLock = false;
   }
 });
 
@@ -702,6 +720,9 @@ app.get('/api/stadiums', (req, res) => {
 // ── Odds API — Fetch & Calculate Implied Team Totals ────────────────────────
 
 app.get('/api/odds/fetch', async (req, res) => {
+  if (!ODDS_API_KEY) {
+    return res.status(503).json({ error: 'Odds API key not configured. Set the ODDS_API_KEY environment variable.' });
+  }
   try {
     const url = `https://api.the-odds-api.com/v4/sports/baseball_mlb/odds?regions=us&markets=h2h,totals&oddsFormat=american&apiKey=${ODDS_API_KEY}`;
     const response = await fetch(url, { timeout: 12000 });
@@ -984,6 +1005,249 @@ app.get('/api/statcast', async (req, res) => {
   }
 });
 
+// ── Pitcher Statcast Data (Baseball Savant) ────────────────────────────────
+
+const pitcherStatcastCacheFile = path.join(dataDir, 'pitcher_statcast_cache.json');
+
+async function fetchPitcherStatcastLeaderboard() {
+  const year = new Date().getFullYear();
+  const url = `https://baseballsavant.mlb.com/leaderboard/custom?year=${year}&type=pitcher&filter=&sort=4&sortDir=desc&min=q&selections=p_k_percent,p_bb_percent,whiff_percent,fastball_avg_speed,hard_hit_percent,xera,xba&chart=false&x=xba&y=xba&r=no&chartType=beeswarm&csv=true`;
+  const resp = await fetch(url, {
+    headers: { 'User-Agent': 'MLB-DFS-Tool/2.0', 'Accept': 'text/csv' },
+    timeout: 20000
+  });
+  if (!resp.ok) throw new Error(`Savant returned ${resp.status}`);
+  const text = await resp.text();
+  const lines = text.trim().split('\n');
+  if (lines.length < 2) throw new Error('Empty pitcher Statcast response');
+  const headers = lines[0].split(',').map(h => h.replace(/"/g, '').trim().toLowerCase());
+  const data = {};
+  for (let i = 1; i < lines.length; i++) {
+    const vals = lines[i].split(',').map(v => v.replace(/"/g, '').trim());
+    const row = {};
+    headers.forEach((h, j) => row[h] = vals[j] || '');
+    const name = row['last_name, first_name'] || row['player_name'] || '';
+    if (!name) continue;
+    const parts = name.split(',');
+    const normalized = parts.length === 2 ? (parts[1].trim() + ' ' + parts[0].trim()) : name;
+    data[normalized.toLowerCase()] = {
+      kPercent: parseFloat(row['p_k_percent'] || 0) || 0,
+      bbPercent: parseFloat(row['p_bb_percent'] || 0) || 0,
+      whiffRate: parseFloat(row['whiff_percent'] || 0) || 0,
+      fastballVelo: parseFloat(row['fastball_avg_speed'] || 0) || 0,
+      hardHitRate: parseFloat(row['hard_hit_percent'] || 0) || 0,
+      xERA: parseFloat(row['xera'] || 0) || 0,
+      xBA: parseFloat(row['xba'] || 0) || 0,
+    };
+  }
+  return data;
+}
+
+app.get('/api/statcast/pitchers', async (req, res) => {
+  try {
+    if (fs.existsSync(pitcherStatcastCacheFile)) {
+      const cached = JSON.parse(fs.readFileSync(pitcherStatcastCacheFile, 'utf8'));
+      const age = Date.now() - new Date(cached.fetchedAt).getTime();
+      if (age < 12 * 60 * 60 * 1000) {
+        return res.json({ success: true, data: cached.data, cached: true, fetchedAt: cached.fetchedAt });
+      }
+    }
+    const data = await fetchPitcherStatcastLeaderboard();
+    const payload = { data, fetchedAt: new Date().toISOString(), count: Object.keys(data).length };
+    fs.writeFileSync(pitcherStatcastCacheFile, JSON.stringify(payload, null, 2));
+    res.json({ success: true, ...payload });
+  } catch (err) {
+    if (fs.existsSync(pitcherStatcastCacheFile)) {
+      const cached = JSON.parse(fs.readFileSync(pitcherStatcastCacheFile, 'utf8'));
+      return res.json({ success: true, data: cached.data, cached: true, stale: true, error: err.message });
+    }
+    res.status(500).json({ error: 'Pitcher Statcast fetch failed: ' + err.message });
+  }
+});
+
+// ── Bullpen Quality Rankings (MLB Stats API) ─────────────────────────────────
+
+const bullpenCacheFile = path.join(dataDir, 'bullpen_cache.json');
+
+async function fetchBullpenStats() {
+  const year = new Date().getFullYear();
+  const url = `https://statsapi.mlb.com/api/v1/teams/stats?stats=season&group=pitching&season=${year}&sportIds=1&sitCodes=rp&fields=stats,splits,stat,era,whip,strikeoutsPer9Inn,walksPer9Inn,homeRunsPer9Inn,inningsPitched,saves,blownSaves,team,name,id`;
+  const resp = await fetch(url, { timeout: 15000 });
+  if (!resp.ok) throw new Error(`MLB API returned ${resp.status}`);
+  const json = await resp.json();
+  const splits = json.stats?.[0]?.splits || [];
+  if (!splits.length) throw new Error('Empty bullpen response');
+
+  const data = {};
+  splits.forEach(s => {
+    const teamName = s.team?.name || '';
+    const abbr = TEAM_NAME_TO_ABBR[teamName];
+    if (!abbr) return;
+    const st = s.stat || {};
+    data[abbr] = {
+      era: parseFloat(st.era) || 4.50,
+      whip: parseFloat(st.whip) || 1.30,
+      kPer9: parseFloat(st.strikeoutsPer9Inn) || 8.50,
+      bbPer9: parseFloat(st.walksPer9Inn) || 3.50,
+      hrPer9: parseFloat(st.homeRunsPer9Inn) || 1.20,
+      ip: parseFloat(st.inningsPitched) || 0,
+      saves: parseInt(st.saves) || 0,
+      blownSaves: parseInt(st.blownSaves) || 0,
+    };
+  });
+  return data;
+}
+
+app.get('/api/bullpen', async (req, res) => {
+  try {
+    if (fs.existsSync(bullpenCacheFile)) {
+      const cached = JSON.parse(fs.readFileSync(bullpenCacheFile, 'utf8'));
+      const age = Date.now() - new Date(cached.fetchedAt).getTime();
+      if (age < 12 * 60 * 60 * 1000) {
+        return res.json({ success: true, data: cached.data, cached: true, fetchedAt: cached.fetchedAt });
+      }
+    }
+    const data = await fetchBullpenStats();
+    const payload = { data, fetchedAt: new Date().toISOString(), count: Object.keys(data).length };
+    fs.writeFileSync(bullpenCacheFile, JSON.stringify(payload, null, 2));
+    res.json({ success: true, ...payload });
+  } catch (err) {
+    if (fs.existsSync(bullpenCacheFile)) {
+      const cached = JSON.parse(fs.readFileSync(bullpenCacheFile, 'utf8'));
+      return res.json({ success: true, data: cached.data, cached: true, stale: true, error: err.message });
+    }
+    res.status(500).json({ error: 'Bullpen fetch failed: ' + err.message });
+  }
+});
+
+// ── Catcher Framing (Baseball Savant) ────────────────────────────────────────
+
+const framingCacheFile = path.join(dataDir, 'framing_cache.json');
+
+async function fetchCatcherFraming() {
+  // Use 2025 full-season data for robust sample sizes (2026 too early in season)
+  const url = 'https://baseballsavant.mlb.com/leaderboard/catcher-framing?type=catcher&seasonStart=2025&seasonEnd=2025&team=&min=q&sortColumn=rv_tot&sortDirection=desc&csv=true';
+  const resp = await fetch(url, {
+    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
+  });
+  if (!resp.ok) throw new Error(`Savant framing HTTP ${resp.status}`);
+  const text = await resp.text();
+  const lines = text.trim().split('\n');
+  if (lines.length < 2) throw new Error('Empty framing CSV');
+  const header = lines[0].replace(/"/g, '').split(',');
+  const nameIdx = header.indexOf('name');
+  const rvIdx = header.indexOf('rv_tot');
+  const pctIdx = header.indexOf('pct_tot');
+  const pitchesIdx = header.indexOf('pitches');
+  if (nameIdx < 0 || rvIdx < 0) throw new Error('Missing framing CSV columns');
+
+  const data = {};
+  for (let i = 1; i < lines.length; i++) {
+    const vals = lines[i].replace(/"/g, '').split(',');
+    const rawName = vals[nameIdx] || '';
+    // CSV has "Last, First" — convert to "First Last"
+    const parts = rawName.split(',').map(s => s.trim());
+    const displayName = parts.length >= 2 ? `${parts[1]} ${parts[0]}` : rawName;
+    const key = displayName.toLowerCase().replace(/[^a-z ]/g, '').trim();
+    if (!key) continue;
+
+    const framingRuns = parseFloat(vals[rvIdx]) || 0;
+    const shadowStrikePct = parseFloat(vals[pctIdx]) || 0;
+    const pitches = parseInt(vals[pitchesIdx]) || 0;
+    // Normalize to per-game rate (~140 pitches per catcher game)
+    const gamesEst = pitches / 140;
+    const framingRunsPerGame = gamesEst > 0 ? framingRuns / gamesEst : 0;
+
+    data[key] = { name: displayName, framingRuns, framingRunsPerGame, shadowStrikePct, pitches };
+  }
+  return data;
+}
+
+app.get('/api/framing', async (req, res) => {
+  try {
+    if (fs.existsSync(framingCacheFile)) {
+      const cached = JSON.parse(fs.readFileSync(framingCacheFile, 'utf8'));
+      const age = Date.now() - new Date(cached.fetchedAt).getTime();
+      if (age < 12 * 60 * 60 * 1000) {
+        return res.json({ success: true, data: cached.data, cached: true, fetchedAt: cached.fetchedAt, count: cached.count });
+      }
+    }
+    const data = await fetchCatcherFraming();
+    const payload = { data, fetchedAt: new Date().toISOString(), count: Object.keys(data).length };
+    fs.writeFileSync(framingCacheFile, JSON.stringify(payload, null, 2));
+    res.json({ success: true, ...payload });
+  } catch (err) {
+    if (fs.existsSync(framingCacheFile)) {
+      const cached = JSON.parse(fs.readFileSync(framingCacheFile, 'utf8'));
+      return res.json({ success: true, data: cached.data, cached: true, stale: true, count: cached.count, error: err.message });
+    }
+    res.status(500).json({ error: 'Framing fetch failed: ' + err.message });
+  }
+});
+
+// ── Sprint Speed (Baseball Savant) ───────────────────────────────────────────
+
+const sprintCacheFile = path.join(dataDir, 'sprint_cache.json');
+
+async function fetchSprintSpeed() {
+  // Use 2025 full-season for reliable sample; 2026 has limited data early in season
+  const url = 'https://baseballsavant.mlb.com/leaderboard/sprint_speed?min_season=2025&max_season=2025&position=&team=&min=10&csv=true';
+  const resp = await fetch(url, {
+    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
+  });
+  if (!resp.ok) throw new Error(`Savant sprint HTTP ${resp.status}`);
+  const text = await resp.text();
+  const lines = text.trim().split('\n');
+  if (lines.length < 2) throw new Error('Empty sprint CSV');
+  const header = lines[0].replace(/"/g, '').split(',');
+  const nameIdx = header.findIndex(h => h.trim() === 'last_name, first_name');
+  const speedIdx = header.findIndex(h => h.trim() === 'sprint_speed');
+  const boltsIdx = header.findIndex(h => h.trim() === 'bolts');
+  const hpIdx = header.findIndex(h => h.trim() === 'hp_to_1b');
+  if (nameIdx < 0 || speedIdx < 0) throw new Error('Missing sprint CSV columns');
+
+  const data = {};
+  for (let i = 1; i < lines.length; i++) {
+    const vals = lines[i].replace(/"/g, '').split(',');
+    const rawName = vals[nameIdx] || '';
+    // CSV has "Last, First" — convert to "First Last"
+    const parts = rawName.split(',').map(s => s.trim());
+    const displayName = parts.length >= 2 ? `${parts[1]} ${parts[0]}` : rawName;
+    const key = displayName.toLowerCase().replace(/[^a-z ]/g, '').trim();
+    if (!key) continue;
+
+    data[key] = {
+      name: displayName,
+      sprintSpeed: parseFloat(vals[speedIdx]) || 0,
+      bolts: parseInt(vals[boltsIdx]) || 0,
+      hpTo1b: parseFloat(vals[hpIdx]) || 0
+    };
+  }
+  return data;
+}
+
+app.get('/api/sprint-speed', async (req, res) => {
+  try {
+    if (fs.existsSync(sprintCacheFile)) {
+      const cached = JSON.parse(fs.readFileSync(sprintCacheFile, 'utf8'));
+      const age = Date.now() - new Date(cached.fetchedAt).getTime();
+      if (age < 24 * 60 * 60 * 1000) {
+        return res.json({ success: true, data: cached.data, cached: true, fetchedAt: cached.fetchedAt, count: cached.count });
+      }
+    }
+    const data = await fetchSprintSpeed();
+    const payload = { data, fetchedAt: new Date().toISOString(), count: Object.keys(data).length };
+    fs.writeFileSync(sprintCacheFile, JSON.stringify(payload, null, 2));
+    res.json({ success: true, ...payload });
+  } catch (err) {
+    if (fs.existsSync(sprintCacheFile)) {
+      const cached = JSON.parse(fs.readFileSync(sprintCacheFile, 'utf8'));
+      return res.json({ success: true, data: cached.data, cached: true, stale: true, count: cached.count, error: err.message });
+    }
+    res.status(500).json({ error: 'Sprint speed fetch failed: ' + err.message });
+  }
+});
+
 // ── Recent Form (last 14 days from MLB Stats API) ────────────────────────────
 
 const formCacheFile = path.join(dataDir, 'form_cache.json');
@@ -1117,9 +1381,14 @@ app.get('/api/injuries', async (req, res) => {
 
     const txRes = await fetch(
       `${MLB_API_BASE}/transactions?startDate=${fmt(start)}&endDate=${fmt(end)}&sportId=1`,
-      { headers: { 'User-Agent': 'MLB-DFS-Tool' }, timeout: 12000 }
+      { headers: { 'User-Agent': 'MLB-DFS-Tool/2.0', 'Accept': 'application/json' }, timeout: 12000 }
     );
-    if (!txRes.ok) throw new Error(`MLB API ${txRes.status}`);
+    if (!txRes.ok) throw new Error(`MLB API returned ${txRes.status}`);
+    const contentType = txRes.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+      // API returned HTML (Cloudflare block, maintenance page, etc.) — fail gracefully
+      return res.json({ success: true, flagged: [], total: 0, window: '48h', note: 'Injury feed unavailable (MLB API returned non-JSON response)' });
+    }
     const txData = await txRes.json();
 
     const transactions = txData.transactions || [];
@@ -1164,60 +1433,112 @@ app.get('/api/injuries', async (req, res) => {
 
 // Tendency score: positive = pitcher-friendly (tight zone, more Ks)
 //                 negative = batter-friendly (generous zone, more BBs/contact)
-// Scale: -2 (very hitter-friendly) to +2 (very pitcher-friendly)
-// Source: multi-season historical K% and walk% relative to league average
+// Scale: roughly -1.0 to +1.0
+// Source: THE BAT context-neutral projected 'true talent' ERA (EV Analytics, April 2026)
+// Mapping: score ≈ (4.05 - era) * 8, k ≈ score * 0.5, bb ≈ -score * 0.3
+// Lower ERA = pitcher-friendly zone (positive score)
+// Higher ERA = hitter-friendly zone (negative score)
 const UMPIRE_DB = {
-  'Angel Hernandez':     { k: -0.5, bb: 0.3,  score: -0.4 },
-  'CB Bucknor':          { k: -0.8, bb: 0.5,  score: -0.6 },
-  'Hunter Wendelstedt':  { k: 1.2,  bb: -0.4, score: 1.0  },
-  'Dan Bellino':         { k: 1.0,  bb: -0.3, score: 0.8  },
-  'Mark Carlson':        { k: -0.4, bb: 0.2,  score: -0.3 },
-  'Jeff Nelson':         { k: 0.2,  bb: -0.1, score: 0.1  },
-  'Phil Cuzzi':          { k: 0.6,  bb: -0.2, score: 0.5  },
-  'Tom Hallion':         { k: 0.8,  bb: -0.3, score: 0.7  },
-  'Ron Kulpa':           { k: 0.9,  bb: -0.4, score: 0.8  },
-  'Mike Winters':        { k: 0.5,  bb: -0.2, score: 0.4  },
-  'Laz Diaz':            { k: -1.0, bb: 0.6,  score: -0.8 },
-  'Ted Barrett':         { k: 0.3,  bb: -0.1, score: 0.2  },
-  'Pat Hoberg':          { k: 0.1,  bb: 0.0,  score: 0.1  },
-  'Alan Porter':         { k: 0.4,  bb: -0.2, score: 0.3  },
-  'Carlos Torres':       { k: -0.3, bb: 0.2,  score: -0.2 },
-  'John Tumpane':        { k: 0.6,  bb: -0.3, score: 0.5  },
-  'Mike Muchlinski':     { k: 0.2,  bb: 0.0,  score: 0.2  },
-  'Gabe Morales':        { k: -0.2, bb: 0.2,  score: -0.1 },
-  'Bill Welke':          { k: 0.3,  bb: -0.1, score: 0.3  },
-  'Vic Carapazza':       { k: 0.7,  bb: -0.3, score: 0.6  },
-  'Jerry Meals':         { k: -0.1, bb: 0.1,  score: -0.1 },
-  'Doug Eddings':        { k: 0.4,  bb: -0.2, score: 0.3  },
-  'Brian O\'Nora':       { k: 0.2,  bb: -0.1, score: 0.2  },
-  'Alfonso Marquez':     { k: 0.5,  bb: -0.2, score: 0.4  },
-  'Andy Fletcher':       { k: -0.2, bb: 0.1,  score: -0.1 },
-  'Cory Blaser':         { k: 0.3,  bb: -0.1, score: 0.3  },
-  'Junior Valentine':    { k: -0.6, bb: 0.4,  score: -0.5 },
-  'Bruce Dreckman':      { k: 0.4,  bb: -0.2, score: 0.3  },
-  'Quinn Wolcott':       { k: 0.1,  bb: 0.0,  score: 0.1  },
-  'Adam Hamari':         { k: -0.3, bb: 0.2,  score: -0.2 },
-  'Chad Fairchild':      { k: -0.5, bb: 0.3,  score: -0.4 },
-  'Erich Bacchus':       { k: 0.2,  bb: -0.1, score: 0.1  },
-  'Jeremie Rehak':       { k: 0.3,  bb: -0.1, score: 0.2  },
-  'Nic Lentz':           { k: 0.4,  bb: -0.2, score: 0.3  },
-  'Roberto Ortiz':       { k: -0.1, bb: 0.1,  score: 0.0  },
-  'Tripp Gibson':        { k: 0.5,  bb: -0.2, score: 0.4  },
-  'Will Little':         { k: 0.6,  bb: -0.3, score: 0.5  },
-  'David Rackley':       { k: 0.3,  bb: -0.1, score: 0.2  },
-  'Mike Estabrook':      { k: 0.1,  bb: 0.0,  score: 0.1  },
-  'Marvin Hudson':       { k: -0.4, bb: 0.2,  score: -0.3 },
-  'Mark Wegner':         { k: 0.2,  bb: -0.1, score: 0.1  },
-  'Fieldin Culbreth':    { k: 0.3,  bb: -0.1, score: 0.3  },
-  'Greg Gibson':         { k: -0.2, bb: 0.1,  score: -0.1 },
-  'Lance Barrett':       { k: 0.4,  bb: -0.2, score: 0.3  },
-  'Paul Nauert':         { k: 0.0,  bb: 0.1,  score: 0.0  },
-  'Manny Gonzalez':      { k: -0.3, bb: 0.2,  score: -0.2 },
-  'Brian Knight':        { k: 0.5,  bb: -0.2, score: 0.4  },
-  'Chris Guccione':      { k: 0.3,  bb: -0.1, score: 0.3  },
-  'D.J. Reyburn':        { k: 0.2,  bb: -0.1, score: 0.2  },
-  'Ryan Additon':        { k: 0.1,  bb: 0.0,  score: 0.1  },
-  'Mike DiMuro':         { k: -0.1, bb: 0.1,  score: -0.1 },
+  // ── Extreme Pitchers (ERA ≤ 3.97) ──
+  'Mike Estabrook':      { era: 3.92, k: 0.5,  bb: -0.3, score: 1.0  },
+  'Phil Cuzzi':          { era: 3.93, k: 0.5,  bb: -0.3, score: 1.0  },
+  'Bill Miller':         { era: 3.95, k: 0.4,  bb: -0.2, score: 0.8  },
+  'Ron Kulpa':           { era: 3.95, k: 0.4,  bb: -0.2, score: 0.8  },
+  'Doug Eddings':        { era: 3.95, k: 0.4,  bb: -0.2, score: 0.8  },
+  'Alex MacKay':         { era: 3.97, k: 0.3,  bb: -0.2, score: 0.6  },
+  'Ryan Blakney':        { era: 3.97, k: 0.3,  bb: -0.2, score: 0.6  },
+  // ── Pitchers (ERA 3.99–4.03) ──
+  'Adam Hamari':         { era: 3.99, k: 0.3,  bb: -0.2, score: 0.5  },
+  'Nestor Ceja':         { era: 3.99, k: 0.3,  bb: -0.2, score: 0.5  },
+  'Vic Carapazza':       { era: 3.99, k: 0.3,  bb: -0.2, score: 0.5  },
+  'CB Bucknor':          { era: 3.99, k: 0.3,  bb: -0.2, score: 0.5  },
+  'Jeremie Rehak':       { era: 3.99, k: 0.3,  bb: -0.2, score: 0.5  },
+  'Dexter Kelley':       { era: 4.00, k: 0.2,  bb: -0.1, score: 0.4  },
+  'Dan Merzel':          { era: 4.00, k: 0.2,  bb: -0.1, score: 0.4  },
+  'Edwin Jimenez':       { era: 4.00, k: 0.2,  bb: -0.1, score: 0.4  },
+  'Emil Jimenez':        { era: 4.00, k: 0.2,  bb: -0.1, score: 0.4  },
+  'Gabe Morales':        { era: 4.00, k: 0.2,  bb: -0.1, score: 0.4  },
+  'Brennan Miller':      { era: 4.00, k: 0.2,  bb: -0.1, score: 0.4  },
+  'Paul Clemons':        { era: 4.00, k: 0.2,  bb: -0.1, score: 0.4  },
+  'Nick Mahrley':        { era: 4.01, k: 0.2,  bb: -0.1, score: 0.3  },
+  'Tom Hanahan':         { era: 4.01, k: 0.2,  bb: -0.1, score: 0.3  },
+  'Cory Blaser':         { era: 4.01, k: 0.2,  bb: -0.1, score: 0.3  },
+  'Junior Valentine':    { era: 4.02, k: 0.1,  bb: -0.1, score: 0.2  },
+  'Austin Jones':        { era: 4.02, k: 0.1,  bb: -0.1, score: 0.2  },
+  'David Rackley':       { era: 4.02, k: 0.1,  bb: -0.1, score: 0.2  },
+  'Tony Randazzo':       { era: 4.02, k: 0.1,  bb: -0.1, score: 0.2  },
+  'Rob Drake':           { era: 4.02, k: 0.1,  bb: -0.1, score: 0.2  },
+  'Steven Jaschinski':   { era: 4.03, k: 0.1,  bb: -0.1, score: 0.2  },
+  'Jim Wolf':            { era: 4.03, k: 0.1,  bb: -0.1, score: 0.2  },
+  'Adam Beck':           { era: 4.03, k: 0.1,  bb: -0.1, score: 0.2  },
+  'Roberto Ortiz':       { era: 4.03, k: 0.1,  bb: -0.1, score: 0.2  },
+  'Chris Conroy':        { era: 4.03, k: 0.1,  bb: -0.1, score: 0.2  },
+  // ── Neutral (ERA 4.04–4.07) ──
+  'Chris Segal':         { era: 4.04, k: 0.1,  bb: 0.0,  score: 0.1  },
+  'John Tumpane':        { era: 4.04, k: 0.1,  bb: 0.0,  score: 0.1  },
+  'Nate Tomlinson':      { era: 4.04, k: 0.1,  bb: 0.0,  score: 0.1  },
+  'D.J. Reyburn':        { era: 4.04, k: 0.1,  bb: 0.0,  score: 0.1  },
+  'Brian O\'Nora':       { era: 4.04, k: 0.1,  bb: 0.0,  score: 0.1  },
+  'Jeremy Riggs':        { era: 4.04, k: 0.1,  bb: 0.0,  score: 0.1  },
+  'Lance Barrett':       { era: 4.04, k: 0.1,  bb: 0.0,  score: 0.1  },
+  'Brian Walsh':         { era: 4.04, k: 0.1,  bb: 0.0,  score: 0.1  },
+  'Laz Diaz':            { era: 4.04, k: 0.1,  bb: 0.0,  score: 0.1  },
+  'Brock Ballou':        { era: 4.05, k: 0.0,  bb: 0.0,  score: 0.0  },
+  'Jacob Metz':          { era: 4.05, k: 0.0,  bb: 0.0,  score: 0.0  },
+  'Malachi Moore':       { era: 4.06, k: 0.0,  bb: 0.0,  score: -0.1 },
+  'Ryan Additon':        { era: 4.06, k: 0.0,  bb: 0.0,  score: -0.1 },
+  'Will Little':         { era: 4.06, k: 0.0,  bb: 0.0,  score: -0.1 },
+  'Chad Whitson':        { era: 4.06, k: 0.0,  bb: 0.0,  score: -0.1 },
+  'Alex Tosi':           { era: 4.06, k: 0.0,  bb: 0.0,  score: -0.1 },
+  'Willie Traynor':      { era: 4.06, k: 0.0,  bb: 0.0,  score: -0.1 },
+  'Marvin Hudson':       { era: 4.06, k: 0.0,  bb: 0.0,  score: -0.1 },
+  'John Bacon':          { era: 4.06, k: 0.0,  bb: 0.0,  score: -0.1 },
+  'Bruce Dreckman':      { era: 4.07, k: -0.1, bb: 0.1,  score: -0.2 },
+  'Tripp Gibson':        { era: 4.07, k: -0.1, bb: 0.1,  score: -0.2 },
+  'Mike Muchlinski':     { era: 4.07, k: -0.1, bb: 0.1,  score: -0.2 },
+  'Ryan Wills':          { era: 4.07, k: -0.1, bb: 0.1,  score: -0.2 },
+  'Erich Bacchus':       { era: 4.07, k: -0.1, bb: 0.1,  score: -0.2 },
+  'Tyler Jones':         { era: 4.07, k: -0.1, bb: 0.1,  score: -0.2 },
+  // ── Hitters (ERA 4.08–4.11) ──
+  'Mark Ripperger':      { era: 4.08, k: -0.1, bb: 0.1,  score: -0.2 },
+  'Dan Bellino':         { era: 4.08, k: -0.1, bb: 0.1,  score: -0.2 },
+  'Larry Vanover':       { era: 4.08, k: -0.1, bb: 0.1,  score: -0.2 },
+  'David Arrieta':       { era: 4.08, k: -0.1, bb: 0.1,  score: -0.2 },
+  'Sean Barber':         { era: 4.08, k: -0.1, bb: 0.1,  score: -0.2 },
+  'Jordan Baker':        { era: 4.08, k: -0.1, bb: 0.1,  score: -0.2 },
+  'Chad Fairchild':      { era: 4.08, k: -0.1, bb: 0.1,  score: -0.2 },
+  'Charlie Ramos':       { era: 4.08, k: -0.1, bb: 0.1,  score: -0.2 },
+  'Andy Fletcher':       { era: 4.08, k: -0.1, bb: 0.1,  score: -0.2 },
+  'Chris Guccione':      { era: 4.08, k: -0.1, bb: 0.1,  score: -0.2 },
+  'John Libka':          { era: 4.09, k: -0.2, bb: 0.1,  score: -0.3 },
+  'Jonathan Parra':      { era: 4.09, k: -0.2, bb: 0.1,  score: -0.3 },
+  'Derek Thomas':        { era: 4.09, k: -0.2, bb: 0.1,  score: -0.3 },
+  'Hunter Wendelstedt':  { era: 4.09, k: -0.2, bb: 0.1,  score: -0.3 },
+  'James Hoye':          { era: 4.10, k: -0.2, bb: 0.1,  score: -0.4 },
+  'Quinn Wolcott':       { era: 4.10, k: -0.2, bb: 0.1,  score: -0.4 },
+  'Manny Gonzalez':      { era: 4.10, k: -0.2, bb: 0.1,  score: -0.4 },
+  'Jen Pawol':           { era: 4.10, k: -0.2, bb: 0.1,  score: -0.4 },
+  'Alan Porter':         { era: 4.10, k: -0.2, bb: 0.1,  score: -0.4 },
+  'Ben May':             { era: 4.10, k: -0.2, bb: 0.1,  score: -0.4 },
+  'Jansen Visconti':     { era: 4.10, k: -0.2, bb: 0.1,  score: -0.4 },
+  'Stu Scheurwater':     { era: 4.10, k: -0.2, bb: 0.1,  score: -0.4 },
+  'Todd Tichenor':       { era: 4.11, k: -0.3, bb: 0.2,  score: -0.5 },
+  'Adrian Johnson':      { era: 4.11, k: -0.3, bb: 0.2,  score: -0.5 },
+  'Brian Knight':        { era: 4.11, k: -0.3, bb: 0.2,  score: -0.5 },
+  'Dan Iassogna':        { era: 4.11, k: -0.3, bb: 0.2,  score: -0.5 },
+  // ── Extreme Hitters (ERA ≥ 4.12) ──
+  'Ramon De Jesus':      { era: 4.12, k: -0.3, bb: 0.2,  score: -0.6 },
+  'Lance Barksdale':     { era: 4.12, k: -0.3, bb: 0.2,  score: -0.6 },
+  'James Jean':          { era: 4.13, k: -0.3, bb: 0.2,  score: -0.6 },
+  'Mark Wegner':         { era: 4.13, k: -0.3, bb: 0.2,  score: -0.6 },
+  'Mark Carlson':        { era: 4.14, k: -0.4, bb: 0.2,  score: -0.7 },
+  'Edwin Moscoso':       { era: 4.14, k: -0.4, bb: 0.2,  score: -0.7 },
+  'Clint Vondrak':       { era: 4.14, k: -0.4, bb: 0.2,  score: -0.7 },
+  'Carlos Torres':       { era: 4.15, k: -0.4, bb: 0.2,  score: -0.8 },
+  'Shane Livensparger':  { era: 4.15, k: -0.4, bb: 0.2,  score: -0.8 },
+  'Alfonso Marquez':     { era: 4.16, k: -0.4, bb: 0.3,  score: -0.9 },
+  'Nic Lentz':           { era: 4.16, k: -0.4, bb: 0.3,  score: -0.9 },
+  'Scott Barry':         { era: 4.18, k: -0.5, bb: 0.3,  score: -1.0 },
 };
 
 // GET /api/umpires — return full tendency database
@@ -1260,6 +1581,123 @@ app.get('/api/umpires/:date', async (req, res) => {
     res.json({ success: true, date, assignments });
   } catch (err) {
     res.status(500).json({ error: 'Umpire fetch failed: ' + err.message });
+  }
+});
+
+// ── DvP (Defense vs. Position) ──────────────────────────────────────────────
+// Aggregates last-14-day opponent DK points allowed per position, grouped by team.
+// DK positions mapped: SP/RP→P, C, 1B, 2B, 3B, SS, OF, DH→1B
+const dvpCacheFile = path.join(dataDir, 'dvp_cache.json');
+const DK_POS_MAP = { 'SP': 'P', 'RP': 'P', 'P': 'P', 'C': 'C', '1B': '1B', '2B': '2B',
+  '3B': '3B', 'SS': 'SS', 'LF': 'OF', 'CF': 'OF', 'RF': 'OF', 'OF': 'OF', 'DH': '1B' };
+
+app.get('/api/dvp', async (req, res) => {
+  try {
+    const endDate = new Date();
+    const startDate = new Date(endDate.getTime() - 14 * 24 * 60 * 60 * 1000);
+    const fmt = d => d.toISOString().substring(0, 10);
+    const cacheKey = fmt(startDate) + '_' + fmt(endDate);
+
+    if (fs.existsSync(dvpCacheFile)) {
+      const cached = JSON.parse(fs.readFileSync(dvpCacheFile, 'utf8'));
+      const age = Date.now() - new Date(cached.fetchedAt).getTime();
+      if (age < 4 * 60 * 60 * 1000 && cached.cacheKey === cacheKey) {
+        return res.json({ success: true, data: cached.data, cached: true });
+      }
+    }
+
+    const schedRes = await fetch(
+      `${MLB_API_BASE}/schedule?sportId=1&startDate=${fmt(startDate)}&endDate=${fmt(endDate)}&gameType=R`,
+      { headers: { 'User-Agent': 'MLB-DFS-Tool' }, timeout: 15000 }
+    );
+    if (!schedRes.ok) throw new Error(`MLB schedule API ${schedRes.status}`);
+    const schedule = await schedRes.json();
+    const allGames = [];
+    (schedule.dates || []).forEach(d => {
+      (d.games || []).forEach(g => { if (g.status?.abstractGameState === 'Final') allGames.push(g.gamePk); });
+    });
+    if (!allGames.length) return res.json({ success: true, data: {}, message: 'No completed games in window' });
+
+    // dvpAgg: { teamAbbr: { pos: { dkTotal, games } } }
+    const dvpAgg = {};
+
+    const chunk = (arr, size) => { const r = []; for (let i = 0; i < arr.length; i += size) r.push(arr.slice(i, i + size)); return r; };
+    for (const batch of chunk(allGames.slice(0, 60), 8)) {
+      await Promise.all(batch.map(async (gamePk) => {
+        try {
+          const br = await fetch(`${MLB_API_BASE}/game/${gamePk}/boxscore`, {
+            headers: { 'User-Agent': 'MLB-DFS-Tool' }, timeout: 10000
+          });
+          if (!br.ok) return;
+          const box = await br.json();
+          const decisions = box.decisions || {};
+          const winnerNorm = normalizeName(decisions.winner?.fullName || '');
+          const gameInnings = Math.max(box.linescore?.scheduledInnings || 9, box.linescore?.currentInning || 9);
+
+          for (const [bSide, pSide] of [['home', 'away'], ['away', 'home']]) {
+            // bSide = batting team (players scoring DK pts), pSide = pitching/defending team
+            const battingTeamData = box.teams?.[bSide];
+            const pitchingTeamData = box.teams?.[pSide];
+            if (!battingTeamData || !pitchingTeamData) continue;
+            const rawDefTeam = pitchingTeamData.team?.abbreviation || '';
+            const defTeam = MLB_TO_DK_ABBR[rawDefTeam] || rawDefTeam;
+            if (!defTeam) continue;
+            if (!dvpAgg[defTeam]) dvpAgg[defTeam] = {};
+
+            for (const player of Object.values(battingTeamData.players || {})) {
+              const pos = player.position?.abbreviation || '';
+              const dkPos = DK_POS_MAP[pos];
+              if (!dkPos) continue;
+              const batting = player.stats?.batting || {};
+              const pitching = player.stats?.pitching || {};
+              const hasBatting = (batting.atBats || 0) > 0 || (batting.baseOnBalls || 0) > 0;
+              const hasPitching = parseFloat(pitching.inningsPitched || 0) > 0;
+              if (!hasBatting && !hasPitching) continue;
+
+              let dk = 0;
+              if (hasBatting) dk += calcHitterDK(batting);
+              if (hasPitching) {
+                const fullName = player.person?.fullName || '';
+                const isWin = normalizeName(fullName) === winnerNorm;
+                dk += calcPitcherDK(pitching, isWin, gameInnings);
+              }
+              if (!dvpAgg[defTeam][dkPos]) dvpAgg[defTeam][dkPos] = { dkTotal: 0, games: 0 };
+              dvpAgg[defTeam][dkPos].dkTotal += dk;
+              dvpAgg[defTeam][dkPos].games++;
+            }
+          }
+        } catch (e) { /* skip */ }
+      }));
+    }
+
+    // Compute averages and rank within each position
+    const data = {};
+    for (const [team, posMap] of Object.entries(dvpAgg)) {
+      data[team] = {};
+      for (const [pos, agg] of Object.entries(posMap)) {
+        if (agg.games < 3) continue;
+        data[team][pos] = { avgAllowed: parseFloat((agg.dkTotal / agg.games).toFixed(2)), games: agg.games };
+      }
+    }
+
+    // Add rank per position across all teams (1 = most allowed = easiest matchup)
+    const positions = ['P', 'C', '1B', '2B', '3B', 'SS', 'OF'];
+    positions.forEach(pos => {
+      const teamAvgs = Object.entries(data)
+        .filter(([, pd]) => pd[pos])
+        .sort((a, b) => b[1][pos].avgAllowed - a[1][pos].avgAllowed);
+      teamAvgs.forEach(([team], rank) => { data[team][pos].rank = rank + 1; data[team][pos].totalTeams = teamAvgs.length; });
+    });
+
+    const payload = { data, fetchedAt: new Date().toISOString(), cacheKey };
+    fs.writeFileSync(dvpCacheFile, JSON.stringify(payload, null, 2));
+    res.json({ success: true, data, cached: false });
+  } catch (err) {
+    if (fs.existsSync(dvpCacheFile)) {
+      const cached = JSON.parse(fs.readFileSync(dvpCacheFile, 'utf8'));
+      return res.json({ success: true, data: cached.data, cached: true, stale: true, error: err.message });
+    }
+    res.status(500).json({ error: 'DvP fetch failed: ' + err.message });
   }
 });
 

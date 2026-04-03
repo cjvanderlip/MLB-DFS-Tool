@@ -25,6 +25,7 @@ let optimalStacks = {};    // { teamName: { primary: count, secondary: count, to
 
 // Portfolio state
 let portfolioLineups = [], portfolioExposure = {};
+let playerExposureOverrides = {}; // { playerName: { min: 0-1, max: 0-1 } }
 
 // Backtesting state
 let historyData = [];
@@ -32,11 +33,17 @@ let historyData = [];
 // New feature state
 let confirmedLineups = {};  // { gamePk: { homeOrder, awayOrder, ... } }
 let statcastData = {};      // { normalizedName: { barrelRate, hardHitRate, xwOBA, ... } }
+let pitcherStatcastData = {}; // { normalizedName: { whiffRate, fastballVelo, xERA, ... } }
 let formData = {};          // { normalizedName: { avgDK, ba, ... } }
 let blendWeights = {};      // { sourceName: weight }
 let windEffects = {};       // { homeTeam: windEffect (-1 to +1) }
 let injuryData = [];        // [{ name, team, type: 'IL'|'GTD', description, date }]
 let umpireData = {};        // { homeTeam: { name, score, k, bb } }
+let dvpData = {};           // { teamAbbr: { pos: { avgAllowed, rank, totalTeams, games } } }
+let bullpenData = {};       // { teamAbbr: { era, whip, kPer9, bbPer9, hrPer9, ip } }
+let framingRawData = {};    // { normalizedName: { framingRuns, framingRunsPerGame, shadowStrikePct } }
+let framingMap = {};         // { teamAbbr: { framingRunsPerGame } } — built from pool catchers
+let sprintSpeedData = {};    // { normalizedName: { name, sprintSpeed, bolts, hpTo1b } }
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
 const n = v => parseFloat(v) || 0;
@@ -53,6 +60,13 @@ function addPlayerByPoolIdx(idx) { const p = _playerPoolCache[idx]; if (p) addTo
 function addPlayerByLuIdx(idx) { const p = _luPoolCache[idx]; if (p) addToLineup(p); }
 function addStackPlayer(sid, pidx) { const s = [...STACKS3, ...STACKS5].find(st => st.id === sid); if (s && s.players[pidx]) addToLineupByName(s.players[pidx]); }
 
+function updatePlayerOwn(idx, val) {
+  const p = _playerPoolCache[idx];
+  if (!p) return;
+  p.own = Math.max(0, parseFloat(val) || 0);
+  p.lev = Engine.calcLeverage(p, contestSize);
+}
+
 function getPitcherMatchupBonus(pitcher) {
   if (!rp(pitcher, 'P') || !pitcher.opp) return 0;
   const oppBatters = POOL.filter(p => p.team === pitcher.opp && !rp(p, 'P') && p.median > 0);
@@ -63,7 +77,7 @@ function getPitcherMatchupBonus(pitcher) {
 
 function getEngineContext() {
   const pool = Engine.calibratePool(POOL);
-  return { vegasData, parkFactors, weatherData, stadiums: stadiumData, teamScoring: TEAM_SCORING, contestSize, pool, optimalExposure, optimalStacks, umpireData, blendWeights };
+  return { vegasData, parkFactors, weatherData, stadiums: stadiumData, teamScoring: TEAM_SCORING, contestSize, pool, optimalExposure, optimalStacks, umpireData, blendWeights, bullpenData, framingMap, sprintSpeedData };
 }
 
 // Returns calibrated pool for optimizer calls — scoring functions score individual
@@ -88,7 +102,7 @@ function showTab(t) {
   if (t === 'portfolio') renderPortfolioTeamSelectors();
   if (t === 'players' && POOL.length && !Object.keys(confirmedLineups).length) {
     // Auto-fetch confirmed lineups once per session when switching to Players tab
-    const today = new Date().toISOString().split('T')[0].replace(/-/g, '');
+    const today = new Date().toISOString().split('T')[0];
     loadConfirmedLineups(today);
   }
 }
@@ -417,7 +431,7 @@ function mergePools() {
     });
     const matched = POOL.filter(p => p.hasRoo).length;
     const matchPct = Math.round(matched / ROO.length * 100);
-    if (ROO.length > 0 && matched < ROO.length * 0.5) {
+    if (ROO.length > 0 && matched < ROO.length * 0.8) {
       showUploadWarn('mismatch', null, null, { matched, total: ROO.length, matchPct });
     } else { hideUploadWarn('mismatch'); }
   } else {
@@ -473,7 +487,8 @@ function showUploadWarn(key, fname, fields, extra) {
     const fieldList = (fields || []).slice(0, 15).join(', ');
     msg = `<strong>Could not detect file type:</strong> ${esc(fname)}<br>Headers: <code style="font-size:11px">${esc(fieldList)}</code>`;
   } else if (key === 'mismatch') {
-    msg = `<strong>Slate mismatch:</strong> Only ${extra.matched} of ${extra.total} ROO players (${extra.matchPct}%) matched to DK.`;
+    const severity = extra.matchPct < 50 ? 'Likely wrong slate —' : 'Partial mismatch —';
+    msg = `<strong>Slate mismatch:</strong> ${severity} only ${extra.matched} of ${extra.total} ROO players (${extra.matchPct}%) matched to DK salaries. Players without projections will score 0. Make sure both files are from the same slate date.`;
   }
   activeWarnings[key] = msg;
   renderWarnings();
@@ -557,7 +572,19 @@ function renderPlayers() {
     const injuryBadge = p.injuryFlag ? `<span class="pill ${p.injuryType === 'IL' ? 'pd' : 'pw'}" style="font-size:9px;margin-left:3px" title="${escAttr(p.injuryDesc || '')}">${p.injuryType || 'INJ'}</span>` : '';
     const formColor = p.recentAvgDK && p.median > 0 ? (p.recentAvgDK / p.median >= 1.2 ? 'var(--tsu)' : p.recentAvgDK / p.median <= 0.8 ? 'var(--td)' : '') : '';
     const kDisplay = rp(p, 'P') && p.kRate > 0 ? `<span style="font-size:11px;color:${p.kRate > 25 ? 'var(--tsu)' : p.kRate > 20 ? 'var(--ti)' : 'var(--ts)'}">${p.kRate.toFixed(0)}%</span>` : '\u2014';
-    return `<tr style="${inLu ? 'opacity:.38;' : ''}"><td><strong style="${formColor ? 'color:' + formColor : ''}">${esc(p.name)}</strong>${MODE === 'dk' && !p.hasRoo ? '<span style="font-size:10px;background:var(--bw);color:var(--tw);border-radius:3px;padding:1px 4px;margin-left:4px">no proj</span>' : ''}${confirmedBadge}${scBadge}${injuryBadge} ${platoonLabel}</td><td><span class="pill pi" style="font-size:10px">${esc(p.dkPos) || '\u2014'}</span></td><td>${esc(p.team)}</td><td>${p.salary > 0 ? '$' + p.salary.toLocaleString() : '\u2014'}</td><td>${p.order > 0 ? '#' + p.order : '\u2014'}</td><td>${p.floor > 0 ? p.floor.toFixed(1) : '\u2014'}</td><td>${p.median > 0 ? '<strong>' + p.median.toFixed(1) + '</strong>' : '\u2014'}</td><td>${p.ceiling > 0 ? `<div class="bar-w"><div class="bar" style="width:${bw}px"></div><span style="font-size:11px;color:var(--ts)">${p.ceiling.toFixed(1)}</span></div>` : '\u2014'}</td><td>${p.own > 0 ? `<span class="pill ${ow}">${p.own.toFixed(1)}%</span>` : '\u2014'}</td><td class="${lc}">${p.lev !== 0 ? (p.lev > 0 ? '+' : '') + p.lev.toFixed(1) : '\u2014'}</td><td style="color:var(--ti);font-weight:500">${gppS > 0 ? gppS.toFixed(1) : '\u2014'}</td><td>${optExpVal}</td><td>${p.avgPpg > 0 ? p.avgPpg.toFixed(1) : '\u2014'}</td><td>${kDisplay}</td><td><button class="btn" style="padding:3px 8px;font-size:11px" ${inLu ? 'disabled' : ''} onclick="addPlayerByPoolIdx(${idx})">+</button></td></tr>`;
+    // DvP badge: look up how the opponent's defense ranks at this player's position
+    let dvpBadge = '';
+    if (p.opp && Object.keys(dvpData).length) {
+      const dvpPos = rp(p, 'P') ? 'P' : p.dkPos ? p.dkPos.split('/')[0].trim() : null;
+      const dvpEntry = dvpPos && dvpData[p.opp]?.[dvpPos];
+      if (dvpEntry?.rank && dvpEntry?.totalTeams) {
+        const pct = dvpEntry.rank / dvpEntry.totalTeams;
+        const dvpClass = pct <= 0.25 ? 'psu' : pct >= 0.75 ? 'pd' : 'pi';
+        const dvpLabel = pct <= 0.25 ? 'easy' : pct >= 0.75 ? 'tough' : 'mid';
+        dvpBadge = `<span class="pill ${dvpClass}" style="font-size:9px;margin-left:3px" title="vs ${p.opp} ${dvpPos} rank ${dvpEntry.rank}/${dvpEntry.totalTeams} (${dvpEntry.avgAllowed} DK avg allowed)">DvP:${dvpLabel}</span>`;
+      }
+    }
+    return `<tr style="${inLu ? 'opacity:.38;' : ''}"><td><strong style="${formColor ? 'color:' + formColor : ''}">${esc(p.name)}</strong>${MODE === 'dk' && !p.hasRoo ? '<span style="font-size:10px;background:var(--bw);color:var(--tw);border-radius:3px;padding:1px 4px;margin-left:4px">no proj</span>' : ''}${confirmedBadge}${scBadge}${injuryBadge}${dvpBadge} ${platoonLabel}</td><td><span class="pill pi" style="font-size:10px">${esc(p.dkPos) || '\u2014'}</span></td><td>${esc(p.team)}</td><td>${p.salary > 0 ? '$' + p.salary.toLocaleString() : '\u2014'}</td><td>${p.order > 0 ? '#' + p.order : '\u2014'}</td><td>${p.floor > 0 ? p.floor.toFixed(1) : '\u2014'}</td><td>${p.median > 0 ? '<strong>' + p.median.toFixed(1) + '</strong>' : '\u2014'}</td><td>${p.ceiling > 0 ? `<div class="bar-w"><div class="bar" style="width:${bw}px"></div><span style="font-size:11px;color:var(--ts)">${p.ceiling.toFixed(1)}</span></div>` : '\u2014'}</td><td><input type="number" min="0" max="100" step="0.5" value="${p.own > 0 ? p.own.toFixed(1) : ''}" placeholder="0" title="Edit projected ownership %" style="width:50px;font-size:11px;padding:2px 4px;border:0.5px solid var(--brd-s);border-radius:4px;background:var(--bp);color:${p.own > 50 ? 'var(--td)' : p.own > 25 ? 'var(--tw)' : p.own > 10 ? 'var(--ti)' : 'var(--tp)'};text-align:center" oninput="updatePlayerOwn(${idx},this.value)"></td><td class="${lc}">${p.lev !== 0 ? (p.lev > 0 ? '+' : '') + p.lev.toFixed(1) : '\u2014'}</td><td style="color:var(--ti);font-weight:500">${gppS > 0 ? gppS.toFixed(1) : '\u2014'}</td><td>${optExpVal}</td><td>${p.avgPpg > 0 ? p.avgPpg.toFixed(1) : '\u2014'}</td><td>${kDisplay}</td><td><button class="btn" style="padding:3px 8px;font-size:11px" ${inLu ? 'disabled' : ''} onclick="addPlayerByPoolIdx(${idx})">+</button></td></tr>`;
   }).join('');
   document.getElementById('player-more').style.display = data.length > playerLimit ? 'block' : 'none';
 }
@@ -606,11 +633,23 @@ function renderStacks() {
 function getSalaryUsed() { return lineup.reduce((s, p) => s + (p ? p.salary : 0), 0); }
 
 function renderLineup() {
+  // Pre-compute BvP conflicts: pitcher opp teams → set of batter teams that conflict
+  const allowBvP = document.getElementById('allow-bvp')?.checked || false;
+  const bvpConflicts = new Set();
+  if (!allowBvP) {
+    lineup.forEach(p => {
+      if (p && rp(p, 'P') && p.opp) bvpConflicts.add(p.opp);
+    });
+  }
+
   document.getElementById('lineup-slots').innerHTML = DK_SLOTS.map((slot, i) => {
     const p = lineup[i];
     if (!p) return `<div class="lu-slot"><div class="slot-pos">${slot.label}</div><div class="slot-empty">Empty</div></div>`;
     const ownDisplay = p.own > 0 ? ` \u00B7 ${p.own.toFixed(1)}% own` : '';
-    return `<div class="lu-slot filled"><div class="slot-pos">${slot.label}</div><div style="flex:1"><div class="slot-name">${esc(p.name)}</div><div class="slot-info">${esc(p.dkPos || p.rosterPos)} \u00B7 ${esc(p.team)}${p.opp ? ' vs ' + esc(p.opp) : ''} \u00B7 $${p.salary.toLocaleString()}${ownDisplay}</div></div><button class="slot-rm" onclick="removeFromLineup(${i})">x</button></div>`;
+    const isBvP = !allowBvP && !rp(p, 'P') && bvpConflicts.has(p.team);
+    const slotClass = isBvP ? 'lu-slot filled lu-slot-bvp' : 'lu-slot filled';
+    const bvpBadge = isBvP ? `<span style="font-size:10px;font-weight:600;color:var(--td);margin-left:6px" title="Batter vs. Pitcher conflict — this batter faces your pitcher">BvP</span>` : '';
+    return `<div class="${slotClass}"${isBvP ? ' style="border-color:var(--brd-d);background:var(--bd)"' : ''}><div class="slot-pos" style="${isBvP ? 'color:var(--td)' : ''}">${slot.label}</div><div style="flex:1"><div class="slot-name">${esc(p.name)}${bvpBadge}</div><div class="slot-info">${esc(p.dkPos || p.rosterPos)} \u00B7 ${esc(p.team)}${p.opp ? ' vs ' + esc(p.opp) : ''} \u00B7 $${p.salary.toLocaleString()}${ownDisplay}</div></div><button class="slot-rm" onclick="removeFromLineup(${i})">x</button></div>`;
   }).join('');
   const used = getSalaryUsed(), rem = CAP - used, pct = Math.min(used / CAP * 100, 100);
   document.getElementById('sal-used').textContent = '$' + used.toLocaleString();
@@ -630,6 +669,10 @@ function renderLineup() {
   if (rem < 0) warns.push('Over $50k salary cap');
   const filled = playersInLineup.length;
   if (filled > 0 && filled < ROSTER_SIZE) warns.push(`${ROSTER_SIZE - filled} slot${ROSTER_SIZE - filled > 1 ? 's' : ''} empty`);
+  if (bvpConflicts.size > 0) {
+    const bvpPlayers = playersInLineup.filter(p => !rp(p, 'P') && bvpConflicts.has(p.team)).map(p => p.name);
+    if (bvpPlayers.length) warns.push(`BvP conflict: ${bvpPlayers.join(', ')} face your pitcher — toggle "Allow BvP" to permit`);
+  }
   const wEl = document.getElementById('lineup-warns');
   wEl.style.display = warns.length ? 'block' : 'none';
   if (warns.length) { wEl.className = 'ib warn'; wEl.innerHTML = warns.map(w => w).join('<br>'); }
@@ -698,13 +741,14 @@ function autoFill() {
   const ctx = getEngineContext();
   const pool = getCalibratedPool();
   const contestType = document.getElementById('contest-type-sel')?.value || 'single';
+  const allowBvP = document.getElementById('allow-bvp')?.checked || false;
   let scoreFn;
   if (contestType === 'cash') scoreFn = p => Engine.scoreCash(p, ctx);
   else if (contestType === 'gpp') scoreFn = p => Engine.scoreGpp(p, ctx);
   else scoreFn = p => Engine.scoreSingle(p, ctx);
 
   const stackBonusFn = contestType === 'gpp' ? lu => Engine.gppStackBonus(lu, null) : null;
-  lineup = Engine.optimizeLineup(pool, scoreFn, { iterations: OPTIMIZER_ITERATIONS, stackBonusFn }) || new Array(ROSTER_SIZE).fill(null);
+  lineup = Engine.optimizeLineup(pool, scoreFn, { iterations: OPTIMIZER_ITERATIONS, stackBonusFn, allowBvP }) || new Array(ROSTER_SIZE).fill(null);
   renderLineup(); renderLuPool(); saveSession();
 }
 
@@ -713,15 +757,16 @@ function generateThreeLineups() {
   generatedLineups = [];
   const ctx = getEngineContext();
   const pool = getCalibratedPool();
+  const allowBvP = document.getElementById('allow-bvp')?.checked || false;
 
-  const cashLu = Engine.generateCashLineup(pool, new Set(), ctx, OPTIMIZER_ITERATIONS);
+  const cashLu = Engine.generateCashLineup(pool, new Set(), ctx, OPTIMIZER_ITERATIONS, allowBvP);
   generatedLineups.push(cashLu);
 
   const cashNames = new Set(cashLu.filter(Boolean).map(p => p.name));
   const cashExclude = new Set();
   const shuffled1 = [...cashNames]; for (let i = shuffled1.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [shuffled1[i], shuffled1[j]] = [shuffled1[j], shuffled1[i]]; }
   shuffled1.slice(0, Math.floor(shuffled1.length * 0.4)).forEach(nm => cashExclude.add(nm));
-  const singleLu = Engine.generateSingleLineup(pool, cashExclude, ctx, OPTIMIZER_ITERATIONS);
+  const singleLu = Engine.generateSingleLineup(pool, cashExclude, ctx, OPTIMIZER_ITERATIONS, allowBvP);
   generatedLineups.push(singleLu);
 
   const allUsed = new Set([...cashNames, ...singleLu.filter(Boolean).map(p => p.name)]);
@@ -729,7 +774,7 @@ function generateThreeLineups() {
   const shuffled2 = [...allUsed]; for (let i = shuffled2.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [shuffled2[i], shuffled2[j]] = [shuffled2[j], shuffled2[i]]; }
   shuffled2.slice(0, Math.floor(shuffled2.length * 0.5)).forEach(nm => gppExclude.add(nm));
   const usedStackIds = new Set();
-  const gppLu = Engine.generateGppLineup(pool, gppExclude, ctx, STACKS3, STACKS5, usedStackIds, OPTIMIZER_ITERATIONS, contestSize);
+  const gppLu = Engine.generateGppLineup(pool, gppExclude, ctx, STACKS3, STACKS5, usedStackIds, OPTIMIZER_ITERATIONS, contestSize, null, null, allowBvP);
   generatedLineups.push(gppLu);
 
   displayThreeLineups();
@@ -776,24 +821,40 @@ function displayThreeLineups() {
 }
 
 // ── Export ─────────────────────────────────────────────────────────────────────
+// Properly quote a single CSV field — wraps in double-quotes and escapes internal quotes
+function csvQuote(v) {
+  const s = String(v == null ? '' : v);
+  if (s.includes(',') || s.includes('"') || s.includes('\n')) {
+    return '"' + s.replace(/"/g, '""') + '"';
+  }
+  return s;
+}
+
 function exportLineup() {
   if (!lineup.filter(Boolean).length) return;
   const rows = [['Slot', 'Player', 'Pos', 'Team', 'Salary', 'Median']];
   lineup.forEach((p, i) => {
     rows.push(p ? [DK_SLOTS[i].label, p.name, p.dkPos || '', p.team, '$' + p.salary, p.median > 0 ? p.median.toFixed(1) : ''] : [DK_SLOTS[i].label, 'EMPTY', '', '', '', '']);
   });
-  dlFile(rows.map(r => r.join(',')).join('\n'), 'lineups.csv', 'text/csv');
+  dlFile(rows.map(r => r.map(csvQuote).join(',')).join('\n'), 'lineups.csv', 'text/csv');
 }
 function exportDK() {
-  const filled = lineup.filter(Boolean);
-  if (!filled.length) return;
-  const missing = filled.filter(p => !p.dkId);
+  if (!lineup.every(Boolean)) {
+    alert('Lineup has empty slots. Fill all 10 positions before exporting.');
+    return;
+  }
+  const salary = lineup.reduce((s, p) => s + (p?.salary || 0), 0);
+  if (salary > 50000) {
+    alert(`Lineup is over the $50,000 salary cap ($${salary.toLocaleString()}). Please adjust before exporting.`);
+    return;
+  }
+  const missing = lineup.filter(p => !p.dkId);
   if (missing.length) {
     alert('Missing DK IDs for: ' + missing.map(p => p.name).join(', ') + '\nUpload your DK Salaries CSV first.');
     return;
   }
   const header = DK_SLOTS.map(s => s.label).join(',');
-  const row = lineup.map(p => p ? p.dkId : '').join(',');
+  const row = lineup.map(p => p.dkId).join(',');
   dlFile(header + '\n' + row, 'dk_upload.csv', 'text/csv');
 }
 function dlFile(content, filename, mime) {
@@ -806,6 +867,20 @@ function dlFile(content, filename, mime) {
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // VEGAS & WEATHER TAB
+// POST vegas data to server; retries once after 600ms on a 409 (write lock busy)
+async function saveVegasToServer(data) {
+  const body = JSON.stringify(data);
+  const opts = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body };
+  const res = await fetch('/api/vegas', opts);
+  if (res.status === 409) {
+    await new Promise(r => setTimeout(r, 600));
+    const retry = await fetch('/api/vegas', opts);
+    if (!retry.ok) throw new Error(`Vegas save failed after retry: ${retry.status}`);
+  } else if (!res.ok) {
+    throw new Error(`Vegas save failed: ${res.status}`);
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 async function loadVegasWeatherData() {
   try {
@@ -910,14 +985,13 @@ function saveVegas() {
     }
   });
   vegasData = Object.keys(data).length ? data : null;
-  fetch('/api/vegas', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) })
-    .then(() => {
-      const btn = document.getElementById('save-vegas-btn');
-      btn.textContent = 'Saved!'; btn.className = 'btn-g';
-      setTimeout(() => { btn.textContent = 'Save Vegas Lines'; btn.className = 'btn-p'; }, 1500);
-      // Recalculate leverage with vegas data
-      if (POOL.length) mergePools();
-    }).catch(e => console.error('Save vegas failed:', e));
+  saveVegasToServer(data).then(() => {
+    const btn = document.getElementById('save-vegas-btn');
+    btn.textContent = 'Saved!'; btn.className = 'btn-g';
+    setTimeout(() => { btn.textContent = 'Save Vegas Lines'; btn.className = 'btn-p'; }, 1500);
+    // Recalculate leverage with vegas data
+    if (POOL.length) mergePools();
+  }).catch(e => console.error('Save vegas failed:', e));
 }
 
 async function fetchOdds() {
@@ -956,7 +1030,7 @@ async function fetchOdds() {
     });
 
     // Auto-save to server
-    fetch('/api/vegas', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(vegasData) });
+    saveVegasToServer(vegasData);
 
     // Recalculate pool with new vegas data
     if (POOL.length) mergePools();
@@ -1013,14 +1087,24 @@ async function fetchWeather() {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ cities })
     });
+    if (!res.ok) throw new Error(`Server returned ${res.status}`);
     weatherData = await res.json();
+
+    // Warn if every city failed (API down, not just one bad city)
+    const allFailed = Object.values(weatherData).every(w => w.error);
+    if (allFailed) {
+      el.innerHTML = '<div class="ib warn">Weather data unavailable — wttr.in did not respond. Optimizer will run without weather adjustments.</div>';
+      btn.textContent = 'Retry Weather'; btn.disabled = false;
+      return;
+    }
+
     renderWeatherDisplay();
     await loadWindEffects();
     renderSlateEnvironment();
     btn.textContent = 'Refresh Weather'; btn.disabled = false;
   } catch (e) {
-    btn.textContent = 'Fetch Failed'; btn.disabled = false;
-    console.error('Weather fetch failed:', e);
+    el.innerHTML = `<div class="ib warn">Weather fetch failed: ${esc(e.message)}. Optimizer will run without weather adjustments.</div>`;
+    btn.textContent = 'Retry Weather'; btn.disabled = false;
   }
 }
 
@@ -1110,6 +1194,67 @@ function getCheckedTeams(containerId) {
   return [...document.querySelectorAll(`#${containerId} .team-chip.selected`)].map(el => el.dataset.team);
 }
 
+// ── Player Exposure Overrides ─────────────────────────────────────────────────
+function addExposureOverride() {
+  const inp = document.getElementById('exp-override-search');
+  if (!inp) return;
+  const q = inp.value.trim().toLowerCase();
+  if (!q) return;
+  const player = POOL.find(p => p.name.toLowerCase().includes(q));
+  if (!player) { inp.style.borderColor = 'var(--brd-d)'; return; }
+  inp.style.borderColor = '';
+  if (!playerExposureOverrides[player.name]) {
+    playerExposureOverrides[player.name] = { min: null, max: null };
+  }
+  inp.value = '';
+  renderExposureOverrides();
+  saveSession();
+}
+
+function removeExposureOverride(name) {
+  delete playerExposureOverrides[name];
+  renderExposureOverrides();
+  saveSession();
+}
+
+function updateExposureOverride(name, field, val) {
+  if (!playerExposureOverrides[name]) playerExposureOverrides[name] = { min: null, max: null };
+  const v = val === '' ? null : Math.max(0, Math.min(100, parseFloat(val)));
+  playerExposureOverrides[name][field] = isNaN(v) ? null : v;
+  saveSession();
+}
+
+function renderExposureOverrides() {
+  const el = document.getElementById('exp-override-list');
+  if (!el) return;
+  const names = Object.keys(playerExposureOverrides);
+  if (!names.length) {
+    el.innerHTML = '<div style="font-size:11px;color:var(--tt);padding:6px 0">No overrides set. Search for a player above to add one.</div>';
+    return;
+  }
+  el.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:12px">
+    <thead><tr>
+      <th style="text-align:left;padding:4px 6px;font-size:10px;color:var(--tt);font-weight:500;text-transform:uppercase;letter-spacing:.04em">Player</th>
+      <th style="text-align:left;padding:4px 6px;font-size:10px;color:var(--tt);font-weight:500;text-transform:uppercase;letter-spacing:.04em">Pos</th>
+      <th style="padding:4px 6px;font-size:10px;color:var(--tt);font-weight:500;text-transform:uppercase;letter-spacing:.04em">Min %</th>
+      <th style="padding:4px 6px;font-size:10px;color:var(--tt);font-weight:500;text-transform:uppercase;letter-spacing:.04em">Max %</th>
+      <th></th>
+    </tr></thead>
+    <tbody>${names.map(name => {
+      const ov = playerExposureOverrides[name];
+      const p = POOL.find(pl => pl.name === name);
+      const pos = p ? (p.dkPos || '—') : '—';
+      return `<tr>
+        <td style="padding:4px 6px"><strong>${esc(name)}</strong></td>
+        <td style="padding:4px 6px"><span class="pill pi" style="font-size:10px">${esc(pos)}</span></td>
+        <td style="padding:4px 6px;text-align:center"><input type="number" min="0" max="100" step="5" value="${ov.min ?? ''}" placeholder="—" style="width:52px;font-size:11px;padding:2px 4px;border:0.5px solid var(--brd-s);border-radius:4px;background:var(--bp);color:var(--tp);text-align:center" oninput="updateExposureOverride(${JSON.stringify(name)},'min',this.value)"></td>
+        <td style="padding:4px 6px;text-align:center"><input type="number" min="0" max="100" step="5" value="${ov.max ?? ''}" placeholder="—" style="width:52px;font-size:11px;padding:2px 4px;border:0.5px solid var(--brd-s);border-radius:4px;background:var(--bp);color:var(--tp);text-align:center" oninput="updateExposureOverride(${JSON.stringify(name)},'max',this.value)"></td>
+        <td style="padding:4px 6px"><button class="btn" style="padding:2px 7px;font-size:10px;color:var(--td)" onclick="removeExposureOverride(${JSON.stringify(name)})">✕</button></td>
+      </tr>`;
+    }).join('')}</tbody>
+  </table>`;
+}
+
 // Populate lock/ban team chip selectors from the current pool
 function renderPortfolioTeamSelectors() {
   const teams = [...new Set(POOL.map(p => p.team).filter(Boolean))].sort();
@@ -1193,8 +1338,21 @@ function generatePortfolio() {
   const portContestSize = parseInt(document.getElementById('port-contest-size').value) || 1000;
   const maxOverlapVal = parseInt(document.getElementById('port-max-overlap')?.value) || 0;
   const requireBringBack = document.getElementById('port-require-bringback')?.checked || false;
+  const allowBvP = document.getElementById('port-allow-bvp')?.checked || false;
+  const stackPct5Raw = document.getElementById('port-stack-pct5')?.value;
+  const stackPct5 = stackPct5Raw !== '' && stackPct5Raw != null ? parseInt(stackPct5Raw) : null;
   const lockedTeams = getCheckedTeams('port-lock-teams');
   const bannedTeams = getCheckedTeams('port-ban-teams');
+  // Convert playerExposureOverrides from % to 0-1 ratios for engine
+  const playerOverrides = {};
+  Object.entries(playerExposureOverrides).forEach(([name, ov]) => {
+    playerOverrides[name] = {
+      min: ov.min != null ? ov.min / 100 : undefined,
+      max: ov.max != null ? ov.max / 100 : undefined,
+    };
+    if (playerOverrides[name].min == null) delete playerOverrides[name].min;
+    if (playerOverrides[name].max == null) delete playerOverrides[name].max;
+  });
 
   // Run validation warnings before generating
   validatePortfolioSettings();
@@ -1208,7 +1366,8 @@ function generatePortfolio() {
     const result = Engine.buildPortfolio(getCalibratedPool(), {
       numLineups, maxExposure, maxExposurePitcher, contestType, contestSize: portContestSize,
       maxOverlap: maxOverlapVal,
-      requireBringBack,
+      requireBringBack, allowBvP,
+      playerOverrides, stackPct5,
       stacks3: STACKS3, stacks5: STACKS5,
       lockedTeams, bannedTeams,
       context: ctx, iterations: OPTIMIZER_ITERATIONS
@@ -1317,7 +1476,9 @@ function renderPortfolioResults(result) {
   html += `<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
     <button class="btn-p" onclick="exportPortfolio()">Export All Lineups CSV</button>
     <button class="btn-g" onclick="savePortfolioToHistory()">Save All to Backtest History</button>
-  </div>`;
+    <button class="btn" onclick="runPortfolioSim()" id="port-sim-btn">Simulate Portfolio (Sim ROI)</button>
+  </div>
+  <div id="port-sim-results" style="margin-top:10px"></div>`;
 
   el.innerHTML = html;
 }
@@ -1325,6 +1486,77 @@ function renderPortfolioResults(result) {
 function togglePortfolioLineups() {
   const el = document.getElementById('portfolio-lineup-list');
   el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
+function runPortfolioSim() {
+  if (!portfolioLineups.length || !POOL.length) return;
+  const btn = document.getElementById('port-sim-btn');
+  const out = document.getElementById('port-sim-results');
+  if (!btn || !out) return;
+  btn.textContent = 'Simulating…'; btn.disabled = true;
+  out.innerHTML = '<div class="ib blue" style="font-size:12px">Running 2,000 simulations per lineup against a synthetic ownership-weighted field…</div>';
+
+  setTimeout(() => {
+    const contestType = document.getElementById('port-contest-type')?.value || 'gpp';
+    const manualCashLine = parseFloat(document.getElementById('port-cash-line')?.value) || null;
+    const manualWinLine = parseFloat(document.getElementById('port-win-line')?.value) || null;
+    const payoutType = document.getElementById('port-payout-type')?.value || 'top20';
+    const pool = getCalibratedPool();
+    const simResults = Engine.simulatePortfolio(portfolioLineups, pool, 2000, contestType, manualCashLine, manualWinLine, payoutType);
+
+    if (!simResults.length) {
+      out.innerHTML = '<div class="ib warn">Simulation failed — ensure players have projection data.</div>';
+      btn.textContent = 'Simulate Portfolio (Sim ROI)'; btn.disabled = false;
+      return;
+    }
+
+    const isCash = contestType === 'cash';
+    const avgROI = simResults.reduce((s, r) => s + r.simROI, 0) / simResults.length;
+    const avgCash = simResults.reduce((s, r) => s + r.cashRate, 0) / simResults.length;
+    const cashLine = simResults[0].cashLine;
+
+    let html = `<div class="ib blue" style="font-size:12px;margin-bottom:8px">
+      Sim results vs. ownership-weighted field. Cash line ≈ <strong>${cashLine}</strong> pts.
+      Portfolio avg cash rate: <strong>${avgCash.toFixed(1)}%</strong> · Avg Sim ROI: <strong style="color:${avgROI >= 0 ? 'var(--tsu)' : 'var(--td)'}">
+      ${avgROI >= 0 ? '+' : ''}${avgROI.toFixed(1)}%</strong>
+    </div>`;
+
+    html += `<div style="overflow-x:auto"><table style="width:100%;font-size:11px">
+      <thead><tr>
+        <th style="text-align:left">Lineup</th>
+        <th>P50</th><th>P10</th><th>P90</th>
+        <th>Cash%</th>${isCash ? '' : '<th>Win%</th>'}
+        <th style="font-weight:600">Sim ROI</th>
+        <th>Stack</th>
+      </tr></thead>
+      <tbody>`;
+
+    // Map sim results back to original lineup index
+    const luIndexMap = new Map(portfolioLineups.map((lu, i) => [lu, i]));
+    simResults.forEach(r => {
+      const origIdx = luIndexMap.get(r.lu);
+      const label = origIdx != null ? `#${origIdx + 1}` : '?';
+      const roi = r.simROI;
+      const roiColor = roi >= 10 ? 'var(--tsu)' : roi >= 0 ? 'var(--ti)' : 'var(--td)';
+      const teamCts = {};
+      r.lu.forEach(p => { if (p && !rp(p, 'P')) teamCts[p.team] = (teamCts[p.team] || 0) + 1; });
+      const stackTeam = Object.entries(teamCts).sort((a, b) => b[1] - a[1])[0];
+      const stackBadge = stackTeam ? `<span class="pill pi" style="font-size:9px">${esc(stackTeam[0])} ${stackTeam[1]}</span>` : '—';
+      html += `<tr>
+        <td><strong>${label}</strong></td>
+        <td>${r.p50.toFixed(1)}</td>
+        <td style="color:var(--ts)">${r.p10.toFixed(1)}</td>
+        <td style="color:var(--tsu)">${r.p90.toFixed(1)}</td>
+        <td>${r.cashRate}%</td>
+        ${isCash ? '' : `<td>${r.winRate}%</td>`}
+        <td style="font-weight:600;color:${roiColor}">${roi >= 0 ? '+' : ''}${roi}%</td>
+        <td>${stackBadge}</td>
+      </tr>`;
+    });
+    html += '</tbody></table></div>';
+    out.innerHTML = html;
+    btn.textContent = 'Simulate Portfolio (Sim ROI)'; btn.disabled = false;
+  }, 30);
 }
 
 async function savePortfolioToHistory() {
@@ -1369,6 +1601,23 @@ async function savePortfolioToHistory() {
 
 function exportPortfolio() {
   if (!portfolioLineups.length) return;
+
+  // Validate every lineup: fully filled, under cap, has DK IDs
+  const invalidLineups = [];
+  const overCap = [];
+  portfolioLineups.forEach((lu, idx) => {
+    if (!lu.every(Boolean)) invalidLineups.push(idx + 1);
+    const sal = lu.reduce((s, p) => s + (p?.salary || 0), 0);
+    if (sal > 50000) overCap.push(`#${idx + 1} ($${sal.toLocaleString()})`);
+  });
+  if (invalidLineups.length) {
+    alert(`${invalidLineups.length} lineup(s) have empty slots (lineup ${invalidLineups.slice(0,5).join(', ')}). Regenerate the portfolio.`);
+    return;
+  }
+  if (overCap.length) {
+    alert(`${overCap.length} lineup(s) exceed the $50,000 cap: ${overCap.slice(0,5).join(', ')}.`);
+    return;
+  }
   const allPlayers = portfolioLineups.flat().filter(Boolean);
   const missing = allPlayers.filter(p => !p.dkId);
   if (missing.length) {
@@ -1377,7 +1626,7 @@ function exportPortfolio() {
     return;
   }
   const header = DK_SLOTS.map(s => s.label).join(',');
-  const rows = portfolioLineups.map(lu => lu.map(p => p ? p.dkId : '').join(','));
+  const rows = portfolioLineups.map(lu => lu.map(p => p.dkId).join(','));
   dlFile(header + '\n' + rows.join('\n'), 'portfolio_lineups.csv', 'text/csv');
 }
 
@@ -1393,6 +1642,17 @@ function runSimulation() {
   const numSims = parseInt(document.getElementById('sim-count').value) || 10000;
   const btn = document.getElementById('run-sim-btn');
   btn.textContent = 'Simulating...'; btn.disabled = true;
+
+  // Show how many historical pair correlations are active
+  const pairStatus = document.getElementById('sim-pair-corr-status');
+  if (pairStatus) {
+    const pairCount = Object.keys(Engine.getPairCorrelation ? {} : {}).length;
+    // Count via a known-pair check — actual count lives inside engine closure
+    const histEntries = historyData.filter(h => h.playerActuals && Object.keys(h.playerActuals).length >= 2).length;
+    pairStatus.textContent = histEntries >= 3
+      ? `Using historical correlations from ${histEntries} slates`
+      : 'Using structural correlations (save actuals in Backtest to add historical data)';
+  }
 
   setTimeout(() => {
     const result = Engine.simulateLineup(lineup, numSims);
@@ -1454,6 +1714,11 @@ async function loadHistory() {
       fetch('/api/history/summary').then(r => r.json())
     ]);
     historyData = history;
+    // Rebuild historical pair correlations from entries that have player actuals
+    const withActuals = history.filter(h => h.playerActuals && Object.keys(h.playerActuals).length >= 2);
+    if (withActuals.length >= 3) {
+      Engine.buildPairCorrelations(withActuals);
+    }
     renderBacktestPanel(history, summary);
   } catch (e) { console.error('Failed to load history:', e); }
 }
@@ -1684,6 +1949,111 @@ function renderModelAnalysis(data) {
   renderActiveCalibration();
 }
 
+function runContestFlashback() {
+  const el = document.getElementById('flashback-results');
+  const filter = document.getElementById('flashback-contest-filter')?.value || 'ALL';
+  if (!el) return;
+
+  const eligible = historyData.filter(h => {
+    if (!h.playerActuals || Object.keys(h.playerActuals).length < 5) return false;
+    if (!h.lineup || !h.lineup.length) return false;
+    if (filter !== 'ALL' && h.contest?.toUpperCase() !== filter.toUpperCase()) return false;
+    return true;
+  });
+
+  if (eligible.length < 3) {
+    el.innerHTML = '<div class="ib warn">Need at least 3 saved lineups with player actuals loaded. Use "Load Actuals" above to populate scores.</div>';
+    return;
+  }
+
+  el.innerHTML = '<div style="font-size:12px;color:var(--tt);padding:8px 0">Simulating…</div>';
+
+  setTimeout(() => {
+    // Build a pool from each entry's lineup + playerActuals for field simulation
+    const flashResults = eligible.map(h => {
+      // Reconstruct a pool-like array from the lineup snapshot with actual scores as "median"
+      const pool = (h.lineup || []).map(p => ({
+        ...p, median: h.playerActuals?.[p.name] ?? p.median ?? 0,
+        floor: p.floor || 0, ceiling: p.ceiling || (p.median * 1.8) || 0,
+        own: p.own || 0, salary: p.salary || 3000,
+        rosterPos: p.pos || p.rosterPos || 'OF'
+      })).filter(p => p.median > 0);
+      if (pool.length < 5) return null;
+
+      // Build a lightweight "lineup array" aligned to DK_SLOTS
+      const fullLineup = pool.slice(0, 10);
+      while (fullLineup.length < 10) fullLineup.push(fullLineup[0]);
+
+      const isCash = (h.contest || '').toUpperCase() === 'CASH';
+      const contestType = isCash ? 'cash' : 'gpp';
+
+      // Run 500 sim portfolio (single lineup)
+      const simResults = Engine.simulatePortfolio([fullLineup], pool, 500, contestType);
+      if (!simResults.length) return null;
+      const sr = simResults[0];
+
+      return {
+        date: h.slateDate || new Date(h.date).toLocaleDateString(),
+        contest: h.contest || 'GPP',
+        buyin: h.buyin || 0,
+        actualPts: h.actualPts || null,
+        projPts: h.projectedPts || 0,
+        p50: sr.p50,
+        cashRate: sr.cashRate,
+        winRate: sr.winRate,
+        simROI: sr.simROI,
+        actualROI: h.buyin && h.winnings != null ? parseFloat(((h.winnings - h.buyin) / h.buyin * 100).toFixed(1)) : null
+      };
+    }).filter(Boolean);
+
+    if (!flashResults.length) {
+      el.innerHTML = '<div class="ib warn">Could not simulate — ensure lineups have valid player data.</div>';
+      return;
+    }
+
+    const avgSimROI = flashResults.reduce((s, r) => s + r.simROI, 0) / flashResults.length;
+    const avgCashRate = flashResults.reduce((s, r) => s + r.cashRate, 0) / flashResults.length;
+    const withActualROI = flashResults.filter(r => r.actualROI != null);
+    const avgActualROI = withActualROI.length
+      ? withActualROI.reduce((s, r) => s + r.actualROI, 0) / withActualROI.length
+      : null;
+
+    let html = `<div class="mc-row">
+      <div class="mc"><div class="mc-l">Slates Analyzed</div><div class="mc-v">${flashResults.length}</div></div>
+      <div class="mc"><div class="mc-l">Avg Sim ROI</div><div class="mc-v" style="color:${avgSimROI >= 0 ? 'var(--tsu)' : 'var(--td)'}">
+        ${avgSimROI >= 0 ? '+' : ''}${avgSimROI.toFixed(1)}%</div><div class="mc-s">vs. ownership field</div></div>
+      <div class="mc"><div class="mc-l">Avg Cash Rate</div><div class="mc-v">${avgCashRate.toFixed(1)}%</div></div>
+      ${avgActualROI != null ? `<div class="mc"><div class="mc-l">Actual ROI</div><div class="mc-v" style="color:${avgActualROI >= 0 ? 'var(--tsu)' : 'var(--td)'}">
+        ${avgActualROI >= 0 ? '+' : ''}${avgActualROI.toFixed(1)}%</div><div class="mc-s">${withActualROI.length} entries w/ results</div></div>` : ''}
+    </div>`;
+
+    html += `<div style="overflow-x:auto;margin-top:8px"><table style="font-size:11px;width:100%">
+      <thead><tr>
+        <th style="text-align:left">Date</th><th>Contest</th><th>P50</th>
+        <th>Cash%</th><th>Sim ROI</th>
+        ${withActualROI.length ? '<th>Actual ROI</th>' : ''}
+        <th>Proj</th><th>Actual</th>
+      </tr></thead><tbody>`;
+
+    flashResults.sort((a, b) => b.simROI - a.simROI).forEach(r => {
+      const roiColor = r.simROI >= 10 ? 'var(--tsu)' : r.simROI >= 0 ? 'var(--ti)' : 'var(--td)';
+      const aRoiColor = r.actualROI != null ? (r.actualROI >= 0 ? 'var(--tsu)' : 'var(--td)') : '';
+      html += `<tr>
+        <td>${esc(r.date)}</td>
+        <td><span class="pill pg" style="font-size:9px">${esc(r.contest)}</span></td>
+        <td>${r.p50.toFixed(1)}</td>
+        <td>${r.cashRate}%</td>
+        <td style="font-weight:600;color:${roiColor}">${r.simROI >= 0 ? '+' : ''}${r.simROI}%</td>
+        ${withActualROI.length ? `<td style="color:${aRoiColor}">${r.actualROI != null ? (r.actualROI >= 0 ? '+' : '') + r.actualROI + '%' : '—'}</td>` : ''}
+        <td style="color:var(--ts)">${r.projPts.toFixed(1)}</td>
+        <td>${r.actualPts != null ? r.actualPts.toFixed(1) : '—'}</td>
+      </tr>`;
+    });
+    html += '</tbody></table></div>';
+    el.innerHTML = html;
+  }, 30);
+}
+
 async function applyCalibration(pitcherScale, batterScale) {
   try {
     await fetch('/api/calibration', {
@@ -1802,6 +2172,14 @@ async function loadStatcast() {
     if (btn) { btn.textContent = 'Refresh Statcast'; btn.disabled = false; }
     renderPlayers();
     renderBlendControls();
+    // Also load pitcher Statcast for stuff model
+    loadPitcherStatcast();
+    // Load bullpen quality rankings
+    loadBullpen();
+    // Load catcher framing data
+    loadFraming();
+    // Load sprint speed data
+    loadSprintSpeed();
   } catch (e) {
     if (el) el.innerHTML = `<div class="ib warn">Statcast failed: ${esc(e.message)}</div>`;
     if (btn) { btn.textContent = 'Fetch Statcast'; btn.disabled = false; }
@@ -1810,17 +2188,134 @@ async function loadStatcast() {
 
 function applyStatcastToPool() {
   POOL.forEach(p => {
-    if (rp(p, 'P')) return;
     const key = p.name.toLowerCase().replace(/[^a-z ]/g, '').trim();
-    const sc = statcastData[key];
-    if (sc) {
-      p.barrelRate = sc.barrelRate;
-      p.hardHitRate = sc.hardHitRate;
-      p.xwOBA = sc.xwOBA;
-      p.xSLG = sc.xSLG;
-      p.exitVelo = sc.exitVelo;
+    if (rp(p, 'P')) {
+      // Apply pitcher Statcast "stuff" metrics
+      const sc = pitcherStatcastData[key];
+      if (sc) {
+        p.whiffRate = sc.whiffRate;
+        p.fastballVelo = sc.fastballVelo;
+        p.hardHitRate = sc.hardHitRate;
+        p.xERA = sc.xERA;
+        p.xBA = sc.xBA;
+        p.scKPercent = sc.kPercent;
+        p.scBBPercent = sc.bbPercent;
+      }
+    } else {
+      const sc = statcastData[key];
+      if (sc) {
+        p.barrelRate = sc.barrelRate;
+        p.hardHitRate = sc.hardHitRate;
+        p.xwOBA = sc.xwOBA;
+        p.xSLG = sc.xSLG;
+        p.exitVelo = sc.exitVelo;
+      }
     }
   });
+}
+
+// ── Pitcher Statcast ("Stuff" Model) ──────────────────────────────────────────
+async function loadPitcherStatcast() {
+  const el = document.getElementById('statcast-status');
+  try {
+    const res = await fetch('/api/statcast/pitchers');
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error || 'Failed');
+    pitcherStatcastData = data.data || {};
+    applyStatcastToPool();
+    const pitchers = POOL.filter(p => rp(p, 'P'));
+    const matchCount = pitchers.filter(p => {
+      const key = p.name.toLowerCase().replace(/[^a-z ]/g, '').trim();
+      return !!pitcherStatcastData[key];
+    }).length;
+    if (el) {
+      const existing = el.innerHTML;
+      const pInfo = ` · Pitcher stuff: ${data.count} profiles, ${matchCount} matched`;
+      el.innerHTML = existing + pInfo;
+    }
+    renderPlayers();
+  } catch (e) {
+    if (el) {
+      const existing = el.innerHTML;
+      el.innerHTML = existing + ` · <span class="warn">Pitcher Statcast failed</span>`;
+    }
+  }
+}
+
+async function loadBullpen() {
+  const el = document.getElementById('statcast-status');
+  try {
+    const res = await fetch('/api/bullpen');
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error || 'Failed');
+    bullpenData = data.data || {};
+    const teamCount = Object.keys(bullpenData).length;
+    if (el) {
+      const existing = el.innerHTML;
+      el.innerHTML = existing + ` · Bullpen: ${teamCount} teams`;
+    }
+  } catch (e) {
+    if (el) {
+      const existing = el.innerHTML;
+      el.innerHTML = existing + ` · <span class="warn">Bullpen data failed</span>`;
+    }
+  }
+}
+
+async function loadFraming() {
+  const el = document.getElementById('statcast-status');
+  try {
+    const res = await fetch('/api/framing');
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error || 'Failed');
+    framingRawData = data.data || {};
+    // Build team-level framing map from catchers in the pool
+    framingMap = {};
+    const catchers = POOL.filter(p => rp(p, 'C') || (p.pos && p.pos.includes('C')));
+    for (const c of catchers) {
+      const key = c.name.toLowerCase().replace(/[^a-z ]/g, '').trim();
+      const fd = framingRawData[key];
+      if (fd) {
+        // Use highest-salary catcher per team as the likely starter
+        if (!framingMap[c.team] || c.salary > (framingMap[c.team]._salary || 0)) {
+          framingMap[c.team] = { framingRunsPerGame: fd.framingRunsPerGame, name: fd.name, _salary: c.salary };
+        }
+      }
+    }
+    const matchCount = Object.keys(framingMap).length;
+    if (el) {
+      const existing = el.innerHTML;
+      el.innerHTML = existing + ` · Framing: ${data.count} catchers, ${matchCount} teams matched`;
+    }
+  } catch (e) {
+    if (el) {
+      const existing = el.innerHTML;
+      el.innerHTML = existing + ` · <span class="warn">Framing data failed</span>`;
+    }
+  }
+}
+
+async function loadSprintSpeed() {
+  const el = document.getElementById('statcast-status');
+  try {
+    const res = await fetch('/api/sprint-speed');
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error || 'Failed');
+    sprintSpeedData = data.data || {};
+    const matchCount = POOL.filter(p => {
+      const key = p.name.toLowerCase().replace(/[^a-z ]/g, '').trim();
+      return !!sprintSpeedData[key];
+    }).length;
+    if (el) {
+      const existing = el.innerHTML;
+      el.innerHTML = existing + ` · Sprint: ${data.count} runners, ${matchCount} matched`;
+    }
+  } catch (e) {
+    if (el) {
+      const existing = el.innerHTML;
+      el.innerHTML = existing + ` · <span class="warn">Sprint speed failed</span>`;
+    }
+  }
 }
 
 // ── Recent Form ───────────────────────────────────────────────────────────────
@@ -1874,6 +2369,9 @@ async function loadInjuries() {
   if (btn) { btn.textContent = 'Loading…'; btn.disabled = true; }
   try {
     const res = await fetch('/api/injuries');
+    if (!res.ok && res.headers.get('content-type')?.includes('text/html')) {
+      throw new Error('Server returned an unexpected response — is the server running?');
+    }
     const data = await res.json();
     if (!data.success) throw new Error(data.error || 'Failed');
     injuryData = data.flagged || [];
@@ -1881,7 +2379,8 @@ async function loadInjuries() {
     renderPlayers();
     const gtd = injuryData.filter(p => p.type === 'GTD').length;
     const il = injuryData.filter(p => p.type === 'IL').length;
-    if (status) status.innerHTML = `<span class="pill ${injuryData.length ? 'pw' : 'pg'}">${injuryData.length} flags: ${il} IL, ${gtd} GTD (last 48h)</span>`;
+    const noteText = data.note ? ` — ${esc(data.note)}` : '';
+    if (status) status.innerHTML = `<span class="pill ${injuryData.length ? 'pw' : 'pg'}">${injuryData.length} flags: ${il} IL, ${gtd} GTD (last 48h)${noteText}</span>`;
   } catch (e) {
     if (status) status.innerHTML = `<span class="pill pd">Injury fetch failed: ${esc(e.message)}</span>`;
   } finally {
@@ -1908,14 +2407,14 @@ async function loadUmpires() {
   const status = document.getElementById('umpires-status');
   if (btn) { btn.textContent = 'Loading…'; btn.disabled = true; }
   try {
-    const today = new Date().toISOString().split('T')[0].replace(/-/g, '');
+    const today = new Date().toISOString().split('T')[0];
     const res = await fetch(`/api/umpires/${today}`);
     const data = await res.json();
     if (!data.success) throw new Error(data.error || 'Failed');
     // Build homeTeam → tendency map
     umpireData = {};
-    (data.games || []).forEach(g => {
-      if (g.homeTeam && g.umpire) umpireData[g.homeTeam] = g.umpire;
+    (data.assignments || []).forEach(g => {
+      if (g.homeTeam && g.tendency) umpireData[g.homeTeam] = g.tendency;
     });
     const known = Object.values(umpireData).filter(u => u.score !== undefined).length;
     const total = Object.keys(umpireData).length;
@@ -1926,6 +2425,85 @@ async function loadUmpires() {
   } finally {
     if (btn) { btn.textContent = 'Fetch Umpires'; btn.disabled = false; }
   }
+}
+
+// ── DvP (Defense vs. Position) ───────────────────────────────────────────────
+async function loadDvP() {
+  const btn = document.getElementById('fetch-dvp-btn');
+  const status = document.getElementById('dvp-status');
+  if (btn) { btn.textContent = 'Loading…'; btn.disabled = true; }
+  try {
+    const res = await fetch('/api/dvp');
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error || 'Failed');
+    dvpData = data.data || {};
+    const teams = Object.keys(dvpData).length;
+    const cached = data.cached ? ' (cached)' : '';
+    const stale = data.stale ? ' ⚠ stale' : '';
+    if (status) status.innerHTML = `<span class="pill ${teams ? 'psu' : 'pi'}">${teams} teams${cached}${stale}</span>`;
+    renderDvP();
+  } catch (e) {
+    if (status) status.innerHTML = `<span class="pill pd">DvP fetch failed: ${esc(e.message)}</span>`;
+  } finally {
+    if (btn) { btn.textContent = 'Fetch DvP Data'; btn.disabled = false; }
+  }
+}
+
+function renderDvP() {
+  const el = document.getElementById('dvp-table');
+  if (!el) return;
+  const teams = Object.keys(dvpData).sort();
+  if (!teams.length) {
+    el.innerHTML = '<div class="empty" style="padding:12px">Click "Fetch DvP Data" to load 14-day defense vs. position stats.</div>';
+    return;
+  }
+  const positions = ['P', 'C', '1B', '2B', '3B', 'SS', 'OF'];
+
+  // Color: green = easy matchup (high allowed), red = tough
+  const rankColor = (rank, total) => {
+    if (!rank || !total) return '';
+    const pct = rank / total;
+    if (pct <= 0.25) return 'color:var(--tsu);font-weight:600';   // top 25% = easy
+    if (pct >= 0.75) return 'color:var(--td);font-weight:600';    // bottom 25% = tough
+    return 'color:var(--ts)';
+  };
+
+  // Filter to only teams in current slate if pool loaded
+  const slateTeams = POOL.length ? new Set(POOL.map(p => p.team)) : null;
+  const displayTeams = slateTeams ? teams.filter(t => slateTeams.has(t)) : teams;
+  const showAll = document.getElementById('dvp-show-all')?.checked;
+  const filteredTeams = (!slateTeams || showAll) ? teams : displayTeams;
+
+  let html = `<div style="margin-bottom:6px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+    ${slateTeams ? `<label style="font-size:11px;display:flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" id="dvp-show-all" ${showAll ? 'checked' : ''} onchange="renderDvP()"> Show all 30 teams</label>` : ''}
+    <span style="font-size:10px;color:var(--tt)"><span style="color:var(--tsu)">■</span> easy matchup &nbsp;<span style="color:var(--td)">■</span> tough matchup (rank 1 = most pts allowed)</span>
+  </div>`;
+
+  html += `<div style="overflow-x:auto"><table style="width:100%;font-size:11px;min-width:560px">
+    <thead><tr>
+      <th style="text-align:left">Team (Def)</th>
+      ${positions.map(p => `<th title="Avg DK pts allowed to ${p} per game">${p}</th>`).join('')}
+    </tr></thead>
+    <tbody>`;
+
+  filteredTeams.forEach(team => {
+    const pd = dvpData[team] || {};
+    html += `<tr><td><strong>${esc(team)}</strong></td>`;
+    positions.forEach(pos => {
+      const d = pd[pos];
+      if (!d) { html += '<td style="color:var(--tt)">—</td>'; return; }
+      const style = rankColor(d.rank, d.totalTeams);
+      const rankLabel = d.rank && d.totalTeams ? ` <span style="font-size:9px;color:var(--tt)">#${d.rank}</span>` : '';
+      html += `<td style="${style}" title="Avg ${d.avgAllowed} DK pts/game (rank ${d.rank}/${d.totalTeams})">${d.avgAllowed}${rankLabel}</td>`;
+    });
+    html += '</tr>';
+  });
+
+  html += '</tbody></table></div>';
+  if (!showAll && slateTeams && displayTeams.length < teams.length) {
+    html += `<div style="font-size:10px;color:var(--tt);margin-top:4px">Showing ${displayTeams.length} slate teams. Check "Show all 30 teams" to see the full table.</div>`;
+  }
+  el.innerHTML = html;
 }
 
 // ── Wind Effects ──────────────────────────────────────────────────────────────
@@ -2151,11 +2729,11 @@ function exportPool() {
     p.isConfirmed ? 'Y' : '',
     p.confirmedOrder || '',
     p.injuryType || '',
-    p.injuryDesc ? `"${p.injuryDesc.replace(/"/g, '""')}"` : '',
+    p.injuryDesc || '',
     p.platoonAdj != null ? p.platoonAdj.toFixed(3) : ''
-  ].map(v => (String(v).includes(',') && !String(v).startsWith('"')) ? `"${v}"` : v));
+  ].map(csvQuote));
 
-  const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+  const csv = [headers.map(csvQuote).join(','), ...rows.map(r => r.join(','))].join('\n');
   const blob = new Blob([csv], { type: 'text/csv' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -2174,6 +2752,7 @@ function saveSession() {
       blendWeights,
       contestSize,
       lineup: lineup.map(p => p ? { name: p.name } : null),
+      allowBvP: document.getElementById('allow-bvp')?.checked || false,
       portConfig: {
         numLineups: document.getElementById('port-num-lineups')?.value,
         maxExposure: document.getElementById('port-max-exposure')?.value,
@@ -2182,7 +2761,13 @@ function saveSession() {
         contestSize: document.getElementById('port-contest-size')?.value,
         maxOverlap: document.getElementById('port-max-overlap')?.value,
         requireBringBack: document.getElementById('port-require-bringback')?.checked,
-      }
+        allowBvP: document.getElementById('port-allow-bvp')?.checked || false,
+        stackPct5: document.getElementById('port-stack-pct5')?.value,
+        cashLine: document.getElementById('port-cash-line')?.value,
+        winLine: document.getElementById('port-win-line')?.value,
+        payoutType: document.getElementById('port-payout-type')?.value,
+      },
+      playerExposureOverrides
     };
     localStorage.setItem(LS_KEY, JSON.stringify(session));
   } catch (e) { /* quota or private-mode error — ignore */ }
@@ -2207,12 +2792,32 @@ function restoreSession() {
     // Restore portfolio config inputs
     const pc = session.portConfig || {};
     if (pc.numLineups) { const el = document.getElementById('port-num-lineups'); if (el) el.value = pc.numLineups; }
-    if (pc.maxExposure) { const el = document.getElementById('port-max-exposure'); if (el) el.value = pc.maxExposure; }
-    if (pc.maxPitcher) { const el = document.getElementById('port-max-pitcher'); if (el) el.value = pc.maxPitcher; }
+    if (pc.maxExposure) {
+      const el = document.getElementById('port-max-exposure'); if (el) el.value = pc.maxExposure;
+      const lbl = document.getElementById('exp-label'); if (lbl) lbl.textContent = pc.maxExposure + '%';
+    }
+    if (pc.maxPitcher) {
+      const el = document.getElementById('port-max-pitcher'); if (el) el.value = pc.maxPitcher;
+      const lbl = document.getElementById('pitcher-exp-label'); if (lbl) lbl.textContent = pc.maxPitcher + '%';
+    }
     if (pc.contestType) { const el = document.getElementById('port-contest-type'); if (el) el.value = pc.contestType; }
     if (pc.contestSize) { const el = document.getElementById('port-contest-size'); if (el) el.value = pc.contestSize; }
     if (pc.maxOverlap != null) { const el = document.getElementById('port-max-overlap'); if (el) el.value = pc.maxOverlap; }
     if (pc.requireBringBack != null) { const el = document.getElementById('port-require-bringback'); if (el) el.checked = pc.requireBringBack; }
+    if (pc.allowBvP != null) { const el = document.getElementById('port-allow-bvp'); if (el) el.checked = pc.allowBvP; }
+    if (pc.stackPct5 != null) { const el = document.getElementById('port-stack-pct5'); if (el) el.value = pc.stackPct5; }
+    if (pc.cashLine) { const el = document.getElementById('port-cash-line'); if (el) el.value = pc.cashLine; }
+    if (pc.winLine) { const el = document.getElementById('port-win-line'); if (el) el.value = pc.winLine; }
+    if (pc.payoutType) { const el = document.getElementById('port-payout-type'); if (el) el.value = pc.payoutType; }
+
+    // Restore player exposure overrides
+    if (session.playerExposureOverrides) {
+      playerExposureOverrides = session.playerExposureOverrides;
+      renderExposureOverrides();
+    }
+
+    // Restore lineup-builder BvP checkbox
+    if (session.allowBvP != null) { const el = document.getElementById('allow-bvp'); if (el) el.checked = session.allowBvP; }
 
     // Restore lineup slots — resolved against POOL once POOL is loaded
     if (session.lineup) {

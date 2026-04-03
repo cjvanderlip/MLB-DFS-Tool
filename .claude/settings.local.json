@@ -22,7 +22,25 @@
       "Bash(node -e \"require\\(''''./server.js''''\\)\")",
       "Bash(node --check server.js)",
       "Bash(node --check public/engine.js)",
-      "Bash(node --check public/app.js)"
+      "Bash(node --check public/app.js)",
+      "WebFetch(domain:www.stokastic.com)",
+      "WebFetch(domain:rotogrinders.com)",
+      "WebFetch(domain:www.sabersim.com)",
+      "WebFetch(domain:www.awesemo.com)",
+      "WebFetch(domain:www.fantasyalarm.com)",
+      "WebFetch(domain:www.rotowire.com)",
+      "WebFetch(domain:www.numberfire.com)",
+      "WebFetch(domain:www.fanduel.com)",
+      "WebFetch(domain:www.cheatsheetwarroom.com)",
+      "WebFetch(domain:windailysports.com)",
+      "WebFetch(domain:awesemo.com)",
+      "WebFetch(domain:fantasy.fangraphs.com)",
+      "WebFetch(domain:draftdime.com)",
+      "WebFetch(domain:support.sabersim.com)",
+      "WebFetch(domain:www.fantasylabs.com)",
+      "WebFetch(domain:support.fantasylabs.com)",
+      "WebFetch(domain:fantasylabs.zendesk.com)",
+      "WebFetch(domain:blogs.fangraphs.com)"
     ]
   }
 }

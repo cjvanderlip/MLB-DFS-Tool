@@ -48,8 +48,8 @@ function samplePlayerScore(player, correlationShift = 0) {
   // Build asymmetric distribution:
   // Left side std = (median - floor) / 1.5
   // Right side std = (ceiling - median) / 1.5
-  const leftStd = Math.max((median - floor) / 1.5, 0.5);
-  const rightStd = Math.max((ceiling - median) / 1.5, 0.5);
+  const leftStd = Math.max((median - floor) / 1.5, 0.5) * _simDiversity;
+  const rightStd = Math.max((ceiling - median) / 1.5, 0.5) * _simDiversity;
 
   // Generate base normal sample shifted by correlation
   const z = randNorm(0, 1) + correlationShift;
@@ -67,16 +67,76 @@ function samplePlayerScore(player, correlationShift = 0) {
 
 // ── Correlation Matrix ──────────────────────────────────────────────────────
 
+// Historical pair correlations — set from saved history actuals.
+// Key: "nameA|nameB" (sorted), value: Pearson r computed from co-appearances.
+let _pairCorr = {};
+
+// Build pair correlation map from history data.
+// historyEntries: array of { playerActuals: { playerName: dkScore }, lineup: [...] }
+function buildPairCorrelations(historyEntries) {
+  // Accumulate sum-of-products, counts, and individual sums per pair
+  const acc = {}; // { key: { sumX, sumY, sumXX, sumYY, sumXY, n } }
+
+  for (const entry of historyEntries) {
+    const actuals = entry.playerActuals;
+    if (!actuals || Object.keys(actuals).length < 2) continue;
+    const players = Object.keys(actuals);
+    for (let i = 0; i < players.length; i++) {
+      for (let j = i + 1; j < players.length; j++) {
+        const a = players[i], b = players[j];
+        const x = actuals[a], y = actuals[b];
+        if (x == null || y == null) continue;
+        const key = [a, b].sort().join('|');
+        if (!acc[key]) acc[key] = { sumX: 0, sumY: 0, sumXX: 0, sumYY: 0, sumXY: 0, n: 0 };
+        const s = acc[key];
+        s.sumX += x; s.sumY += y; s.sumXX += x * x;
+        s.sumYY += y * y; s.sumXY += x * y; s.n++;
+      }
+    }
+  }
+
+  const result = {};
+  for (const [key, s] of Object.entries(acc)) {
+    if (s.n < 5) continue; // require at least 5 co-appearances for reliability
+    const num = s.n * s.sumXY - s.sumX * s.sumY;
+    const den = Math.sqrt((s.n * s.sumXX - s.sumX ** 2) * (s.n * s.sumYY - s.sumY ** 2));
+    if (den === 0) continue;
+    result[key] = Math.max(-1, Math.min(1, num / den));
+  }
+  _pairCorr = result;
+  return result;
+}
+
+function getPairCorrelation(name1, name2) {
+  const key = [name1, name2].sort().join('|');
+  return _pairCorr[key] ?? null;
+}
+
+// Scaling factors set by user-facing sliders (1.0 = default).
+// corrScale: multiplies all non-zero correlations (>1 = more stacking, <1 = less).
+// simDiversity: adds jitter to samplePlayerScore (>1 = wider distributions).
+let _corrScale = 1.0;
+let _simDiversity = 1.0;
+function setCorrScale(v) { _corrScale = Math.max(0.1, Math.min(3.0, v)); }
+function setSimDiversity(v) { _simDiversity = Math.max(0.5, Math.min(3.0, v)); }
+function getCorrScale() { return _corrScale; }
+function getSimDiversity() { return _simDiversity; }
+
 // Returns correlation coefficient between two players
-// Based on: same team (batting order adjacency), bring-back, same game, pitcher-team
+// Checks historical pair data first, then falls back to structural rules.
 function getCorrelation(p1, p2) {
   const isP1 = rp(p1, 'P'), isP2 = rp(p2, 'P');
 
-  // Pitcher vs own batters: negative correlation (pitcher does well = batters face weaker lineup)
-  // Actually in DFS, pitcher doing well doesn't directly hurt own batters
-  // Pitcher vs opposing batters: negative correlation
-  if (isP1 && !isP2 && p1.opp === p2.team) return -0.15;
-  if (isP2 && !isP1 && p2.opp === p1.team) return -0.15;
+  // Historical pair correlation takes priority when available (>=5 co-appearances)
+  const hist = getPairCorrelation(p1.name, p2.name);
+  if (hist !== null) return hist * _corrScale;
+
+  // Pitcher vs opposing batters: near-zero correlation in DFS.
+  // A high-scoring game (pitcher gets Ks + W, batters score runs) benefits both sides.
+  // We block pitcher+opposing batter stacks via the BvP rule rather than relying on a
+  // negative correlation that would skew simulation results pessimistically.
+  if (isP1 && !isP2 && p1.opp === p2.team) return 0.0;
+  if (isP2 && !isP1 && p2.opp === p1.team) return 0.0;
 
   // Same team batters: positive correlation (run scoring is correlated)
   if (!isP1 && !isP2 && p1.team === p2.team) {
@@ -84,20 +144,20 @@ function getCorrelation(p1, p2) {
     const diff = Math.abs(o1 - o2);
     // Adjacent batters: 0.38, 2-apart: 0.30, etc.
     // Research shows 1-2 combo has highest correlation
-    if (diff === 1) return 0.38;
-    if (diff === 2) return 0.30;
-    if (diff === 3) return 0.22;
-    return 0.15; // Same team, far apart
+    if (diff === 1) return Math.min(0.95, 0.38 * _corrScale);
+    if (diff === 2) return Math.min(0.95, 0.30 * _corrScale);
+    if (diff === 3) return Math.min(0.95, 0.22 * _corrScale);
+    return Math.min(0.95, 0.15 * _corrScale); // Same team, far apart
   }
 
   // Bring-back: opposing team batter in same game
   if (!isP1 && !isP2 && p1.opp === p2.team && p2.opp === p1.team) {
-    return 0.12; // Slight positive - high scoring games help both sides
+    return Math.min(0.95, 0.12 * _corrScale);
   }
 
   // Pitcher and own team batters: slight positive (team wins = pitcher gets W bonus)
-  if (isP1 && !isP2 && p1.team === p2.team) return 0.05;
-  if (isP2 && !isP1 && p2.team === p1.team) return 0.05;
+  if (isP1 && !isP2 && p1.team === p2.team) return Math.min(0.95, 0.05 * _corrScale);
+  if (isP2 && !isP1 && p2.team === p1.team) return Math.min(0.95, 0.05 * _corrScale);
 
   return 0; // Different games, no correlation
 }
@@ -457,7 +517,9 @@ function optimalExposureBoost(p, context, mode) {
   const { optimalExposure } = context;
   if (!optimalExposure || !Object.keys(optimalExposure).length) return 1.0;
   const exp = optimalExposure[p.name];
-  if (!exp) return 0.95; // Players NOT in any optimal lineup get a small penalty
+  // Players absent from optimal lineups get a minimal penalty — not enough to
+  // wash out legitimate ceiling plays, just enough to break ties toward chalky picks.
+  if (!exp) return 0.98;
   const pct = exp.pct; // 0-100
   if (mode === 'cash') {
     // Cash loves consensus plays — up to +10%
@@ -466,15 +528,18 @@ function optimalExposureBoost(p, context, mode) {
     // Single entry: moderate signal — up to +8%
     return 1.0 + Math.min(pct / 100, 1.0) * 0.08;
   } else {
-    // GPP: use as confirmation, not driver — up to +6%
-    // But heavily penalise players in 0% of optimals
-    return pct > 0 ? 1.0 + Math.min(pct / 100, 1.0) * 0.06 : 0.92;
+    // GPP: consensus is a weak signal — use gently as confirmation, not a driver.
+    // Absent players get only -2%, preserving their ceiling upside for tournament play.
+    return pct > 0 ? 1.0 + Math.min(pct / 100, 1.0) * 0.06 : 0.98;
   }
 }
 
 function scoreCash(p, context = {}) {
-  const { vegasData, parkFactors, weatherData, stadiums, teamScoring, umpireData, blendWeights } = context;
+  const { vegasData, parkFactors, weatherData, stadiums, teamScoring, umpireData, blendWeights, bullpenData, framingMap, sprintSpeedData } = context;
   const isP = rp(p, 'P');
+  const bpAdj = bullpenAdjustment(p, bullpenData);
+  const cfAdj = catcherFramingAdjustment(p, framingMap);
+  const ssBoost = sprintSpeedBoost(p, sprintSpeedData);
 
   let vegasAdj = 1.0;
   if (isP) {
@@ -503,7 +568,7 @@ function scoreCash(p, context = {}) {
   const optBoost = optimalExposureBoost(p, context, 'cash');
   const scW = (blendWeights?.Statcast ?? 100) / 100;
   const fmW = (blendWeights?.['Form (14d)'] ?? 100) / 100;
-  const scBoost = !isP ? (1.0 + (statcastCeilingBoost(p) - 1.0) * scW) : 1.0;
+  const scBoost = isP ? (1.0 + (pitcherStuffBoost(p) - 1.0) * scW) : (1.0 + (statcastCeilingBoost(p) - 1.0) * scW);
   const fmBoost = 1.0 + (formMultiplier(p) - 1.0) * fmW;
   const homeTeam2 = p.game ? p.game.split('@')[1] : p.team;
   const umpTend = umpireData?.[homeTeam2] || null;
@@ -514,7 +579,7 @@ function scoreCash(p, context = {}) {
     const winProb = p.winProb || 0.5;
     const matchup = getPitcherMatchupScore(p, context);
     return ((p.median || 0) * 2.5 + (p.floor || 0) * 1.5 + matchup * 2 + kBonus + winProb * 3)
-      * vegasAdj * wm.pitching * tsAdj.pitching * optBoost * fmBoost * umpBoost;
+      * vegasAdj * wm.pitching * tsAdj.pitching * optBoost * scBoost * fmBoost * umpBoost * bpAdj * cfAdj * ssBoost;
   }
 
   // Batter
@@ -522,12 +587,15 @@ function scoreCash(p, context = {}) {
   const variance = (p.ceiling || 0) - (p.floor || 0);
   const platoon = p.platoonAdj || 1.0;
   return ((p.median || 0) * 2.0 + (p.floor || 0) * 1.5 - variance * 0.3 + orderBonus)
-    * vegasAdj * pf.run * wm.hitting * platoon * tsAdj.batting * optBoost * scBoost * fmBoost * umpBoost;
+    * vegasAdj * pf.run * wm.hitting * platoon * tsAdj.batting * optBoost * scBoost * fmBoost * umpBoost * bpAdj * cfAdj * ssBoost;
 }
 
 function scoreSingle(p, context = {}) {
-  const { vegasData, parkFactors, weatherData, stadiums, teamScoring, umpireData, blendWeights } = context;
+  const { vegasData, parkFactors, weatherData, stadiums, teamScoring, umpireData, blendWeights, bullpenData, framingMap, sprintSpeedData } = context;
   const isP = rp(p, 'P');
+  const bpAdj = bullpenAdjustment(p, bullpenData);
+  const cfAdj = catcherFramingAdjustment(p, framingMap);
+  const ssBoost = sprintSpeedBoost(p, sprintSpeedData);
 
   let vegasAdj = isP ? vegasPitcherAdjustment(p, vegasData) : vegasAdjustment(p, vegasData);
   const homeTeam = p.game ? p.game.split('@')[1] : p.team;
@@ -548,7 +616,7 @@ function scoreSingle(p, context = {}) {
   const optBoost = optimalExposureBoost(p, context, 'single');
   const scW = (blendWeights?.Statcast ?? 100) / 100;
   const fmW = (blendWeights?.['Form (14d)'] ?? 100) / 100;
-  const scBoost = !isP ? (1.0 + (statcastCeilingBoost(p) - 1.0) * scW) : 1.0;
+  const scBoost = isP ? (1.0 + (pitcherStuffBoost(p) - 1.0) * scW) : (1.0 + (statcastCeilingBoost(p) - 1.0) * scW);
   const fmBoost = 1.0 + (formMultiplier(p) - 1.0) * fmW;
   const umpTend = umpireData?.[homeTeam] || null;
   const umpBoost = umpireMultiplier(umpTend, isP);
@@ -557,18 +625,21 @@ function scoreSingle(p, context = {}) {
     const kBonus = (p.kRate || 0) > 25 ? 1.5 : (p.kRate || 0) > 20 ? 0.7 : 0;
     const matchup = getPitcherMatchupScore(p, context);
     return ((p.median || 0) * 1.5 + (p.ceiling || 0) * 0.8 + value * 0.3 + matchup + kBonus)
-      * vegasAdj * wm.pitching * tsAdj.pitching * optBoost * fmBoost * umpBoost;
+      * vegasAdj * wm.pitching * tsAdj.pitching * optBoost * scBoost * fmBoost * umpBoost * bpAdj * cfAdj * ssBoost;
   }
 
   const orderBonus = p.order > 0 && p.order <= 5 ? (6 - p.order) * 0.8 : 0;
   const platoon = p.platoonAdj || 1.0;
   return ((p.median || 0) * 1.2 + (p.ceiling || 0) * 0.6 + value * 0.4 + orderBonus)
-    * vegasAdj * pf.run * wm.hitting * platoon * tsAdj.batting * optBoost * scBoost * fmBoost * umpBoost;
+    * vegasAdj * pf.run * wm.hitting * platoon * tsAdj.batting * optBoost * scBoost * fmBoost * umpBoost * bpAdj * cfAdj * ssBoost;
 }
 
 function scoreGpp(p, context = {}) {
-  const { vegasData, parkFactors, weatherData, stadiums, teamScoring, contestSize = 1000, umpireData, blendWeights } = context;
+  const { vegasData, parkFactors, weatherData, stadiums, teamScoring, contestSize = 1000, umpireData, blendWeights, bullpenData, framingMap, sprintSpeedData } = context;
   const isP = rp(p, 'P');
+  const bpAdj = bullpenAdjustment(p, bullpenData);
+  const cfAdj = catcherFramingAdjustment(p, framingMap);
+  const ssBoost = sprintSpeedBoost(p, sprintSpeedData);
 
   let vegasAdj = isP ? vegasPitcherAdjustment(p, vegasData) : vegasAdjustment(p, vegasData);
   const homeTeam = p.game ? p.game.split('@')[1] : p.team;
@@ -588,7 +659,7 @@ function scoreGpp(p, context = {}) {
   const optBoost = optimalExposureBoost(p, context, 'gpp');
   const scW = (blendWeights?.Statcast ?? 100) / 100;
   const fmW = (blendWeights?.['Form (14d)'] ?? 100) / 100;
-  const scBoost = !isP ? (1.0 + (statcastCeilingBoost(p) - 1.0) * scW) : 1.0;
+  const scBoost = isP ? (1.0 + (pitcherStuffBoost(p) - 1.0) * scW) : (1.0 + (statcastCeilingBoost(p) - 1.0) * scW);
   const fmBoost = 1.0 + (formMultiplier(p) - 1.0) * fmW;
   const umpTend = umpireData?.[homeTeam] || null;
   const umpBoost = umpireMultiplier(umpTend, isP);
@@ -599,14 +670,14 @@ function scoreGpp(p, context = {}) {
     const matchup = getPitcherMatchupScore(p, context);
     const ownPenalty = (p.own || 0) * 0.1 * (Math.log10(Math.max(contestSize, 10)) / 3);
     return ((p.ceiling || 0) * 1.2 + (p.median || 0) * 0.5 + matchup - ownPenalty + kBonus + winProb * 2)
-      * vegasAdj * wm.pitching * tsAdj.pitching * optBoost * fmBoost * umpBoost;
+      * vegasAdj * wm.pitching * tsAdj.pitching * optBoost * scBoost * fmBoost * umpBoost * bpAdj * cfAdj * ssBoost;
   }
 
   // GPP batter scoring: ceiling-weighted with ownership leverage
   const gppScore = calcGppScore(p, contestSize);
   const orderBonus = p.order > 0 && p.order <= 5 ? (6 - p.order) * 0.5 : 0;
   const platoon = p.platoonAdj || 1.0;
-  return (gppScore + orderBonus) * pf.hr * wm.hitting * platoon * tsAdj.batting * optBoost * scBoost * fmBoost * umpBoost;
+  return (gppScore + orderBonus) * pf.hr * wm.hitting * platoon * tsAdj.batting * optBoost * scBoost * fmBoost * umpBoost * bpAdj * cfAdj * ssBoost;
 }
 
 function getPitcherMatchupScore(pitcher, context) {
@@ -636,18 +707,34 @@ function optimizeLineup(pool, scoreFn, opts = {}) {
     requiredSlots = new Array(ROSTER_SIZE).fill(null),
     iterations = 5000,
     stackBonusFn = null,
-    exposureLimits = null // { playerName: maxPct }
+    exposureLimits = null, // { playerName: maxPct }
+    forceInclude = new Set(), // players that must appear in this lineup
+    allowBvP = false,      // if false, pitcher and opposing batters cannot share a lineup
+    maxBattersPerTeam = 5  // DK rule: max 5 batters from the same team
   } = opts;
+
+  // Pre-place forced players into open required slots
+  const effectiveRequired = [...requiredSlots];
+  if (forceInclude.size) {
+    for (const fname of forceInclude) {
+      if (effectiveRequired.some(p => p?.name === fname)) continue;
+      const fp = pool.find(p => p.name === fname && !excludeNames.has(p.name) && p.salary > 0);
+      if (!fp) continue;
+      for (let i = 0; i < ROSTER_SIZE; i++) {
+        if (!effectiveRequired[i] && DK_SLOTS[i].eligible(fp)) { effectiveRequired[i] = fp; break; }
+      }
+    }
+  }
 
   const lockedNames = new Set();
   let lockedSalary = 0;
-  requiredSlots.forEach(p => {
+  effectiveRequired.forEach(p => {
     if (p) { lockedNames.add(p.name); lockedSalary += p.salary; }
   });
 
   // Build scored candidate pools per open slot (top 40 eligible per position)
   const candidatePools = DK_SLOTS.map((slot, i) => {
-    if (requiredSlots[i]) return null;
+    if (effectiveRequired[i]) return null;
     return pool.filter(p =>
       slot.eligible(p) &&
       !excludeNames.has(p.name) &&
@@ -673,13 +760,13 @@ function optimizeLineup(pool, scoreFn, opts = {}) {
 
   const openSlots = [];
   for (let i = 0; i < ROSTER_SIZE; i++) {
-    if (!requiredSlots[i]) openSlots.push(i);
+    if (!effectiveRequired[i]) openSlots.push(i);
   }
 
   let bestLineup = null, bestScore = -Infinity;
 
   for (let iter = 0; iter < iterations; iter++) {
-    const lu = [...requiredSlots];
+    const lu = [...effectiveRequired];
     const usedNames = new Set(lockedNames);
     let salaryUsed = lockedSalary, valid = true;
 
@@ -701,7 +788,25 @@ function optimizeLineup(pool, scoreFn, opts = {}) {
         reserveForRemaining += slotMinSalary[order[ri]];
       }
       const budgetForThis = SALARY_CAP - salaryUsed - reserveForRemaining;
-      const available = cPool.filter(p => !usedNames.has(p.name) && p.salary <= budgetForThis);
+
+      // Dynamic BvP and team-stack constraints based on already-placed players
+      const placedPitchers = lu.filter(p => p && rp(p, 'P'));
+      const placedBatters = lu.filter(p => p && !rp(p, 'P'));
+      const bvpBlockedBatterTeams = allowBvP ? null : new Set(placedPitchers.map(p => p.opp).filter(Boolean));
+      const bvpBlockedPitcherOpps  = allowBvP ? null : new Set(placedBatters.map(p => p.team));
+      const teamBatterCounts = {};
+      placedBatters.forEach(p => { teamBatterCounts[p.team] = (teamBatterCounts[p.team] || 0) + 1; });
+
+      const available = cPool.filter(p => {
+        if (usedNames.has(p.name)) return false;
+        if (p.salary > budgetForThis) return false;
+        if (!allowBvP) {
+          if (rp(p, 'P') && p.opp && bvpBlockedPitcherOpps.has(p.opp)) return false;
+          if (!rp(p, 'P') && bvpBlockedBatterTeams.has(p.team)) return false;
+        }
+        if (!rp(p, 'P') && (teamBatterCounts[p.team] || 0) >= maxBattersPerTeam) return false;
+        return true;
+      });
       if (!available.length) { valid = false; break; }
 
       // Fix 3: rank-weighted sampling — rank 1 is (topN)x more likely than
@@ -736,12 +841,12 @@ function optimizeLineup(pool, scoreFn, opts = {}) {
     if (total > bestScore) { bestScore = total; bestLineup = [...lu]; }
   }
 
-  const result = bestLineup || greedyFill(pool, scoreFn, excludeNames, requiredSlots);
+  const result = bestLineup || greedyFill(pool, scoreFn, excludeNames, effectiveRequired, allowBvP, maxBattersPerTeam);
   // Post-optimization salary upgrade: push any unused cap into better players
-  return result ? upgradeSalary(result, pool, scoreFn, excludeNames) : result;
+  return result ? upgradeSalary(result, pool, scoreFn, excludeNames, allowBvP, maxBattersPerTeam) : result;
 }
 
-function greedyFill(pool, scoreFn, excludeNames = new Set(), requiredSlots = new Array(ROSTER_SIZE).fill(null)) {
+function greedyFill(pool, scoreFn, excludeNames = new Set(), requiredSlots = new Array(ROSTER_SIZE).fill(null), allowBvP = false, maxBattersPerTeam = 5) {
   const lu = [...requiredSlots];
   const sorted = [...pool].filter(p => !excludeNames.has(p.name) && p.salary > 0)
     .sort((a, b) => scoreFn(b) - scoreFn(a));
@@ -761,6 +866,17 @@ function greedyFill(pool, scoreFn, excludeNames = new Set(), requiredSlots = new
       const salSoFar = lu.reduce((s, lp) => s + (lp ? lp.salary : 0), 0);
       const reserveRemaining = realisticMin.reduce((s, m, j) => j > i && !lu[j] ? s + m : s, 0);
       if (salSoFar + p.salary > SALARY_CAP - reserveRemaining) continue;
+      // BvP and team-stack constraints
+      if (!allowBvP) {
+        const pitchers = lu.filter(lp => lp && rp(lp, 'P'));
+        const batters  = lu.filter(lp => lp && !rp(lp, 'P'));
+        if (rp(p, 'P') && p.opp && batters.some(b => b.team === p.opp)) continue;
+        if (!rp(p, 'P') && pitchers.some(pt => pt.opp === p.team)) continue;
+      }
+      if (!rp(p, 'P')) {
+        const teamCount = lu.filter(lp => lp && !rp(lp, 'P') && lp.team === p.team).length;
+        if (teamCount >= maxBattersPerTeam) continue;
+      }
       lu[i] = p;
       break;
     }
@@ -773,7 +889,7 @@ function greedyFill(pool, scoreFn, excludeNames = new Set(), requiredSlots = new
 // salary alternative that fits in cap and scores at least 92% as well.
 // Repeats until no further upgrades are possible. Directly closes the
 // "leaving money on the table" gap without touching diversity mechanics.
-function upgradeSalary(lu, pool, scoreFn, excludeNames) {
+function upgradeSalary(lu, pool, scoreFn, excludeNames, allowBvP = false, maxBattersPerTeam = 5) {
   let changed = true;
   while (changed) {
     changed = false;
@@ -785,14 +901,25 @@ function upgradeSalary(lu, pool, scoreFn, excludeNames) {
       const cur = lu[i];
       if (!cur) continue;
       const curScore = scoreFn(cur);
-      const upgrade = pool.filter(p =>
-        !excludeNames.has(p.name) &&
-        !luNames.has(p.name) &&
-        p.salary > cur.salary &&
-        p.salary <= cur.salary + headroom &&
-        DK_SLOTS[i].eligible(p) &&
-        scoreFn(p) >= curScore * 0.92
-      ).sort((a, b) => b.salary - a.salary)[0];
+      const otherBatters  = lu.filter((p, j) => p && j !== i && !rp(p, 'P'));
+      const otherPitchers = lu.filter((p, j) => p && j !== i && rp(p, 'P'));
+      const upgrade = pool.filter(p => {
+        if (excludeNames.has(p.name)) return false;
+        if (luNames.has(p.name)) return false;
+        if (p.salary <= cur.salary) return false;
+        if (p.salary > cur.salary + headroom) return false;
+        if (!DK_SLOTS[i].eligible(p)) return false;
+        if (scoreFn(p) < curScore * 0.95) return false;
+        if (!allowBvP) {
+          if (rp(p, 'P') && p.opp && otherBatters.some(b => b.team === p.opp)) return false;
+          if (!rp(p, 'P') && otherPitchers.some(pt => pt.opp === p.team)) return false;
+        }
+        if (!rp(p, 'P')) {
+          const teamCount = otherBatters.filter(b => b.team === p.team).length;
+          if (teamCount >= maxBattersPerTeam) return false;
+        }
+        return true;
+      }).sort((a, b) => b.salary - a.salary)[0];
       if (upgrade) {
         luNames.delete(cur.name);
         lu[i] = upgrade;
@@ -823,9 +950,9 @@ function gppStackBonus(lu, usedStackTeam) {
   const teamCounts = {};
   lu.forEach(p => { if (!rp(p, 'P')) teamCounts[p.team] = (teamCounts[p.team] || 0) + 1; });
   Object.values(teamCounts).forEach(c => {
-    if (c >= 5) bonus += 8;
-    else if (c >= 4) bonus += 5;
-    else if (c >= 3) bonus += 2;
+    if (c >= 5) bonus += 5;
+    else if (c >= 4) bonus += 3;
+    else if (c >= 3) bonus += 1.5;
   });
 
   // Batting order adjacency bonus within stacks
@@ -866,10 +993,23 @@ function buildVirtualStack(team, pool, excludeNames) {
 }
 
 // Try to fit stack players into requiredSlots. Returns true on success.
+// Pitchers in user-uploaded stacks are placed as pitchers only; batters from the
+// same team are counted against the DK 5-batter-per-team limit.
 function tryPlaceStack(stackPlayers, requiredSlots, pool) {
   const tempLu = [...requiredSlots];
   let stackSalary = requiredSlots.reduce((s, p) => s + (p ? p.salary : 0), 0);
+
+  // Count batters already locked in requiredSlots per team
+  const teamBatterCounts = {};
+  requiredSlots.forEach(p => {
+    if (p && !rp(p, 'P')) teamBatterCounts[p.team] = (teamBatterCounts[p.team] || 0) + 1;
+  });
+
   for (const sp of stackPlayers) {
+    // Enforce 5-batter-per-team cap for batters in the stack
+    if (!rp(sp, 'P')) {
+      if ((teamBatterCounts[sp.team] || 0) >= 5) return false;
+    }
     let placed = false;
     for (let i = 0; i < ROSTER_SIZE; i++) {
       if (tempLu[i]) continue;
@@ -877,6 +1017,7 @@ function tryPlaceStack(stackPlayers, requiredSlots, pool) {
       tempLu[i] = sp; stackSalary += sp.salary; placed = true; break;
     }
     if (!placed) return false;
+    if (!rp(sp, 'P')) teamBatterCounts[sp.team] = (teamBatterCounts[sp.team] || 0) + 1;
   }
   // Use a realistic per-slot minimum ($3,500) rather than the absolute floor
   // so stacks that would leave no budget for quality fillers are rejected
@@ -899,9 +1040,16 @@ function buildPortfolio(pool, opts = {}) {
     requireBringBack = false, // GPP: reject lineups without at least one bring-back batter
     lockedTeams = [],      // teams whose stacks are prioritised every lineup
     bannedTeams = [],      // teams fully excluded from the portfolio
+    allowBvP = false,      // if false, pitcher and opposing batters cannot share a lineup
+    playerOverrides = {},  // { playerName: { min: 0-1, max: 0-1 } } per-player exposure bounds
+    stackPct5 = null,      // % of lineups that should target a 5-man stack (null = auto)
     context = {},
     iterations = 5000
   } = opts;
+
+  // Pre-compute stack targeting counts
+  const target5ManCount = stackPct5 != null ? Math.round(numLineups * stackPct5 / 100) : null;
+  let lineups5ManCount = 0;
 
   // Pre-compute banned player set — stays constant for the entire portfolio
   const bannedNames = new Set(
@@ -926,21 +1074,44 @@ function buildPortfolio(pool, opts = {}) {
   let lockedTeamIdx = 0;
 
   for (let i = 0; i < numLineups; i++) {
-    // Build exclusion set: banned + over-exposed players
+    // Build exclusion set: banned + over-exposed players (respecting per-player max overrides)
     const excludeOverExposed = new Set(bannedNames);
-    if (i > 0) {
+    if (lineups.length > 0) {
       pool.forEach(p => {
-        const threshold = rp(p, 'P') ? maxExposurePitcher : maxExposure;
-        const exposure = (exposureCounts[p.name] || 0) / i;
+        const ov = playerOverrides[p.name];
+        const threshold = ov?.max != null ? ov.max : (rp(p, 'P') ? maxExposurePitcher : maxExposure);
+        const exposure = (exposureCounts[p.name] || 0) / lineups.length;
         if (exposure >= threshold) excludeOverExposed.add(p.name);
       });
     }
 
+    // Build force-include set: players whose min exposure won't be met unless included now
+    const forceNames = new Set();
+    if (Object.keys(playerOverrides).length) {
+      const remaining = numLineups - lineups.length;
+      pool.forEach(p => {
+        const ov = playerOverrides[p.name];
+        if (!ov?.min) return;
+        const targetCount = Math.ceil(numLineups * ov.min);
+        const currentCount = exposureCounts[p.name] || 0;
+        if (targetCount - currentCount >= remaining) {
+          forceNames.add(p.name);
+          excludeOverExposed.delete(p.name); // can't exclude a forced player
+        }
+      });
+    }
+
+    // Determine stack size preference for this lineup
+    let prefer5Man = null;
+    if (target5ManCount != null) {
+      prefer5Man = lineups5ManCount < target5ManCount;
+    }
+
     let lu;
     if (contestType === 'cash') {
-      lu = generateCashLineup(pool, excludeOverExposed, context, iterations);
+      lu = generateCashLineup(pool, excludeOverExposed, context, iterations, allowBvP, forceNames);
     } else if (contestType === 'single') {
-      lu = generateSingleLineup(pool, excludeOverExposed, context, iterations);
+      lu = generateSingleLineup(pool, excludeOverExposed, context, iterations, allowBvP, forceNames);
     } else {
       // Determine which locked team (if any) this lineup should feature
       const targetLockedTeam = lockedTeams.length > 0
@@ -952,11 +1123,12 @@ function buildPortfolio(pool, opts = {}) {
         pool, excludeOverExposed, context,
         allowedStacks3, allowedStacks5, usedStackIds,
         iterations, contestSize,
-        targetLockedTeam, pool
+        targetLockedTeam, pool, allowBvP, forceNames, prefer5Man
       );
 
       // Hard bring-back enforcement: if required and lineup has a stack but no
-      // bring-back batter, attempt to swap in the best available bring-back
+      // bring-back batter, attempt to swap in the best available bring-back.
+      // If no valid swap is found, null out the lineup so it is skipped entirely.
       if (lu && requireBringBack) {
         const players = lu.filter(Boolean);
         const teamCounts = {};
@@ -973,6 +1145,7 @@ function buildPortfolio(pool, opts = {}) {
               !rp(p, 'P') && oppTeams.has(p.team) &&
               !luNames.has(p.name) && !excludeOverExposed.has(p.name) && p.salary > 0
             ).sort((a, b) => (b.median || 0) - (a.median || 0));
+            let placed = false;
             for (const bb of bbCandidates) {
               // Try replacing the lowest-scoring non-stacked batter
               const swapCandidates = lu.map((p, idx) => ({ p, idx }))
@@ -981,12 +1154,13 @@ function buildPortfolio(pool, opts = {}) {
               for (const { idx } of swapCandidates) {
                 if (!DK_SLOTS[idx].eligible(bb)) continue;
                 const newSalary = lu.reduce((s, p, i) => s + (i === idx ? bb.salary : (p?.salary || 0)), 0);
-                if (newSalary <= SALARY_CAP) { lu[idx] = bb; break; }
+                if (newSalary <= SALARY_CAP) { lu[idx] = bb; placed = true; break; }
               }
-              const updatedPlayers = lu.filter(Boolean);
-              const hasBBNow = updatedPlayers.some(p => !rp(p, 'P') && oppTeams.has(p.team));
-              if (hasBBNow) break;
+              if (placed) break;
             }
+            // No valid bring-back found — discard this lineup rather than emit it
+            // without a bring-back. The portfolio loop will attempt another iteration.
+            if (!placed) lu = null;
           }
         }
       }
@@ -1007,6 +1181,12 @@ function buildPortfolio(pool, opts = {}) {
         lu.forEach(p => {
           exposureCounts[p.name] = (exposureCounts[p.name] || 0) + 1;
         });
+        // Track 5-man stack usage for stackPct5 targeting
+        if (target5ManCount != null) {
+          const teamCts = {};
+          lu.forEach(p => { if (!rp(p, 'P')) teamCts[p.team] = (teamCts[p.team] || 0) + 1; });
+          if (Object.values(teamCts).some(c => c >= 5)) lineups5ManCount++;
+        }
       }
     }
   }
@@ -1053,39 +1233,41 @@ function buildPortfolio(pool, opts = {}) {
   };
 }
 
-function generateCashLineup(pool, excludeNames, context, iterations) {
+function generateCashLineup(pool, excludeNames, context, iterations, allowBvP = false, forceInclude = new Set()) {
   const scoreFn = p => scoreCash(p, { ...context, pool });
-  return optimizeLineup(pool, scoreFn, { excludeNames, iterations });
+  return optimizeLineup(pool, scoreFn, { excludeNames, iterations, allowBvP, forceInclude });
 }
 
-function generateSingleLineup(pool, excludeNames, context, iterations) {
+function generateSingleLineup(pool, excludeNames, context, iterations, allowBvP = false, forceInclude = new Set()) {
   const scoreFn = p => scoreSingle(p, { ...context, pool });
-  return optimizeLineup(pool, scoreFn, { excludeNames, iterations });
+  return optimizeLineup(pool, scoreFn, { excludeNames, iterations, allowBvP, forceInclude });
 }
 
 // lockedTeam: if set, this team's stack must be used for this lineup.
 // fullPool: the unfiltered pool used for virtual stack synthesis (may differ from pool after exclusions).
-function generateGppLineup(pool, excludeNames, context, stacks3, stacks5, usedStackIds, iterations, contestSize, lockedTeam, fullPool) {
+function generateGppLineup(pool, excludeNames, context, stacks3, stacks5, usedStackIds, iterations, contestSize, lockedTeam, fullPool, allowBvP = false, forceInclude = new Set(), prefer5Man = null) {
   const requiredSlots = new Array(ROSTER_SIZE).fill(null);
   let usedStackTeam = null;
 
-  // Build ordered candidate stacks. If a locked team is specified, its stacks
-  // go first; everything else follows in the normal priority order.
+  // Build ordered candidate stacks. prefer5Man: true = favor 5-man, false = favor 3-man, null = auto.
+  const sortByValue = (a, b) => (b.proj - (b.own || 0) * 0.3) - (a.proj - (a.own || 0) * 0.3);
   const buildCandidates = () => {
-    const available = [...stacks5, ...stacks3].filter(s => s.proj > 0 && !usedStackIds.has(s.id));
+    const avail5 = stacks5.filter(s => s.proj > 0 && !usedStackIds.has(s.id)).sort(sortByValue);
+    const avail3 = stacks3.filter(s => s.proj > 0 && !usedStackIds.has(s.id)).sort(sortByValue);
+    // Primary pool gets the first 7 slots in candidate list; secondary fills the rest
+    const primary = prefer5Man === false ? avail3 : avail5;
+    const secondary = prefer5Man === false ? avail5 : avail3;
+    const allAvail = [...primary, ...secondary];
     if (lockedTeam) {
-      const forTeam = available.filter(s => s.team === lockedTeam);
-      const others = available.filter(s => s.team !== lockedTeam)
-        .sort((a, b) => (b.proj - (b.own || 0) * 0.3) - (a.proj - (a.own || 0) * 0.3));
-      // Shuffle the team-specific stacks for variety between lineups
+      const forTeam = allAvail.filter(s => s.team === lockedTeam);
+      const others = allAvail.filter(s => s.team !== lockedTeam).slice(0, 6);
       for (let i = forTeam.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
         [forTeam[i], forTeam[j]] = [forTeam[j], forTeam[i]];
       }
-      return [...forTeam, ...others.slice(0, 6)];
+      return [...forTeam, ...others];
     }
-    const top = available.sort((a, b) => (b.proj - (b.own || 0) * 0.3) - (a.proj - (a.own || 0) * 0.3))
-      .slice(0, 10);
+    const top = [...primary.slice(0, 7), ...secondary.slice(0, 5)];
     for (let i = top.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [top[i], top[j]] = [top[j], top[i]];
@@ -1097,7 +1279,7 @@ function generateGppLineup(pool, excludeNames, context, stacks3, stacks5, usedSt
 
   for (const stack of candidates) {
     const stackPlayers = stack.players
-      .map(name => pool.find(p => p.name === name && !excludeNames.has(p.name)))
+      .map(name => pool.find(p => p.name.toLowerCase() === name.toLowerCase() && !excludeNames.has(p.name)))
       .filter(Boolean);
     if (stackPlayers.length < Math.min(3, stack.players.length)) continue;
 
@@ -1116,7 +1298,7 @@ function generateGppLineup(pool, excludeNames, context, stacks3, stacks5, usedSt
     const virtual = buildVirtualStack(lockedTeam, srcPool, excludeNames);
     if (virtual) {
       const stackPlayers = virtual.players
-        .map(name => pool.find(p => p.name === name && !excludeNames.has(p.name)))
+        .map(name => pool.find(p => p.name.toLowerCase() === name.toLowerCase() && !excludeNames.has(p.name)))
         .filter(Boolean);
       if (stackPlayers.length >= 2) {
         const tempSlots = new Array(ROSTER_SIZE).fill(null);
@@ -1131,7 +1313,7 @@ function generateGppLineup(pool, excludeNames, context, stacks3, stacks5, usedSt
   const scoreFn = p => scoreGpp(p, { ...context, pool, contestSize });
   const stackBonusFn = lu => gppStackBonus(lu, usedStackTeam);
 
-  return optimizeLineup(pool, scoreFn, { excludeNames, requiredSlots, iterations, stackBonusFn });
+  return optimizeLineup(pool, scoreFn, { excludeNames, requiredSlots, iterations, stackBonusFn, allowBvP, forceInclude });
 }
 
 // ── Lineup Analysis ─────────────────────────────────────────────────────────
@@ -1272,6 +1454,134 @@ function statcastCeilingBoost(player) {
   return Math.max(0.85, Math.min(1.25, boost));
 }
 
+// ── Pitcher Stuff Model (Statcast-based) ──────────────────────────────────
+
+function pitcherStuffBoost(player) {
+  // Requires at least one pitcher Statcast metric
+  if (!player.whiffRate && !player.fastballVelo && !player.xERA) return 1.0;
+  let boost = 1.0;
+  const whiff = player.whiffRate || 0;   // league avg ~23-25%
+  const velo  = player.fastballVelo || 0; // league avg ~93-94 mph
+  const hh    = player.hardHitRate || 0;  // league avg ~38-40% (lower = better for pitcher)
+  const xera  = player.xERA || 0;         // league avg ~4.00
+
+  // Whiff rate: dominant swing-and-miss stuff (biggest DFS K driver)
+  if (whiff >= 30) boost += 0.10;         // elite (Skubal, deGrom tier)
+  else if (whiff >= 26) boost += 0.06;    // plus (Cease, Crochet)
+  else if (whiff >= 23) boost += 0.02;    // avg
+  else if (whiff > 0 && whiff < 18) boost -= 0.05; // poor contact pitcher
+
+  // Fastball velocity: raw stuff indicator
+  if (velo >= 96) boost += 0.06;          // elite velo
+  else if (velo >= 94) boost += 0.03;     // above avg
+  else if (velo >= 92) boost += 0.01;     // avg
+  else if (velo > 0 && velo < 90) boost -= 0.04; // soft-tosser penalty
+
+  // Hard hit rate against: quality of contact allowed (lower = better)
+  if (hh > 0 && hh <= 33) boost += 0.06; // elite contact suppression
+  else if (hh <= 38) boost += 0.03;       // above avg
+  else if (hh >= 46) boost -= 0.05;       // gets hit hard
+  else if (hh >= 42) boost -= 0.02;       // below avg
+
+  // xERA: Statcast expected ERA (comprehensive quality metric)
+  if (xera > 0 && xera <= 3.20) boost += 0.06;  // ace tier
+  else if (xera <= 3.70) boost += 0.03;          // solid
+  else if (xera >= 4.80) boost -= 0.05;          // hittable
+  else if (xera >= 4.30) boost -= 0.02;          // below avg
+
+  return Math.max(0.85, Math.min(1.25, boost));
+}
+
+// ── Bullpen Quality Adjustment ────────────────────────────────────────────
+
+function bullpenAdjustment(player, bullpenData) {
+  if (!bullpenData) return 1.0;
+  const isP = rp(player, 'P');
+
+  if (isP) {
+    // Pitcher: own team's bullpen quality affects win probability / QS hold
+    // Strong bullpen behind you = leads are protected = more Ws
+    const own = bullpenData[player.team];
+    if (!own || !own.era) return 1.0;
+    // League avg bullpen ERA ~4.00; lower = better
+    const diff = 4.00 - own.era;
+    // ±3% max: strong pen (+3%), weak pen (-3%)
+    return 1.0 + Math.max(-0.03, Math.min(0.03, diff * 0.02));
+  }
+
+  // Batter: opposing team's bullpen quality affects late-inning upside
+  // Weak opposing bullpen = more runs in 6th-9th innings = ceiling boost
+  const opp = bullpenData[player.opp];
+  if (!opp || !opp.era) return 1.0;
+  // Higher ERA = weaker pen = better for batters
+  const diff = opp.era - 4.00;
+  // Weak pen boost factors: ERA + WHIP + low K rate
+  let adj = diff * 0.015; // ERA component
+  if (opp.whip > 1.40) adj += 0.01;       // very leaky pen
+  else if (opp.whip < 1.10) adj -= 0.01;  // tight pen
+  if (opp.kPer9 < 7.5) adj += 0.01;       // pen can't miss bats
+  else if (opp.kPer9 > 10.0) adj -= 0.01; // dominant pen
+  // ±5% max
+  return 1.0 + Math.max(-0.05, Math.min(0.05, adj));
+}
+
+// ── Catcher Framing Adjustment ──────────────────────────────────────────────
+// framingMap = { teamAbbr: { framingRunsPerGame } } — built from pool catchers
+// Good framing catcher → pitcher boost (more called strikes) / batter penalty
+// Bad framing catcher → pitcher penalty / batter boost
+
+function catcherFramingAdjustment(player, framingMap) {
+  if (!framingMap) return 1.0;
+  const isP = rp(player, 'P');
+
+  if (isP) {
+    // Pitcher benefits from own team's good framing catcher
+    const own = framingMap[player.team];
+    if (!own) return 1.0;
+    // framingRunsPerGame ranges ~-0.18 to +0.39
+    // Scale: ±3% max for elite/terrible framers
+    return 1.0 + Math.max(-0.03, Math.min(0.03, own.framingRunsPerGame * 0.08));
+  }
+
+  // Batter: opposing catcher's framing hurts (good framer = more called K's)
+  const opp = framingMap[player.opp];
+  if (!opp) return 1.0;
+  // Good opposing framer → penalty for batter; bad framer → boost
+  return 1.0 - Math.max(-0.02, Math.min(0.02, opp.framingRunsPerGame * 0.06));
+}
+
+// ── Sprint Speed Boost ──────────────────────────────────────────────────────
+// Batter-only: fast runners have SB upside (1 DK point per SB) and extra
+// value on singles/doubles (advancing extra bases, beating out infield hits).
+// sprintSpeedData = { normalizedName: { sprintSpeed, bolts } }
+// League avg sprint speed ~27.0 ft/s. Bolts = runs ≥30 ft/s.
+
+function sprintSpeedBoost(player, sprintSpeedData) {
+  if (!sprintSpeedData) return 1.0;
+  if (rp(player, 'P')) return 1.0;  // pitchers don't steal
+  const key = (player.name || '').toLowerCase().replace(/[^a-z ]/g, '').trim();
+  const sd = sprintSpeedData[key];
+  if (!sd || !sd.sprintSpeed) return 1.0;
+
+  const speed = sd.sprintSpeed;
+  // Tier system based on sprint speed (ft/s):
+  //   Elite ≥30.0: +5% (Turner, Witt Jr — elite SB threats)
+  //   Plus  ≥29.0: +3% (above-average runners)
+  //   Above ≥28.0: +1.5%
+  //   Avg   ≥27.0: 0% (neutral)
+  //   Below ≥26.0: -1%
+  //   Slow  <26.0: -2% (no SB upside, slow on bases)
+  let boost = 0;
+  if (speed >= 30.0) boost = 0.05;
+  else if (speed >= 29.0) boost = 0.03;
+  else if (speed >= 28.0) boost = 0.015;
+  else if (speed >= 27.0) boost = 0;
+  else if (speed >= 26.0) boost = -0.01;
+  else boost = -0.02;
+
+  return 1.0 + boost;
+}
+
 // ── Recent Form Multiplier ─────────────────────────────────────────────────
 
 function formMultiplier(player) {
@@ -1303,6 +1613,120 @@ function calcPortfolioOverlap(lineups) {
   return maxOverlap;
 }
 
+// ── Portfolio Simulation ─────────────────────────────────────────────────────
+
+// Build a synthetic opponent lineup by sampling players from the pool
+// weighted by their projected ownership (field proxy).
+function buildFieldLineup(pool) {
+  const batters = pool.filter(p => !rp(p, 'P') && p.own > 0 && p.salary > 0 && p.median > 0);
+  const pitchers = pool.filter(p => rp(p, 'P') && p.own > 0 && p.salary > 0 && p.median > 0);
+  if (!batters.length || !pitchers.length) return null;
+
+  const lu = new Array(ROSTER_SIZE).fill(null);
+  const usedNames = new Set();
+
+  // Ownership-weighted random pick
+  const pickWeighted = (candidates) => {
+    const totalOwn = candidates.reduce((s, p) => s + (p.own || 1), 0);
+    let r = Math.random() * totalOwn;
+    for (const p of candidates) {
+      r -= (p.own || 1);
+      if (r <= 0) return p;
+    }
+    return candidates[candidates.length - 1];
+  };
+
+  // Fill pitchers first (slots 0,1)
+  for (let i = 0; i < 2; i++) {
+    const cands = pitchers.filter(p => !usedNames.has(p.name));
+    if (!cands.length) break;
+    const pick = pickWeighted(cands);
+    lu[i] = pick; usedNames.add(pick.name);
+  }
+  // Fill remaining slots
+  for (let i = 2; i < ROSTER_SIZE; i++) {
+    const slot = DK_SLOTS[i];
+    const cands = batters.filter(p => !usedNames.has(p.name) && slot.eligible(p));
+    if (!cands.length) continue;
+    const pick = pickWeighted(cands);
+    lu[i] = pick; usedNames.add(pick.name);
+  }
+  return lu.every(Boolean) ? lu : null;
+}
+
+// Run per-lineup Monte Carlo across the full portfolio.
+// Returns array of per-lineup stats sorted by simROI descending.
+// fieldLineups: number of synthetic opponent lineups to simulate (field size proxy).
+function simulatePortfolio(lineups, pool, numSims = 2000, contestType = 'gpp', manualCashLine = null, manualWinLine = null, payoutType = 'top20') {
+  if (!lineups.length || !pool.length) return [];
+
+  const isCash = contestType === 'cash';
+
+  // Payout config: cashPct = fraction of field that cashes, payoutMultipliers for EV
+  const payoutConfig = {
+    top20:   { cashPct: 0.20, cashMult: 2.0,  winMult: 10, winPct: 0.005 },
+    top10:   { cashPct: 0.10, cashMult: 3.0,  winMult: 15, winPct: 0.002 },
+    winner:  { cashPct: 0.01, cashMult: 80.0, winMult: 80, winPct: 0.005 },
+    double:  { cashPct: 0.50, cashMult: 1.9,  winMult: 1.9, winPct: 0.50 },
+    custom:  { cashPct: 0.20, cashMult: 2.0,  winMult: 10, winPct: 0.005 },
+  };
+  const pc = (isCash ? { cashPct: 0.50, cashMult: 1.9, winMult: 1.9, winPct: 0.50 }
+                     : (payoutConfig[payoutType] || payoutConfig.top20));
+
+  const results = lineups.map(lu => {
+    if (!lu || !lu.every(Boolean)) return null;
+    const luSim = simulateLineup(lu, numSims);
+    if (!luSim) return null;
+
+    // Build field score distribution by running numSims field lineups
+    // (re-use pool sampling, not full lineup build — fast approximation)
+    const fieldScores = [];
+    for (let s = 0; s < numSims; s++) {
+      const fieldLu = buildFieldLineup(pool);
+      if (!fieldLu) { fieldScores.push(0); continue; }
+      let total = 0;
+      fieldLu.forEach(p => { if (p) total += samplePlayerScore(p, 0); });
+      fieldScores.push(total);
+    }
+    fieldScores.sort((a, b) => a - b);
+
+    // Cash/win lines: use manual overrides if provided, otherwise derive from field distribution
+    const cashCutoffIdx = Math.floor(fieldScores.length * (1 - pc.cashPct));
+    const winCutoffIdx = Math.floor(fieldScores.length * (1 - pc.winPct));
+    const cashLine = manualCashLine != null ? manualCashLine : (fieldScores[cashCutoffIdx] || 0);
+    const winLine = manualWinLine != null ? manualWinLine : (fieldScores[winCutoffIdx] || 0);
+
+    let cashCount = 0, winCount = 0;
+    for (let s = 0; s < numSims; s++) {
+      const ourScore = lu.reduce((sum, p) => sum + samplePlayerScore(p, 0), 0);
+      if (ourScore >= cashLine) cashCount++;
+      if (ourScore >= winLine) winCount++;
+    }
+    const cashRate = cashCount / numSims;
+    const winRate = winCount / numSims;
+
+    // Sim ROI using payout config: EV = (cash_rate × cash_mult + win_rate × win_mult) / 2 - 1
+    // Divide by 2 to avoid double-counting cash bracket (cash includes win bracket)
+    const simROI = (cashRate * pc.cashMult * 0.85 + winRate * pc.winMult * 0.15) - 1;
+
+    return {
+      lu,
+      p10: luSim.p10,
+      p50: luSim.p50,
+      p90: luSim.p90,
+      mean: luSim.mean,
+      cashRate: parseFloat((cashRate * 100).toFixed(1)),
+      winRate: parseFloat((winRate * 100).toFixed(2)),
+      cashLine: parseFloat(cashLine.toFixed(1)),
+      winLine: parseFloat(winLine.toFixed(1)),
+      simROI: parseFloat((simROI * 100).toFixed(1))
+    };
+  }).filter(Boolean);
+
+  results.sort((a, b) => b.simROI - a.simROI);
+  return results;
+}
+
 // ── Public API ──────────────────────────────────────────────────────────────
 
 return {
@@ -1312,11 +1736,16 @@ return {
 
   // Simulation
   simulateLineup,
+  simulatePortfolio,
   samplePlayerScore,
 
   // Correlation
   getCorrelation,
   buildCorrelationMatrix,
+  buildPairCorrelations,
+  getPairCorrelation,
+  setCorrScale, getCorrScale,
+  setSimDiversity, getSimDiversity,
 
   // Scoring
   scoreCash, scoreSingle, scoreGpp,
@@ -1328,7 +1757,7 @@ return {
   weatherMultiplier, weatherMultiplierDirectional, parkMultiplier,
   vegasAdjustment, vegasPitcherAdjustment,
   teamScoringAdjustment,
-  statcastCeilingBoost, formMultiplier, calcPortfolioOverlap, umpireMultiplier,
+  statcastCeilingBoost, pitcherStuffBoost, bullpenAdjustment, catcherFramingAdjustment, sprintSpeedBoost, formMultiplier, calcPortfolioOverlap, umpireMultiplier,
 
   // Projection blending
   blendProjections,

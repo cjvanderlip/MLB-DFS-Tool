@@ -12,6 +12,9 @@ if not exist "node_modules" (
     echo.
 )
 
+REM Set API keys
+set ODDS_API_KEY=a31ed2d99da8a1068c99c2aefb09a2ea
+
 REM Start the server
 echo Starting server...
 echo.

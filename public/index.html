@@ -106,7 +106,9 @@ tr:hover td{background:var(--bs)}
 .config-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:12px}
 .config-item label{display:block;font-size:11px;color:var(--tt);margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em}
 .config-item input,.config-item select{width:100%;padding:6px 10px;font-size:12px;border-radius:var(--r);border:0.5px solid var(--brd-s);background:var(--bp);color:var(--tp)}
-.config-item input[type=range]{padding:4px 0}
+.config-item input[type=range]{padding:4px 0;min-width:0;flex:1}
+.config-item{display:flex;flex-direction:column;min-width:0}
+.config-item input[type=range]+span{flex-shrink:0;white-space:nowrap}
 .team-chip{cursor:pointer;transition:all .12s;border:0.5px solid transparent}
 .team-chip.selected{background:var(--bsu);color:var(--tsu);border-color:var(--brd-su);font-weight:500}
 #port-ban-teams .team-chip.selected{background:var(--bd);color:var(--td);border-color:var(--brd-d)}
@@ -245,7 +247,7 @@ tr:hover td{background:var(--bs)}
           <th onclick="setSortCol('floor')">Floor</th>
           <th onclick="setSortCol('median')">Median</th>
           <th onclick="setSortCol('ceiling')">Ceil</th>
-          <th onclick="setSortCol('own')">Own%</th>
+          <th onclick="setSortCol('own')" title="Click value in table to edit projected ownership">Own%✎</th>
           <th onclick="setSortCol('lev')">Lev</th>
           <th>GPP</th>
           <th onclick="setSortCol('optExp')">Opt%</th>
@@ -337,6 +339,14 @@ tr:hover td{background:var(--bs)}
     <div id="slate-environment"><div class="empty" style="padding:12px">Load player data and Vegas lines to see game environment rankings.</div></div>
   </div>
   <div style="margin-top:20px">
+    <div class="sec-label" style="display:flex;align-items:center;gap:10px">
+      DvP — Defense vs. Position <span style="font-size:10px;font-weight:400;text-transform:none;letter-spacing:0;color:var(--tt)">(avg DK pts allowed per game, last 14 days)</span>
+      <button class="btn" id="fetch-dvp-btn" onclick="loadDvP()" style="font-size:11px;padding:3px 10px">Fetch DvP Data</button>
+      <span id="dvp-status" style="font-size:11px"></span>
+    </div>
+    <div id="dvp-table"><div class="empty" style="padding:12px">Click "Fetch DvP Data" to load 14-day defense vs. position stats.</div></div>
+  </div>
+  <div style="margin-top:20px">
     <div class="sec-label">Team Scoring Percentages</div>
     <div id="team-scoring-display"><div class="empty" style="padding:16px">Upload a Team Scoring CSV to see team-level metrics.</div></div>
   </div>
@@ -368,6 +378,10 @@ tr:hover td{background:var(--bs)}
             <option value="cash">Cash</option>
             <option value="gpp">GPP</option>
           </select>
+          <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--ts);cursor:pointer">
+            <input type="checkbox" id="allow-bvp" style="width:13px;height:13px">
+            Allow BvP
+          </label>
           <button class="btn-g" onclick="autoFill()">Auto-fill</button>
           <button class="btn" onclick="clearLineup()">Clear</button>
           <button class="btn-p" onclick="exportLineup()">Export CSV</button>
@@ -417,13 +431,17 @@ tr:hover td{background:var(--bs)}
     </div>
     <div class="config-item">
       <label>Max Batter Exposure %</label>
-      <input type="range" id="port-max-exposure" value="60" min="10" max="100" step="5" oninput="document.getElementById('exp-label').textContent=this.value+'%';validatePortfolioSettings();saveSession()">
-      <span id="exp-label" style="font-size:11px;color:var(--ts)">60%</span>
+      <div style="display:flex;align-items:center;gap:6px;min-width:0">
+        <input type="range" id="port-max-exposure" value="60" min="10" max="100" step="5" oninput="document.getElementById('exp-label').textContent=this.value+'%';validatePortfolioSettings();saveSession()" style="flex:1;min-width:0">
+        <span id="exp-label" style="font-size:11px;color:var(--ts);flex-shrink:0;width:32px;text-align:right">60%</span>
+      </div>
     </div>
     <div class="config-item">
       <label>Max Pitcher Exposure %</label>
-      <input type="range" id="port-max-pitcher" value="60" min="10" max="100" step="5" oninput="document.getElementById('pitcher-exp-label').textContent=this.value+'%';validatePortfolioSettings();saveSession()">
-      <span id="pitcher-exp-label" style="font-size:11px;color:var(--ts)">60%</span>
+      <div style="display:flex;align-items:center;gap:6px;min-width:0">
+        <input type="range" id="port-max-pitcher" value="60" min="10" max="100" step="5" oninput="document.getElementById('pitcher-exp-label').textContent=this.value+'%';validatePortfolioSettings();saveSession()" style="flex:1;min-width:0">
+        <span id="pitcher-exp-label" style="font-size:11px;color:var(--ts);flex-shrink:0;width:32px;text-align:right">60%</span>
+      </div>
     </div>
     <div class="config-item">
       <label>Contest Type</label>
@@ -447,7 +465,48 @@ tr:hover td{background:var(--bs)}
         Require Bring-Back <span style="font-weight:400;text-transform:none;letter-spacing:0">(GPP only)</span>
       </label>
     </div>
+    <div class="config-item" style="justify-content:center">
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+        <input type="checkbox" id="port-allow-bvp" style="width:14px;height:14px">
+        Allow Batter vs Pitcher <span style="font-weight:400;text-transform:none;letter-spacing:0">(off = DK-safe)</span>
+      </label>
+    </div>
+    <div class="config-item">
+      <label>5-Man Stack % <span style="font-weight:400;text-transform:none;letter-spacing:0">(of GPP lineups)</span></label>
+      <input type="number" id="port-stack-pct5" value="50" min="0" max="100" step="5" placeholder="50" title="% of lineups targeting a 5-man stack. Remainder will target 3-man." onchange="saveSession()">
+    </div>
+    <div class="config-item">
+      <label>Cash Line (pts) <span style="font-weight:400;text-transform:none;letter-spacing:0">optional</span></label>
+      <input type="number" id="port-cash-line" min="0" step="0.5" placeholder="auto" title="Score needed to cash. Used in Sim ROI. Leave blank to derive from field simulation." onchange="saveSession()">
+    </div>
+    <div class="config-item">
+      <label>Win Line (pts) <span style="font-weight:400;text-transform:none;letter-spacing:0">optional</span></label>
+      <input type="number" id="port-win-line" min="0" step="0.5" placeholder="auto" title="Score needed to win / top payout. Used in Sim ROI. Leave blank to derive from field simulation." onchange="saveSession()">
+    </div>
+    <div class="config-item">
+      <label>Payout Structure</label>
+      <select id="port-payout-type" onchange="saveSession()">
+        <option value="top20">GPP — Top 20% cash 2×</option>
+        <option value="top10">GPP — Top 10% cash 3×</option>
+        <option value="winner">Winner-Take-All</option>
+        <option value="double">50/50 (double-up)</option>
+        <option value="custom">Custom (set lines above)</option>
+      </select>
+    </div>
   </div>
+
+  <!-- Player Exposure Overrides -->
+  <details style="margin-bottom:12px">
+    <summary style="font-size:12px;font-weight:500;color:var(--ts);text-transform:uppercase;letter-spacing:.04em;cursor:pointer;user-select:none;padding:6px 0">Player Exposure Overrides <span style="font-size:10px;font-weight:400;text-transform:none;letter-spacing:0;color:var(--tt)">(per-player min / max %)</span></summary>
+    <div style="margin-top:8px">
+      <div style="font-size:11px;color:var(--tt);margin-bottom:8px">Set a minimum exposure (guarantee appearances) or maximum (cap below global) for specific players. Leave blank to use global settings.</div>
+      <div style="display:flex;gap:6px;margin-bottom:8px">
+        <input type="text" id="exp-override-search" placeholder="Search player name…" style="flex:1;font-size:12px;padding:5px 9px;border-radius:var(--r);border:0.5px solid var(--brd-s);background:var(--bp);color:var(--tp)" onkeydown="if(event.key==='Enter')addExposureOverride()">
+        <button class="btn" onclick="addExposureOverride()">Add</button>
+      </div>
+      <div id="exp-override-list"><div style="font-size:11px;color:var(--tt);padding:6px 0">No overrides set. Search for a player above to add one.</div></div>
+    </div>
+  </details>
 
   <!-- Team Lock / Ban -->
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
@@ -475,7 +534,7 @@ tr:hover td{background:var(--bs)}
   <div class="ib blue">
     Run Monte Carlo simulations on your current lineup. Uses correlated player outcomes (Cholesky decomposition) to model realistic scoring distributions.
   </div>
-  <div class="frow" style="margin-bottom:12px">
+  <div class="config-grid" style="margin-bottom:10px">
     <div class="config-item">
       <label>Simulations</label>
       <select id="sim-count">
@@ -485,7 +544,28 @@ tr:hover td{background:var(--bs)}
         <option value="50000">50,000 (high precision)</option>
       </select>
     </div>
-    <button class="btn-g" id="run-sim-btn" onclick="runSimulation()" style="align-self:flex-end">Run Simulation</button>
+    <div class="config-item">
+      <label>Correlation Strength</label>
+      <div style="display:flex;align-items:center;gap:6px;min-width:0">
+        <input type="range" id="sim-corr-scale" min="0.2" max="2.0" step="0.1" value="1.0" style="flex:1;min-width:0"
+          oninput="document.getElementById('corr-scale-label').textContent=parseFloat(this.value).toFixed(1)+'×';Engine.setCorrScale(parseFloat(this.value))"
+          title="Scales all player correlations. >1 = more correlated (tighter stacks), <1 = less correlated (more variance)">
+        <span id="corr-scale-label" style="font-size:11px;color:var(--ts);flex-shrink:0;width:32px;text-align:right">1.0×</span>
+      </div>
+    </div>
+    <div class="config-item">
+      <label>Score Diversity</label>
+      <div style="display:flex;align-items:center;gap:6px;min-width:0">
+        <input type="range" id="sim-diversity" min="0.5" max="2.5" step="0.1" value="1.0" style="flex:1;min-width:0"
+          oninput="document.getElementById('diversity-label').textContent=parseFloat(this.value).toFixed(1)+'×';Engine.setSimDiversity(parseFloat(this.value))"
+          title="Widens player score distributions. >1 = higher variance/upside, <1 = tighter outcomes">
+        <span id="diversity-label" style="font-size:11px;color:var(--ts);flex-shrink:0;width:32px;text-align:right">1.0×</span>
+      </div>
+    </div>
+  </div>
+  <div style="margin-bottom:12px">
+    <button class="btn-g" id="run-sim-btn" onclick="runSimulation()">Run Simulation</button>
+    <span id="sim-pair-corr-status" style="font-size:11px;color:var(--tt);margin-left:10px"></span>
   </div>
   <div id="sim-results"><div class="empty">Build a lineup first (Lineup Builder tab), then run a simulation to see score distributions.</div></div>
 </div>
@@ -506,6 +586,27 @@ tr:hover td{background:var(--bs)}
       <span style="font-size:11px;color:var(--tt)">Fetches real DK scores from MLB boxscores and auto-populates matching saved lineups</span>
     </div>
     <div id="actuals-status"></div>
+  </div>
+
+  <!-- Contest Flashback -->
+  <div style="margin-bottom:16px;padding:12px 14px;background:var(--bs);border-radius:var(--rl)">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:8px">
+      <div>
+        <div class="sec-label" style="margin:0">Contest Flashback — Long-Run Profitability</div>
+        <div style="font-size:11px;color:var(--tt);margin-top:2px">Re-simulates past lineups 500× each against an ownership-weighted field. Shows would-have-been Sim ROI.</div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <select id="flashback-contest-filter" style="font-size:11px;padding:4px 7px;border-radius:var(--r);border:0.5px solid var(--brd-s);background:var(--bp);color:var(--tp)">
+          <option value="ALL">All contests</option>
+          <option value="GPP">GPP only</option>
+          <option value="Cash">Cash only</option>
+        </select>
+        <button class="btn" onclick="runContestFlashback()">Run Flashback</button>
+      </div>
+    </div>
+    <div id="flashback-results">
+      <div style="font-size:12px;color:var(--tt)">Requires at least 3 saved lineups with player actuals loaded.</div>
+    </div>
   </div>
 
   <!-- Phase 3: Model Analysis -->

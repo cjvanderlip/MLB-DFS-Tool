@@ -11,6 +11,9 @@ if (-not (Test-Path "node_modules")) {
     Write-Host ""
 }
 
+# Set API keys
+$env:ODDS_API_KEY = "a31ed2d99da8a1068c99c2aefb09a2ea"
+
 # Start the server
 Write-Host "Starting server..." -ForegroundColor Green
 Write-Host ""

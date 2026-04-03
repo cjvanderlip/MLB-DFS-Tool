@@ -1,0 +1,405 @@
+{
+  "data": {
+    "daz": {
+      "name": "Díaz",
+      "framingRuns": 5606,
+      "framingRunsPerGame": 0,
+      "shadowStrikePct": 1.275328206505254,
+      "pitches": 0
+    },
+    "hicks": {
+      "name": "Hicks",
+      "framingRuns": 3870,
+      "framingRunsPerGame": 0,
+      "shadowStrikePct": 0.4650817030015726,
+      "pitches": 0
+    },
+    "contreras": {
+      "name": "Contreras",
+      "framingRuns": 9591,
+      "framingRunsPerGame": 0,
+      "shadowStrikePct": 0.9493817914241458,
+      "pitches": 0
+    },
+    "davis": {
+      "name": "Davis",
+      "framingRuns": 5421,
+      "framingRunsPerGame": 0,
+      "shadowStrikePct": -1.7343624973667162,
+      "pitches": 0
+    },
+    "narvez": {
+      "name": "Narváez",
+      "framingRuns": 7870,
+      "framingRunsPerGame": 0,
+      "shadowStrikePct": 4.977671568157485,
+      "pitches": 0
+    },
+    "kelly": {
+      "name": "Kelly",
+      "framingRuns": 6748,
+      "framingRunsPerGame": 0,
+      "shadowStrikePct": -1.9205180925855323,
+      "pitches": 0
+    },
+    "garver": {
+      "name": "Garver",
+      "framingRuns": 2975,
+      "framingRunsPerGame": 0,
+      "shadowStrikePct": -2.189890872240089,
+      "pitches": 0
+    },
+    "mcguire": {
+      "name": "McGuire",
+      "framingRuns": 2726,
+      "framingRunsPerGame": 0,
+      "shadowStrikePct": 3.471797378031534,
+      "pitches": 0
+    },
+    "hedges": {
+      "name": "Hedges",
+      "framingRuns": 4047,
+      "framingRunsPerGame": 0,
+      "shadowStrikePct": 10.620270639671734,
+      "pitches": 0
+    },
+    "kirk": {
+      "name": "Kirk",
+      "framingRuns": 8499,
+      "framingRunsPerGame": 0,
+      "shadowStrikePct": 16.63048293373675,
+      "pitches": 0
+    },
+    "diaz": {
+      "name": "Diaz",
+      "framingRuns": 8338,
+      "framingRunsPerGame": 0,
+      "shadowStrikePct": -3.45370480777535,
+      "pitches": 0
+    },
+    "higashioka": {
+      "name": "Higashioka",
+      "framingRuns": 4746,
+      "framingRunsPerGame": 0,
+      "shadowStrikePct": 3.008353548378774,
+      "pitches": 0
+    },
+    "naylor": {
+      "name": "Naylor",
+      "framingRuns": 8411,
+      "framingRunsPerGame": 0,
+      "shadowStrikePct": -2.7334849312724114,
+      "pitches": 0
+    },
+    "baldwin": {
+      "name": "Baldwin",
+      "framingRuns": 6426,
+      "framingRunsPerGame": 0,
+      "shadowStrikePct": -1.029218322933937,
+      "pitches": 0
+    },
+    "pozo": {
+      "name": "Pozo",
+      "framingRuns": 2688,
+      "framingRunsPerGame": 0,
+      "shadowStrikePct": 1.8612031210226987,
+      "pitches": 0
+    },
+    "caratini": {
+      "name": "Caratini",
+      "framingRuns": 3758,
+      "framingRunsPerGame": 0,
+      "shadowStrikePct": -1.743529604353108,
+      "pitches": 0
+    },
+    "thaiss": {
+      "name": "Thaiss",
+      "framingRuns": 3413,
+      "framingRunsPerGame": 0,
+      "shadowStrikePct": -3.5889449510396885,
+      "pitches": 0
+    },
+    "torrens": {
+      "name": "Torrens",
+      "framingRuns": 5589,
+      "framingRunsPerGame": 0,
+      "shadowStrikePct": 3.81989797286798,
+      "pitches": 0
+    },
+    "wells": {
+      "name": "Wells",
+      "framingRuns": 8666,
+      "framingRunsPerGame": 0,
+      "shadowStrikePct": 11.873298785617932,
+      "pitches": 0
+    },
+    "heim": {
+      "name": "Heim",
+      "framingRuns": 6648,
+      "framingRunsPerGame": 0,
+      "shadowStrikePct": -2.0491215276056782,
+      "pitches": 0
+    },
+    "alvarez": {
+      "name": "Alvarez",
+      "framingRuns": 5303,
+      "framingRunsPerGame": 0,
+      "shadowStrikePct": -4.816233452801197,
+      "pitches": 0
+    },
+    "teel": {
+      "name": "Teel",
+      "framingRuns": 4608,
+      "framingRunsPerGame": 0,
+      "shadowStrikePct": -0.3593642791485555,
+      "pitches": 0
+    },
+    "stallings": {
+      "name": "Stallings",
+      "framingRuns": 2711,
+      "framingRunsPerGame": 0,
+      "shadowStrikePct": -2.123033824120617,
+      "pitches": 0
+    },
+    "bailey": {
+      "name": "Bailey",
+      "framingRuns": 8913,
+      "framingRunsPerGame": 0,
+      "shadowStrikePct": 25.06072542864528,
+      "pitches": 0
+    },
+    "maldonado": {
+      "name": "Maldonado",
+      "framingRuns": 3662,
+      "framingRunsPerGame": 0,
+      "shadowStrikePct": -0.3337673482398472,
+      "pitches": 0
+    },
+    "raleigh": {
+      "name": "Raleigh",
+      "framingRuns": 8797,
+      "framingRunsPerGame": 0,
+      "shadowStrikePct": 7.0257354129606036,
+      "pitches": 0
+    },
+    "herrera": {
+      "name": "Herrera",
+      "framingRuns": 4237,
+      "framingRunsPerGame": 0,
+      "shadowStrikePct": -0.4676220338874554,
+      "pitches": 0
+    },
+    "jansen": {
+      "name": "Jansen",
+      "framingRuns": 5991,
+      "framingRunsPerGame": 0,
+      "shadowStrikePct": -8.40642999473897,
+      "pitches": 0
+    },
+    "fortes": {
+      "name": "Fortes",
+      "framingRuns": 4968,
+      "framingRunsPerGame": 0,
+      "shadowStrikePct": 2.3135367334999994,
+      "pitches": 0
+    },
+    "vzquez": {
+      "name": "Vázquez",
+      "framingRuns": 4228,
+      "framingRunsPerGame": 0,
+      "shadowStrikePct": -2.8393762351345972,
+      "pitches": 0
+    },
+    "realmuto": {
+      "name": "Realmuto",
+      "framingRuns": 9714,
+      "framingRunsPerGame": 0,
+      "shadowStrikePct": -8.371238231439209,
+      "pitches": 0
+    },
+    "ohoppe": {
+      "name": "O'Hoppe",
+      "framingRuns": 7694,
+      "framingRunsPerGame": 0,
+      "shadowStrikePct": -8.199996653344114,
+      "pitches": 0
+    },
+    "ramrez": {
+      "name": "Ramírez",
+      "framingRuns": 5217,
+      "framingRunsPerGame": 0,
+      "shadowStrikePct": 0.5196072976019827,
+      "pitches": 0
+    },
+    "bart": {
+      "name": "Bart",
+      "framingRuns": 5833,
+      "framingRunsPerGame": 0,
+      "shadowStrikePct": -1.8253113177826752,
+      "pitches": 0
+    },
+    "langeliers": {
+      "name": "Langeliers",
+      "framingRuns": 8617,
+      "framingRunsPerGame": 0,
+      "shadowStrikePct": -2.862356306503378,
+      "pitches": 0
+    },
+    "quero": {
+      "name": "Quero",
+      "framingRuns": 4973,
+      "framingRunsPerGame": 0,
+      "shadowStrikePct": -12.926515569632008,
+      "pitches": 0
+    },
+    "perez": {
+      "name": "Perez",
+      "framingRuns": 6612,
+      "framingRunsPerGame": 0,
+      "shadowStrikePct": -6.597048348442642,
+      "pitches": 0
+    },
+    "jeffers": {
+      "name": "Jeffers",
+      "framingRuns": 5854,
+      "framingRunsPerGame": 0,
+      "shadowStrikePct": -1.0686449258680053,
+      "pitches": 0
+    },
+    "darnaud": {
+      "name": "d'Arnaud",
+      "framingRuns": 4055,
+      "framingRunsPerGame": 0,
+      "shadowStrikePct": -3.376338397928537,
+      "pitches": 0
+    },
+    "fermin": {
+      "name": "Fermin",
+      "framingRuns": 6775,
+      "framingRunsPerGame": 0,
+      "shadowStrikePct": -0.5678886432720138,
+      "pitches": 0
+    },
+    "ruiz": {
+      "name": "Ruiz",
+      "framingRuns": 4942,
+      "framingRunsPerGame": 0,
+      "shadowStrikePct": -8.700236421772392,
+      "pitches": 0
+    },
+    "heineman": {
+      "name": "Heineman",
+      "framingRuns": 3450,
+      "framingRunsPerGame": 0,
+      "shadowStrikePct": 4.700195236925989,
+      "pitches": 0
+    },
+    "wong": {
+      "name": "Wong",
+      "framingRuns": 3851,
+      "framingRunsPerGame": 0,
+      "shadowStrikePct": 0.17022069855301708,
+      "pitches": 0
+    },
+    "stephenson": {
+      "name": "Stephenson",
+      "framingRuns": 4979,
+      "framingRunsPerGame": 0,
+      "shadowStrikePct": -8.01993284531445,
+      "pitches": 0
+    },
+    "mccann": {
+      "name": "McCann",
+      "framingRuns": 2550,
+      "framingRunsPerGame": 0,
+      "shadowStrikePct": -1.7971626616086929,
+      "pitches": 0
+    },
+    "goodman": {
+      "name": "Goodman",
+      "framingRuns": 7395,
+      "framingRunsPerGame": 0,
+      "shadowStrikePct": 1.5022261437850728,
+      "pitches": 0
+    },
+    "rogers": {
+      "name": "Rogers",
+      "framingRuns": 2823,
+      "framingRunsPerGame": 0,
+      "shadowStrikePct": 0.9238466768106348,
+      "pitches": 0
+    },
+    "rushing": {
+      "name": "Rushing",
+      "framingRuns": 2660,
+      "framingRunsPerGame": 0,
+      "shadowStrikePct": -3.0631289307866902,
+      "pitches": 0
+    },
+    "trevino": {
+      "name": "Trevino",
+      "framingRuns": 6268,
+      "framingRunsPerGame": 0,
+      "shadowStrikePct": 1.5347263578593844,
+      "pitches": 0
+    },
+    "rutschman": {
+      "name": "Rutschman",
+      "framingRuns": 4952,
+      "framingRunsPerGame": 0,
+      "shadowStrikePct": 2.4251846543280817,
+      "pitches": 0
+    },
+    "rortvedt": {
+      "name": "Rortvedt",
+      "framingRuns": 2782,
+      "framingRunsPerGame": 0,
+      "shadowStrikePct": 0.5860663979849488,
+      "pitches": 0
+    },
+    "moreno": {
+      "name": "Moreno",
+      "framingRuns": 5400,
+      "framingRunsPerGame": 0,
+      "shadowStrikePct": 6.390166646898937,
+      "pitches": 0
+    },
+    "smith": {
+      "name": "Smith",
+      "framingRuns": 7621,
+      "framingRunsPerGame": 0,
+      "shadowStrikePct": -9.790228212200484,
+      "pitches": 0
+    },
+    "murphy": {
+      "name": "Murphy",
+      "framingRuns": 5650,
+      "framingRunsPerGame": 0,
+      "shadowStrikePct": 1.6310436181190604,
+      "pitches": 0
+    },
+    "pags": {
+      "name": "Pagés",
+      "framingRuns": 7687,
+      "framingRunsPerGame": 0,
+      "shadowStrikePct": 4.950101565350894,
+      "pitches": 0
+    },
+    "adams": {
+      "name": "Adams",
+      "framingRuns": 5664,
+      "framingRunsPerGame": 0,
+      "shadowStrikePct": -8.692919482683795,
+      "pitches": 0
+    },
+    "dingler": {
+      "name": "Dingler",
+      "framingRuns": 8533,
+      "framingRunsPerGame": 0,
+      "shadowStrikePct": 6.668246527101855,
+      "pitches": 0
+    }
+  },
+  "fetchedAt": "2026-04-02T16:33:36.655Z",
+  "count": 57
+}
