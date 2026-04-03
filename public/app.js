@@ -5,6 +5,8 @@
 
 // ── State ─────────────────────────────────────────────────────────────────────
 let ROO = [], STACKS3 = [], STACKS5 = [], DK_PLAYERS = [], POOL = [], TEAM_SCORING = {};
+let ROO_SOURCES = [null, null, null]; // up to 3 projection sources
+let rooWeights = [100, 0, 0];        // blend weights (%), auto-normalize across loaded sources
 let curPos = 'ALL', luPos = 'ALL', sortCol = 'median', sortDir = -1, playerLimit = 80;
 let MODE = 'roo';
 const SALARY_CAP = 50000, CAP = SALARY_CAP, ROSTER_SIZE = 10;
@@ -53,6 +55,27 @@ function toRosterPos(dkPos) {
   return dkPos.split('/').map(x => { const t = x.trim(); return (t === 'SP' || t === 'RP') ? 'P' : t; }).join('/');
 }
 function esc(s) { const d = document.createElement('div'); d.textContent = String(s || ''); return d.innerHTML; }
+function cacheAgeWarning(fetchedAt) {
+  if (!fetchedAt) return '';
+  const ageMs = Date.now() - new Date(fetchedAt).getTime();
+  const ageH = Math.round(ageMs / 3600000);
+  if (ageH > 48) return ` <span class="warn">⚠ ${ageH}h old cache — click Refresh</span>`;
+  return '';
+}
+let _toastTimer = null;
+function showToast(msg, type = 'warn', duration = 3000, undoFn = null) {
+  const container = document.getElementById('toast-container');
+  if (!container) return;
+  clearTimeout(_toastTimer);
+  const undoBtn = undoFn ? `<button class="toast-undo" onclick="event.stopPropagation()">Undo</button>` : '';
+  container.innerHTML = `<div class="toast ${type}">${msg}${undoBtn}</div>`;
+  const toast = container.firstChild;
+  if (undoFn) {
+    toast.querySelector('.toast-undo').addEventListener('click', () => { undoFn(); toast.classList.remove('show'); });
+  }
+  requestAnimationFrame(() => toast.classList.add('show'));
+  _toastTimer = setTimeout(() => { toast.classList.remove('show'); setTimeout(() => { container.innerHTML = ''; }, 300); }, duration);
+}
 function escAttr(s) { return String(s || '').replace(/&/g, '&amp;').replace(/'/g, '&#39;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
 const debouncedRenderPlayers = debounce(() => renderPlayers(), 150);
@@ -161,7 +184,7 @@ function parseFile(file) {
     header: true, skipEmptyLines: true, complete(res) {
       const type = detectFileType(res.meta.fields || []);
       if (type === 'dk') loadDK(res.data, file.name);
-      else if (type === 'roo') loadROO(res.data, file.name);
+      else if (type === 'roo') { const idx = nextRooSlot(); loadROO(res.data, file.name, idx); }
       else if (type === 'stacks') loadStackFile(res.data, file.name);
       else if (type === 'team_scoring') loadTeamScoring(res.data, file.name);
       else if (type === 'optimal') loadOptimalLineups(res.data, file.name);
@@ -190,8 +213,14 @@ function loadDK(data, fname) {
   mergePools();
 }
 
-function loadROO(data, fname) {
-  ROO = data.map(r => {
+function nextRooSlot() {
+  for (let i = 0; i < 3; i++) { if (!ROO_SOURCES[i]) return i; }
+  return 0; // overwrite first if all full
+}
+
+function loadROO(data, fname, idx) {
+  if (idx == null) idx = nextRooSlot();
+  const parsed = data.map(r => {
     const pos = (r.Position || r.position || r.Pos || r.pos || '').trim();
     const own = n(r['Own%'] || r['own%'] || r.Own || r.own || 0);
     const ceil = n(r.Ceiling || r.ceiling || 0);
@@ -209,9 +238,73 @@ function loadROO(data, fname) {
       hasDk: false, hasRoo: true
     };
   }).filter(p => p.name && (p.salary > 0 || p.median > 0));
-  setFileStatus('roo', fname, ROO.length + ' players');
+  ROO_SOURCES[idx] = { data: parsed, fname };
+  setFileStatus('roo' + (idx + 1), fname, parsed.length + ' players');
+  autoBalanceWeights();
+  blendROO();
   if (!DK_PLAYERS.length) MODE = 'roo';
   mergePools();
+}
+
+function autoBalanceWeights() {
+  const loaded = ROO_SOURCES.map((s, i) => s ? i : -1).filter(i => i >= 0);
+  if (!loaded.length) return;
+  const equal = Math.round(100 / loaded.length);
+  rooWeights = [0, 0, 0];
+  loaded.forEach((idx, i) => {
+    rooWeights[idx] = i === loaded.length - 1 ? (100 - equal * (loaded.length - 1)) : equal;
+  });
+  for (let i = 0; i < 3; i++) {
+    document.getElementById('wt-roo' + (i + 1)).value = rooWeights[i];
+  }
+}
+
+function updateRooWeights() {
+  for (let i = 0; i < 3; i++) {
+    rooWeights[i] = Math.max(0, Math.min(100, parseInt(document.getElementById('wt-roo' + (i + 1)).value) || 0));
+  }
+  blendROO();
+  mergePools();
+}
+
+function blendROO() {
+  const loaded = [];
+  for (let i = 0; i < 3; i++) {
+    if (ROO_SOURCES[i]) loaded.push({ idx: i, data: ROO_SOURCES[i].data, weight: rooWeights[i] });
+  }
+  if (!loaded.length) { ROO = []; return; }
+  if (loaded.length === 1) { ROO = loaded[0].data.map(p => ({ ...p })); return; }
+
+  // Normalize weights to sum to 1.0 across loaded sources only
+  const totalW = loaded.reduce((s, l) => s + l.weight, 0) || 1;
+  loaded.forEach(l => { l.w = l.weight / totalW; });
+
+  // Build per-player map: { lowerName: [{ sourceIdx, player, normalizedWeight }] }
+  const playerMap = {};
+  loaded.forEach(src => {
+    src.data.forEach(p => {
+      const key = p.name.toLowerCase();
+      if (!playerMap[key]) playerMap[key] = [];
+      playerMap[key].push({ p, w: src.w });
+    });
+  });
+
+  // Blend projection fields, take metadata from first source
+  const BLEND_FIELDS = ['floor', 'median', 'ceiling', 'top', 'own', 'gpp'];
+  ROO = Object.values(playerMap).map(entries => {
+    const base = { ...entries[0].p };
+    // Re-normalize weights for this player (some sources may not have them)
+    const pw = entries.reduce((s, e) => s + e.w, 0) || 1;
+    for (const f of BLEND_FIELDS) {
+      base[f] = entries.reduce((s, e) => s + e.p[f] * e.w, 0) / pw;
+    }
+    // If salary differs, take the max (most conservative)
+    if (entries.length > 1) {
+      base.salary = Math.max(...entries.map(e => e.p.salary));
+    }
+    base.lev = base.own > 0 ? (base.ceiling / base.own * 10 - 10) : 0;
+    return base;
+  });
 }
 
 function loadStackFile(data, fname) {
@@ -503,15 +596,17 @@ function renderWarnings() {
 }
 
 function checkAllLoaded() {
+  const rooCount = ROO_SOURCES.filter(Boolean).length;
   const hasPlayers = DK_PLAYERS.length > 0 || ROO.length > 0;
   const hasStacks = STACKS3.length > 0 || STACKS5.length > 0;
   if (!hasPlayers && !hasStacks) return;
   document.getElementById('upload-status').style.display = 'block';
   const poolSize = POOL.length || ROO.length;
   const withProj = POOL.filter(p => p.median > 0).length || ROO.length;
+  const projLabel = rooCount > 1 ? rooCount + ' sources blended' : (MODE === 'dk' ? 'matched to ROO' : 'from ROO');
   document.getElementById('upload-metrics').innerHTML = [
     { l: 'Players', v: poolSize, s: MODE === 'dk' ? 'on DK slate' : 'in ROO' },
-    { l: 'With projections', v: withProj, s: MODE === 'dk' ? 'matched to ROO' : 'from ROO' },
+    { l: 'With projections', v: withProj, s: projLabel },
     { l: '3-man stacks', v: STACKS3.length, s: STACKS3.length ? 'loaded' : 'not loaded' },
     { l: '5-man stacks', v: STACKS5.length, s: STACKS5.length ? 'loaded' : 'not loaded' },
     { l: 'Optimal lineups', v: OPTIMAL_LINEUPS.length, s: OPTIMAL_LINEUPS.length ? 'loaded' : 'not loaded' }
@@ -587,6 +682,11 @@ function renderPlayers() {
     return `<tr style="${inLu ? 'opacity:.38;' : ''}"><td><strong style="${formColor ? 'color:' + formColor : ''}">${esc(p.name)}</strong>${MODE === 'dk' && !p.hasRoo ? '<span style="font-size:10px;background:var(--bw);color:var(--tw);border-radius:3px;padding:1px 4px;margin-left:4px">no proj</span>' : ''}${confirmedBadge}${scBadge}${injuryBadge}${dvpBadge} ${platoonLabel}</td><td><span class="pill pi" style="font-size:10px">${esc(p.dkPos) || '\u2014'}</span></td><td>${esc(p.team)}</td><td>${p.salary > 0 ? '$' + p.salary.toLocaleString() : '\u2014'}</td><td>${p.order > 0 ? '#' + p.order : '\u2014'}</td><td>${p.floor > 0 ? p.floor.toFixed(1) : '\u2014'}</td><td>${p.median > 0 ? '<strong>' + p.median.toFixed(1) + '</strong>' : '\u2014'}</td><td>${p.ceiling > 0 ? `<div class="bar-w"><div class="bar" style="width:${bw}px"></div><span style="font-size:11px;color:var(--ts)">${p.ceiling.toFixed(1)}</span></div>` : '\u2014'}</td><td><input type="number" min="0" max="100" step="0.5" value="${p.own > 0 ? p.own.toFixed(1) : ''}" placeholder="0" title="Edit projected ownership %" style="width:50px;font-size:11px;padding:2px 4px;border:0.5px solid var(--brd-s);border-radius:4px;background:var(--bp);color:${p.own > 50 ? 'var(--td)' : p.own > 25 ? 'var(--tw)' : p.own > 10 ? 'var(--ti)' : 'var(--tp)'};text-align:center" oninput="updatePlayerOwn(${idx},this.value)"></td><td class="${lc}">${p.lev !== 0 ? (p.lev > 0 ? '+' : '') + p.lev.toFixed(1) : '\u2014'}</td><td style="color:var(--ti);font-weight:500">${gppS > 0 ? gppS.toFixed(1) : '\u2014'}</td><td>${optExpVal}</td><td>${p.avgPpg > 0 ? p.avgPpg.toFixed(1) : '\u2014'}</td><td>${kDisplay}</td><td><button class="btn" style="padding:3px 8px;font-size:11px" ${inLu ? 'disabled' : ''} onclick="addPlayerByPoolIdx(${idx})">+</button></td></tr>`;
   }).join('');
   document.getElementById('player-more').style.display = data.length > playerLimit ? 'block' : 'none';
+  const countEl = document.getElementById('player-count');
+  if (countEl) {
+    const showing = Math.min(data.length, playerLimit);
+    countEl.textContent = data.length === POOL.length ? `${data.length} players` : `Showing ${showing} of ${data.length} (${POOL.length} total)`;
+  }
 }
 
 // ── Stacks Rendering ──────────────────────────────────────────────────────────
@@ -722,7 +822,11 @@ function addToLineup(p) {
   for (let i = 0; i < DK_SLOTS.length; i++) {
     if (lineup[i]) continue;
     if (!DK_SLOTS[i].eligible(p)) continue;
-    if (getSalaryUsed() + p.salary > CAP) return;
+    if (getSalaryUsed() + p.salary > CAP) {
+      const over = getSalaryUsed() + p.salary - CAP;
+      showToast(`Cannot add ${esc(p.name)} — would exceed cap by $${over.toLocaleString()}`, 'warn', 3000);
+      return;
+    }
     lineup[i] = p; renderLineup(); renderLuPool(); saveSession(); return;
   }
 }
@@ -732,7 +836,16 @@ function useStackById(id) {
   s.players.forEach(name => { const p = POOL.find(r => r.name === name); if (p) addToLineup(p); });
   showTab('lineup');
 }
-function removeFromLineup(i) { lineup[i] = null; renderLineup(); renderLuPool(); saveSession(); }
+function removeFromLineup(i) {
+  const removed = lineup[i];
+  lineup[i] = null;
+  renderLineup(); renderLuPool(); saveSession();
+  if (removed) {
+    showToast(`Removed ${esc(removed.name)}`, 'info', 3000, () => {
+      lineup[i] = removed; renderLineup(); renderLuPool(); saveSession();
+    });
+  }
+}
 function clearLineup() { lineup = new Array(ROSTER_SIZE).fill(null); renderLineup(); renderLuPool(); document.getElementById('export-out').style.display = 'none'; saveSession(); }
 
 // ── Auto-fill / Generate Lineups (using Engine) ──────────────────────────────
@@ -1488,6 +1601,148 @@ function togglePortfolioLineups() {
   el.style.display = el.style.display === 'none' ? 'block' : 'none';
 }
 
+// ── Late Swap ─────────────────────────────────────────────────────────────────
+function scanLateSwaps() {
+  const statusEl = document.getElementById('late-swap-status');
+  const resultsEl = document.getElementById('late-swap-results');
+  if (!portfolioLineups.length) {
+    if (statusEl) statusEl.innerHTML = '<span class="pill pw">Generate a portfolio first</span>';
+    return;
+  }
+
+  // Build set of flagged player names (IL or GTD)
+  const flagged = new Set();
+  injuryData.forEach(f => flagged.add(f.name.toLowerCase()));
+  // Also flag any pool player marked injured
+  POOL.forEach(p => { if (p.injuryFlag) flagged.add(p.name.toLowerCase()); });
+
+  // Scan each lineup for affected players
+  const affected = []; // [{ luIdx, slotIdx, player, slotLabel }]
+  portfolioLineups.forEach((lu, luIdx) => {
+    lu.forEach((p, slotIdx) => {
+      if (p && flagged.has(p.name.toLowerCase())) {
+        affected.push({ luIdx, slotIdx, player: p, slotLabel: DK_SLOTS[slotIdx]?.label || '?' });
+      }
+    });
+  });
+
+  if (!affected.length) {
+    if (statusEl) statusEl.innerHTML = '<span class="pill psu">No injured/scratched players found in portfolio</span>';
+    if (resultsEl) resultsEl.innerHTML = '';
+    return;
+  }
+
+  // Group by player for summary
+  const byPlayer = {};
+  affected.forEach(a => {
+    const key = a.player.name;
+    if (!byPlayer[key]) byPlayer[key] = { player: a.player, slots: [] };
+    byPlayer[key].slots.push(a);
+  });
+
+  if (statusEl) statusEl.innerHTML = `<span class="pill pw">${affected.length} slot(s) across ${Object.keys(byPlayer).length} player(s) need swaps</span>`;
+
+  // For each affected slot, find best replacements
+  let html = '';
+  for (const [name, info] of Object.entries(byPlayer)) {
+    const p = info.player;
+    const injEntry = injuryData.find(f => f.name.toLowerCase() === p.name.toLowerCase());
+    const injDesc = injEntry ? `${injEntry.type}: ${injEntry.description || ''}` : 'Flagged';
+    const lineupNums = info.slots.map(s => '#' + (s.luIdx + 1)).join(', ');
+
+    html += `<div class="sk-card" style="margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <div><strong>${esc(p.name)}</strong> <span class="pill pd" style="font-size:10px">${esc(p.dkPos)}</span> <span style="font-size:11px;color:var(--tt)">$${p.salary.toLocaleString()}</span></div>
+        <span style="font-size:11px;color:var(--td)">${esc(injDesc)}</span>
+      </div>
+      <div style="font-size:11px;color:var(--tt);margin-bottom:6px">Affected lineups: ${lineupNums}</div>`;
+
+    // Find eligible replacements for this slot type
+    const slotIdx = info.slots[0].slotIdx;
+    const slot = DK_SLOTS[slotIdx];
+    if (!slot) { html += '</div>'; continue; }
+
+    // Get names already heavily used in portfolio
+    const namesInPortfolio = new Set();
+    portfolioLineups.forEach(lu => lu.forEach(lp => { if (lp) namesInPortfolio.add(lp.name); }));
+
+    // Find candidates: eligible for position, not injured, sorted by median desc
+    const candidates = POOL.filter(c =>
+      slot.eligible(c) &&
+      !flagged.has(c.name.toLowerCase()) &&
+      c.name !== p.name &&
+      c.median > 0
+    ).sort((a, b) => b.median - a.median).slice(0, 8);
+
+    if (candidates.length) {
+      html += `<table style="font-size:11px;width:100%"><thead><tr><th>Replacement</th><th>Pos</th><th>Salary</th><th>Median</th><th>Δ Med</th><th>Δ Salary</th><th>Own%</th><th></th></tr></thead><tbody>`;
+      candidates.forEach(c => {
+        const dMed = c.median - p.median;
+        const dSal = c.salary - p.salary;
+        const medColor = dMed >= 0 ? 'var(--tsu)' : 'var(--td)';
+        const salColor = dSal <= 0 ? 'var(--tsu)' : dSal > 500 ? 'var(--td)' : 'var(--tw)';
+        const inPortfolio = namesInPortfolio.has(c.name);
+        html += `<tr>
+          <td><strong>${esc(c.name)}</strong>${inPortfolio ? ' <span class="pill pg" style="font-size:9px">in port</span>' : ''}</td>
+          <td>${esc(c.dkPos)}</td>
+          <td>$${c.salary.toLocaleString()}</td>
+          <td>${c.median.toFixed(1)}</td>
+          <td style="color:${medColor}">${dMed >= 0 ? '+' : ''}${dMed.toFixed(1)}</td>
+          <td style="color:${salColor}">${dSal >= 0 ? '+' : ''}$${dSal.toLocaleString()}</td>
+          <td>${c.own > 0 ? c.own.toFixed(1) + '%' : '\u2014'}</td>
+          <td><button class="btn" style="font-size:10px;padding:1px 6px" onclick="applySwap('${escAttr(p.name)}','${escAttr(c.name)}')">Swap</button></td>
+        </tr>`;
+      });
+      html += '</tbody></table>';
+    } else {
+      html += '<div style="font-size:11px;color:var(--tt);padding:4px 0">No eligible replacements found.</div>';
+    }
+    html += '</div>';
+  }
+
+  if (resultsEl) resultsEl.innerHTML = html;
+}
+
+function applySwap(oldName, newName) {
+  const newPlayer = POOL.find(p => p.name === newName);
+  if (!newPlayer) return;
+
+  let swapCount = 0;
+  portfolioLineups.forEach(lu => {
+    lu.forEach((p, i) => {
+      if (p && p.name === oldName) {
+        // Check salary feasibility
+        const luSalary = lu.reduce((s, lp) => s + (lp?.salary || 0), 0);
+        const newLuSalary = luSalary - p.salary + newPlayer.salary;
+        if (newLuSalary <= SALARY_CAP) {
+          lu[i] = { ...newPlayer };
+          swapCount++;
+        }
+      }
+    });
+  });
+
+  if (swapCount > 0) {
+    showToast(`Swapped ${oldName} → ${newName} in ${swapCount} lineup${swapCount > 1 ? 's' : ''}`, 'info', 3000);
+    // Recompute exposure
+    const exp = {};
+    portfolioLineups.forEach(lu => {
+      lu.forEach(p => {
+        if (!p) return;
+        if (!exp[p.name]) exp[p.name] = { count: 0, pct: '0%', isPitcher: rp(p, 'P') };
+        exp[p.name].count++;
+      });
+    });
+    const total = portfolioLineups.length;
+    Object.keys(exp).forEach(name => { exp[name].pct = (exp[name].count / total * 100).toFixed(1) + '%'; });
+    portfolioExposure = exp;
+    renderPortfolioResults({ lineups: portfolioLineups, playerExposure: portfolioExposure, teamExposure: {}, totalLineups: total });
+    scanLateSwaps(); // Re-scan to update results
+  } else {
+    showToast(`Could not swap — salary cap exceeded in all lineups`, 'warn', 3000);
+  }
+}
+
 function runPortfolioSim() {
   if (!portfolioLineups.length || !POOL.length) return;
   const btn = document.getElementById('port-sim-btn');
@@ -1727,7 +1982,7 @@ function renderBacktestPanel(history, summary) {
   const summaryEl = document.getElementById('backtest-summary');
   const historyEl = document.getElementById('backtest-history');
 
-  // Summary cards
+  // Summary cards — include unique slates count
   summaryEl.innerHTML = `<div class="mc-row">
     <div class="mc"><div class="mc-l">Total Entries</div><div class="mc-v">${summary.totalEntries}</div></div>
     <div class="mc"><div class="mc-l">With Results</div><div class="mc-v">${summary.entriesWithResults}</div></div>
@@ -1777,7 +2032,47 @@ function renderBacktestPanel(history, summary) {
     histHtml = '<div class="empty" style="padding:20px">No lineup history yet. Save lineups to track performance.</div>';
   }
 
-  historyEl.innerHTML = saveHtml + histHtml;
+  // History management settings
+  const hs = summary.historySettings || { maxSlates: 30, stripPoolAfterSlates: 5 };
+  const mgmtHtml = `<div style="margin-top:16px;padding:12px 14px;background:var(--bs);border-radius:var(--rl)">
+    <div class="sec-label" style="margin-bottom:8px">History Management</div>
+    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;font-size:12px">
+      <span style="color:var(--ts)">${summary.totalEntries} entries across ${summary.uniqueSlates || '?'} slate${(summary.uniqueSlates||0)!==1?'s':''}</span>
+      <label style="display:flex;align-items:center;gap:4px">Keep last
+        <input type="number" id="hist-max-slates" value="${hs.maxSlates}" min="1" max="365" style="width:52px;font-size:12px;padding:3px 6px;border-radius:var(--r);border:0.5px solid var(--brd-s);background:var(--bp);color:var(--tp)">
+        slates</label>
+      <label style="display:flex;align-items:center;gap:4px">Strip pool data after
+        <input type="number" id="hist-strip-pool" value="${hs.stripPoolAfterSlates}" min="1" max="365" style="width:52px;font-size:12px;padding:3px 6px;border-radius:var(--r);border:0.5px solid var(--brd-s);background:var(--bp);color:var(--tp)">
+        slates</label>
+      <button class="btn" onclick="saveHistorySettings()">Save Settings</button>
+      <button class="btn" style="color:var(--tw)" onclick="pruneHistoryNow()">Prune Now</button>
+    </div>
+  </div>`;
+
+  historyEl.innerHTML = saveHtml + histHtml + mgmtHtml;
+}
+
+async function saveHistorySettings() {
+  const maxSlates = parseInt(document.getElementById('hist-max-slates')?.value) || 30;
+  const stripPoolAfterSlates = parseInt(document.getElementById('hist-strip-pool')?.value) || 5;
+  try {
+    const r = await fetch('/api/history/settings', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ maxSlates, stripPoolAfterSlates })
+    });
+    const d = await r.json();
+    showToast(`Settings saved — ${d.entriesAfterPrune} entries retained`, 'success');
+    loadHistory();
+  } catch (e) { showToast('Failed to save settings', 'error'); }
+}
+
+async function pruneHistoryNow() {
+  try {
+    const r = await fetch('/api/history/prune', { method: 'POST' });
+    const d = await r.json();
+    showToast(`Pruned ${d.removed} entries (${d.before} → ${d.after})`, 'success');
+    loadHistory();
+  } catch (e) { showToast('Prune failed', 'error'); }
 }
 
 function deriveSlateDate() {
@@ -2167,7 +2462,8 @@ async function loadStatcast() {
     }).length;
     if (el) {
       const cacheInfo = data.cached ? ` (cached ${new Date(data.fetchedAt).toLocaleDateString()})` : '';
-      el.innerHTML = `<div class="ib success">Loaded ${data.count} Statcast profiles · ${matchCount} matched to player pool${cacheInfo}${data.stale ? ' · stale data' : ''}</div>`;
+      const staleWarn = cacheAgeWarning(data.fetchedAt);
+      el.innerHTML = `<div class="ib success">Loaded ${data.count} Statcast profiles · ${matchCount} matched to player pool${cacheInfo}${staleWarn}</div>`;
     }
     if (btn) { btn.textContent = 'Refresh Statcast'; btn.disabled = false; }
     renderPlayers();
@@ -2230,7 +2526,7 @@ async function loadPitcherStatcast() {
     }).length;
     if (el) {
       const existing = el.innerHTML;
-      const pInfo = ` · Pitcher stuff: ${data.count} profiles, ${matchCount} matched`;
+      const pInfo = ` · Pitcher stuff: ${data.count} profiles, ${matchCount} matched${cacheAgeWarning(data.fetchedAt)}`;
       el.innerHTML = existing + pInfo;
     }
     renderPlayers();
@@ -2252,7 +2548,7 @@ async function loadBullpen() {
     const teamCount = Object.keys(bullpenData).length;
     if (el) {
       const existing = el.innerHTML;
-      el.innerHTML = existing + ` · Bullpen: ${teamCount} teams`;
+      el.innerHTML = existing + ` · Bullpen: ${teamCount} teams${cacheAgeWarning(data.fetchedAt)}`;
     }
   } catch (e) {
     if (el) {
@@ -2285,7 +2581,7 @@ async function loadFraming() {
     const matchCount = Object.keys(framingMap).length;
     if (el) {
       const existing = el.innerHTML;
-      el.innerHTML = existing + ` · Framing: ${data.count} catchers, ${matchCount} teams matched`;
+      el.innerHTML = existing + ` · Framing: ${data.count} catchers, ${matchCount} teams matched${cacheAgeWarning(data.fetchedAt)}`;
     }
   } catch (e) {
     if (el) {
@@ -2308,7 +2604,7 @@ async function loadSprintSpeed() {
     }).length;
     if (el) {
       const existing = el.innerHTML;
-      el.innerHTML = existing + ` · Sprint: ${data.count} runners, ${matchCount} matched`;
+      el.innerHTML = existing + ` · Sprint: ${data.count} runners, ${matchCount} matched${cacheAgeWarning(data.fetchedAt)}`;
     }
   } catch (e) {
     if (el) {
@@ -2556,6 +2852,14 @@ function renderSlateEnvironment() {
     return;
   }
 
+  function envMoveBadge(curr, open) {
+    if (open == null || curr == null || !open || !curr) return '';
+    const diff = +(curr - open).toFixed(1);
+    if (Math.abs(diff) < 0.1) return '';
+    const up = diff > 0;
+    return ` <span style="font-size:9px;color:${up ? 'var(--tsu)' : 'var(--td)'}">${up ? '▲' : '▼'}${Math.abs(diff).toFixed(1)}</span>`;
+  }
+
   el.innerHTML = `<div class="tbl-wrap"><table>
     <thead><tr><th>Game</th><th>O/U</th><th>Away Impl</th><th>Home Impl</th><th>Park</th><th>Weather</th><th>Wind</th><th>Rain</th><th>HP Ump</th><th>Env Score</th></tr></thead>
     <tbody>${gameEnvs.map((g, i) => {
@@ -2566,11 +2870,13 @@ function renderSlateEnvironment() {
       const umpCell = ump
         ? `<span title="${escAttr(ump.name || '')}" class="pill ${ump.score >= 1 ? 'pd' : ump.score <= -1 ? 'psu' : 'pg'}" style="font-size:10px">${esc(ump.name || 'Unk')} ${ump.score > 0 ? '+' : ''}${ump.score ?? ''}</span>`
         : '\u2014';
+      const awayVD = vegasData?.[g.away] || {};
+      const homeVD = vegasData?.[g.home] || {};
       return `<tr>
         <td><strong style="color:${rankColor}">#${i+1} ${esc(g.away)}@${esc(g.home)}</strong></td>
         <td><strong>${g.total > 0 ? g.total.toFixed(1) : '\u2014'}</strong></td>
-        <td>${g.awayImplied > 0 ? g.awayImplied.toFixed(1) : '\u2014'}</td>
-        <td>${g.homeImplied > 0 ? g.homeImplied.toFixed(1) : '\u2014'}</td>
+        <td>${g.awayImplied > 0 ? g.awayImplied.toFixed(1) : '\u2014'}${envMoveBadge(awayVD.impliedTotal, awayVD.openTotal)}</td>
+        <td>${g.homeImplied > 0 ? g.homeImplied.toFixed(1) : '\u2014'}${envMoveBadge(homeVD.impliedTotal, homeVD.openTotal)}</td>
         <td><span class="pill ${g.pf.overall > 1.05 ? 'psu' : g.pf.overall < 0.95 ? 'pd' : 'pg'}">${g.pf.overall.toFixed(2)}</span></td>
         <td>${g.isDome ? '<span class="pill pg">Dome</span>' : g.weather ? `${g.weather.temp_f}F` : '\u2014'}</td>
         <td><span class="pill ${g.windLabel === 'OUT' ? 'psu' : g.windLabel === 'IN' ? 'pd' : 'pg'}">${g.windLabel}</span></td>

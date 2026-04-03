@@ -39,6 +39,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .fdot.ok{background:var(--tsu)}.fdot.warn{background:var(--tw)}
 .fn{flex:1;color:var(--ts)}.fn.ok{color:var(--tsu)}.fn.warn{color:var(--tw)}
 .fc{font-size:11px;color:var(--tt)}
+.roo-wt{width:42px;font-size:11px;padding:2px 4px;border-radius:var(--r);border:0.5px solid var(--brd-s);background:var(--bp);color:var(--tp);text-align:center;margin-left:auto}
+.roo-wt-lbl{font-size:11px;color:var(--tt);margin-left:1px}
 .drop{border:1.5px dashed var(--brd-s);border-radius:var(--rl);padding:24px 20px;text-align:center;cursor:pointer;transition:all .15s;margin-bottom:10px}
 .drop:hover,.drop.drag{border-color:var(--brd-p);background:var(--bs)}
 .drop input{display:none}
@@ -74,6 +76,11 @@ tr:hover td{background:var(--bs)}
 .slot-empty{flex:1;font-size:12px;color:var(--tt)}
 .sal-bar{height:4px;border-radius:2px;background:var(--bsu)}
 .sal-bar.warn{background:var(--bw)}.sal-bar.over{background:var(--bd)}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);padding:10px 20px;border-radius:var(--rl);font-size:13px;font-weight:500;z-index:9999;pointer-events:auto;opacity:0;transition:opacity .25s;max-width:90vw;text-align:center}
+.toast.show{opacity:1}
+.toast.warn{background:var(--bw);color:var(--tw);border:0.5px solid var(--brd-w)}
+.toast.info{background:var(--bi);color:var(--ti);border:0.5px solid var(--brd-i)}
+.toast .toast-undo{margin-left:12px;padding:3px 10px;font-size:12px;font-weight:600;border-radius:var(--r);border:0.5px solid currentColor;cursor:pointer;background:transparent;color:inherit}
 .sk-card{background:var(--bp);border:0.5px solid var(--brd-t);border-radius:var(--rl);padding:12px 14px;margin-bottom:8px}
 .sk-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
 .chips{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px}
@@ -175,7 +182,9 @@ tr:hover td{background:var(--bs)}
   <div id="upload-warnings" style="display:none"></div>
   <div class="file-list">
     <div class="fi" id="fi-dk"><div class="fdot" id="fd-dk"></div><div class="fn" id="fn-dk">DraftKings Salaries (DKSalaries.csv) -- optional</div><div class="fc" id="fc-dk">not loaded</div></div>
-    <div class="fi" id="fi-roo"><div class="fdot" id="fd-roo"></div><div class="fn" id="fn-roo">Player ROO export (MLB_ROO_export.csv)</div><div class="fc" id="fc-roo">not loaded</div></div>
+    <div class="fi" id="fi-roo1"><div class="fdot" id="fd-roo1"></div><div class="fn" id="fn-roo1">Projection Source 1</div><div class="fc" id="fc-roo1">not loaded</div><input type="number" class="roo-wt" id="wt-roo1" value="100" min="0" max="100" step="5" onchange="updateRooWeights()" title="Weight %"><span class="roo-wt-lbl">%</span></div>
+    <div class="fi" id="fi-roo2"><div class="fdot" id="fd-roo2"></div><div class="fn" id="fn-roo2">Projection Source 2 (optional)</div><div class="fc" id="fc-roo2">not loaded</div><input type="number" class="roo-wt" id="wt-roo2" value="0" min="0" max="100" step="5" onchange="updateRooWeights()" title="Weight %"><span class="roo-wt-lbl">%</span></div>
+    <div class="fi" id="fi-roo3"><div class="fdot" id="fd-roo3"></div><div class="fn" id="fn-roo3">Projection Source 3 (optional)</div><div class="fc" id="fc-roo3">not loaded</div><input type="number" class="roo-wt" id="wt-roo3" value="0" min="0" max="100" step="5" onchange="updateRooWeights()" title="Weight %"><span class="roo-wt-lbl">%</span></div>
     <div class="fi" id="fi-s3"><div class="fdot" id="fd-s3"></div><div class="fn" id="fn-s3">3-man stack file</div><div class="fc" id="fc-s3">not loaded</div></div>
     <div class="fi" id="fi-s5"><div class="fdot" id="fd-s5"></div><div class="fn" id="fn-s5">5-man stack file</div><div class="fc" id="fc-s5">not loaded</div></div>
     <div class="fi" id="fi-ts"><div class="fdot" id="fd-ts"></div><div class="fn" id="fn-ts">Team Scoring Percentages</div><div class="fc" id="fc-ts">not loaded</div></div>
@@ -228,6 +237,7 @@ tr:hover td{background:var(--bs)}
         <option value="avgppg">DK Avg PPG</option>
       </select>
       <input type="text" id="search-inp" placeholder="Search player..." oninput="debouncedRenderPlayers()" style="width:130px">
+      <span id="player-count" style="font-size:11px;color:var(--tt);white-space:nowrap"></span>
       <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--tt);cursor:pointer;white-space:nowrap">
         <input type="checkbox" id="filter-confirmed" onchange="renderPlayers()"> Confirmed only
       </label>
@@ -526,6 +536,20 @@ tr:hover td{background:var(--bs)}
   <div id="port-warnings" style="display:none;margin-bottom:10px"></div>
 
   <button class="btn-g" id="gen-portfolio-btn" onclick="generatePortfolio()" style="width:100%;margin-bottom:12px">Generate Portfolio</button>
+
+  <!-- Late Swap -->
+  <details id="late-swap-section" style="margin-bottom:12px">
+    <summary style="font-size:12px;font-weight:500;color:var(--ts);text-transform:uppercase;letter-spacing:.04em;cursor:pointer;user-select:none;padding:6px 0">Late Swap <span style="font-size:10px;font-weight:400;text-transform:none;letter-spacing:0;color:var(--tt)">(replace scratched / injured players)</span></summary>
+    <div style="margin-top:8px">
+      <div style="font-size:11px;color:var(--tt);margin-bottom:8px">Scan your portfolio for injured or scratched players. Locked slots are preserved; affected slots get replacement suggestions ranked by score impact.</div>
+      <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">
+        <button class="btn" onclick="scanLateSwaps()">Scan for Swaps</button>
+        <span id="late-swap-status" style="font-size:11px;color:var(--tt);align-self:center"></span>
+      </div>
+      <div id="late-swap-results"></div>
+    </div>
+  </details>
+
   <div id="portfolio-results"><div class="empty">Configure settings above and generate a portfolio.</div></div>
 </div>
 
@@ -625,6 +649,7 @@ tr:hover td{background:var(--bs)}
 
 </div>
 
+<div id="toast-container"></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="engine.js"></script>
 <script src="app.js"></script>

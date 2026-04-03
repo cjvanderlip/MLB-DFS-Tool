@@ -1,6 +1,6 @@
 # MLB DFS Tool — TODO
 
-Last updated: 2026-04-02
+Last updated: 2026-04-03
 
 ---
 
@@ -56,12 +56,14 @@ Last updated: 2026-04-02
   Salary cap differs. No position requirements — any player can go anywhere.
   This is a full separate optimizer mode.
 
-- [ ] **Late swap mode**
-  When players are scratched after lock:
-  - Lock confirmed/valid slots in existing portfolio lineups
-  - Identify which slots contain scratched players
-  - Generate valid replacements with salary/score impact shown per swap
-  - Show "before vs after" lineup comparison
+- [x] **Late swap mode**
+  Added "Late Swap" collapsible section in Portfolio Builder. "Scan for Swaps" button
+  cross-references injury data with portfolio lineups to find affected slots. For each
+  injured/scratched player, shows which lineups are affected and a table of eligible
+  replacements ranked by median projection. Each replacement row shows Δ Median, Δ Salary,
+  ownership %, and whether the player is already in the portfolio. One-click "Swap" button
+  replaces the player across all affected lineups (with salary cap validation), recomputes
+  exposure, and re-renders results.
 
 - [x] **Per-lineup Monte Carlo scoring (portfolio simulation)**
   "Simulate Portfolio (Sim ROI)" button added below portfolio results. Runs 2,000 correlated sims per lineup showing P10/P50/P90. Each lineup gets a cash rate %, win rate %, and Sim ROI column.
@@ -76,10 +78,13 @@ Last updated: 2026-04-02
 - [x] **DvP (Defense vs. Position) data integration**
   New `/api/dvp` endpoint aggregates last-14-day boxscore data by defending team and position. "Fetch DvP Data" button on Vegas tab renders a ranked table (green = easy, red = tough). DvP badges (easy/mid/tough) appear inline on each player row in the pool table based on the opponent's rank at that position. Cached 4 hours.
 
-- [ ] **Multi-source projection blending (3 CSVs)**
-  Currently accepts one ROO file. DraftDime lets you upload 3 projection CSVs and blend
-  them at custom % weights (e.g. 40% Stokastic / 40% THE BAT X / 20% own).
-  Sharp players always triangulate across multiple projection sources.
+- [x] **Multi-source projection blending (3 CSVs)**
+  Upload up to 3 projection CSVs into separate slots with per-source weight inputs (%).
+  Weights auto-balance on load (1 source = 100%, 2 = 50/50, 3 = 34/33/33) and can be
+  manually adjusted. `blendROO()` computes weighted average of floor, median, ceiling, top,
+  own%, and GPP% across loaded sources, normalizing per-player when a source is missing a player.
+  Salary takes the max across sources. Works seamlessly with 1, 2, or 3 sources — single
+  source behaves identically to the old flow.
 
 - [x] **Historical player-pair correlation data**
   Added `buildPairCorrelations()` / `getPairCorrelation()` to engine. Computed Pearson r from co-appearing player actuals in saved history (requires ≥5 co-appearances). Loaded automatically when Backtest tab is opened. `getCorrelation()` checks historical pairs first, falls back to structural rules. Both structural and historical values scaled by `_corrScale`.
@@ -94,43 +99,53 @@ Last updated: 2026-04-02
 
 ### P4 — Lower Priority / Polish
 
-- [ ] **Salary cap warning when manually adding players**
+- [x] **Salary cap warning when manually adding players**
   Silent failure when clicking "+" and salary cap would be exceeded.
   Should show a toast: "Cannot add — would exceed cap by $X."
 
-- [ ] **Visual BvP indicator on lineup slots**
+- [x] **Visual BvP indicator on lineup slots**
   If a user manually builds a lineup with pitcher + opposing batter, highlight the conflicting slots in red with a warning label.
 
-- [ ] **Player search result count**
+- [x] **Player search result count**
   Filter box shows results but doesn't say "Showing 23 of 304 players" — users assume the filter is broken.
 
-- [ ] **Undo for removed lineup players**
+- [x] **Undo for removed lineup players**
   Clicking × on a lineup slot is instant with no undo. Show a 3-second undo toast.
 
 - [x] **Exposure label display on Portfolio Builder mobile**
   Range sliders now use a flex row wrapper with `flex:1;min-width:0` on the input and `flex-shrink:0;width:32px` on the label span. Applied to all portfolio and simulator sliders. No more clipping on narrow screens.
 
-- [ ] **DK upload — line movement badges on Vegas tab**
-  Show whether a team's implied total has moved up or down since open (line movement arrows).
-  Data is stored (`openTotal` vs `impliedTotal`) but not surfaced visually in the game environment table.
+- [x] **DK upload — line movement badges on Vegas tab**
+  Added `envMoveBadge()` to the Game Environment Rankings table. Away Impl and Home Impl
+  columns now show colored ▲/▼ arrows with the magnitude of movement when `openTotal`
+  differs from current `impliedTotal`. Green for lines moving up (more runs expected),
+  red for lines moving down. Complements the existing `moveBadge()` in the Vegas input form.
 
-- [ ] **README — document ODDS_API_KEY env var setup**
+- [x] **README — document ODDS_API_KEY env var setup**
   After removing the hardcoded key fallback, first-time users will get a 503 with no explanation.
   Add setup instructions to README.
+  — Moved key to `.env` file (loaded via `dotenv`). Removed hardcoded key from `start.ps1`
+  and `start.bat`. `.env` already in `.gitignore`.
 
 ---
 
 ## Data / Infrastructure
 
-- [ ] **ODDS_API_KEY env var documentation**
+- [x] **ODDS_API_KEY env var documentation**
   Document in README and add a startup check that prints a clear warning if unset.
+  — Key loaded from `.env` via `dotenv`. Server already returns 503 with clear message if unset.
 
-- [ ] **Statcast cache staleness handling**
+- [x] **Statcast cache staleness handling**
   `statcast_cache.json` is used as fallback but has no max-age. Could serve 3-week-old data silently.
   Add a cache timestamp and warn in UI if data is >48h old.
 
-- [ ] **lineup_history.json growth**
+- [x] **lineup_history.json growth**
   No pruning. Will grow unbounded. Add a "keep last N slates" setting or archive older entries.
+  — Added slate-based pruning: configurable "Keep Last N Slates" (default 30) and "Strip Pool
+  Data After N Slates" (default 5). Server prunes on every save and on settings change.
+  `poolSnapshot` (main bloat vector) is stripped from older entries. UI controls in Backtest
+  tab with "Save Settings" and "Prune Now" buttons. Settings persisted in
+  `data/history_settings.json`.
 
 ---
 
@@ -142,3 +157,13 @@ Last updated: 2026-04-02
 - Added 5-batter-per-team hard cap (DraftKings rule)
 - Fixed injury feed HTML parse error
 - Improved mismatch warning messaging
+
+## Completed This Session (2026-04-03)
+- Completed all 5 THE BAT X benchmark gaps (umpire DB fix, pitcher Statcast stuff model, bullpen quality rankings, catcher framing, sprint speed)
+- Added statcast cache staleness handling with age warnings (server + client, all 5 data caches)
+- Added salary cap warning toast on manual add
+- Added player search result count display
+- Added undo toast for removed lineup players
+- Implemented multi-source projection blending (up to 3 ROO CSVs with configurable blend weights)
+- Added line movement badges (▲/▼) to Game Environment Rankings table on Vegas tab
+- Implemented Late Swap mode in Portfolio Builder (scan, compare replacements, one-click swap)

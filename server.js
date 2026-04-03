@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const multer = require('multer');
 const path = require('path');
@@ -283,6 +284,7 @@ app.get('/api/park-factors/:team', (req, res) => {
 // ── Backtesting / Lineup History ────────────────────────────────────────────
 
 const historyFile = path.join(dataDir, 'lineup_history.json');
+const historySettingsFile = path.join(dataDir, 'history_settings.json');
 
 function readHistory() {
   try {
@@ -295,12 +297,66 @@ function writeHistory(data) {
   fs.writeFileSync(historyFile, JSON.stringify(data, null, 2));
 }
 
+function readHistorySettings() {
+  try {
+    if (fs.existsSync(historySettingsFile)) return JSON.parse(fs.readFileSync(historySettingsFile, 'utf8'));
+  } catch (e) {}
+  return { maxSlates: 30, stripPoolAfterSlates: 5 };
+}
+
+function writeHistorySettings(s) {
+  fs.writeFileSync(historySettingsFile, JSON.stringify(s, null, 2));
+}
+
+function pruneHistory(history, settings) {
+  if (!history.length) return history;
+  const { maxSlates, stripPoolAfterSlates } = settings;
+  // Group by slateDate
+  const slateDates = [...new Set(history.map(h => h.slateDate || ''))].sort().reverse();
+  const keepDates = new Set(slateDates.slice(0, maxSlates));
+  const stripDates = new Set(slateDates.slice(stripPoolAfterSlates));
+  // Remove entries from dates beyond maxSlates
+  let pruned = history.filter(h => keepDates.has(h.slateDate || ''));
+  // Strip poolSnapshot from older entries to save space
+  for (const entry of pruned) {
+    if (stripDates.has(entry.slateDate || '') && entry.poolSnapshot && entry.poolSnapshot.length) {
+      entry.poolSnapshot = [];
+    }
+  }
+  return pruned;
+}
+
+app.get('/api/history/settings', (req, res) => {
+  res.json(readHistorySettings());
+});
+
+app.put('/api/history/settings', (req, res) => {
+  const maxSlates = Math.max(1, Math.min(365, parseInt(req.body.maxSlates) || 30));
+  const stripPoolAfterSlates = Math.max(1, Math.min(maxSlates, parseInt(req.body.stripPoolAfterSlates) || 5));
+  const settings = { maxSlates, stripPoolAfterSlates };
+  writeHistorySettings(settings);
+  // Apply pruning immediately with new settings
+  let history = readHistory();
+  history = pruneHistory(history, settings);
+  writeHistory(history);
+  res.json({ success: true, settings, entriesAfterPrune: history.length });
+});
+
+app.post('/api/history/prune', (req, res) => {
+  const settings = readHistorySettings();
+  let history = readHistory();
+  const before = history.length;
+  history = pruneHistory(history, settings);
+  writeHistory(history);
+  res.json({ success: true, before, after: history.length, removed: before - history.length });
+});
+
 app.get('/api/history', (req, res) => {
   res.json(readHistory());
 });
 
 app.post('/api/history', (req, res) => {
-  const history = readHistory();
+  let history = readHistory();
   const entry = {
     id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
     date: new Date().toISOString(),
@@ -320,8 +376,9 @@ app.post('/api/history', (req, res) => {
     buyin: req.body.buyin || null
   };
   history.unshift(entry);
-  // Keep last 500 entries
-  if (history.length > 500) history.length = 500;
+  // Apply slate-based pruning
+  const settings = readHistorySettings();
+  history = pruneHistory(history, settings);
   writeHistory(history);
   res.json({ success: true, id: entry.id });
 });
@@ -370,9 +427,14 @@ app.get('/api/history/summary', (req, res) => {
     if (h.actualPts !== null) c.totalActual += h.actualPts;
   });
 
+  const uniqueSlates = [...new Set(history.map(h => h.slateDate || ''))].length;
+  const historySettings = readHistorySettings();
+
   res.json({
     totalEntries: history.length,
     entriesWithResults: withResults.length,
+    uniqueSlates,
+    historySettings,
     totalBuyin,
     totalWinnings,
     netProfit: totalWinnings - totalBuyin,
@@ -999,7 +1061,7 @@ app.get('/api/statcast', async (req, res) => {
   } catch (err) {
     if (fs.existsSync(statcastCacheFile)) {
       const cached = JSON.parse(fs.readFileSync(statcastCacheFile, 'utf8'));
-      return res.json({ success: true, data: cached.data, cached: true, stale: true, error: err.message });
+      return res.json({ success: true, data: cached.data, cached: true, stale: true, fetchedAt: cached.fetchedAt, error: err.message });
     }
     res.status(500).json({ error: 'Statcast fetch failed: ' + err.message });
   }
@@ -1059,7 +1121,7 @@ app.get('/api/statcast/pitchers', async (req, res) => {
   } catch (err) {
     if (fs.existsSync(pitcherStatcastCacheFile)) {
       const cached = JSON.parse(fs.readFileSync(pitcherStatcastCacheFile, 'utf8'));
-      return res.json({ success: true, data: cached.data, cached: true, stale: true, error: err.message });
+      return res.json({ success: true, data: cached.data, cached: true, stale: true, fetchedAt: cached.fetchedAt, error: err.message });
     }
     res.status(500).json({ error: 'Pitcher Statcast fetch failed: ' + err.message });
   }
@@ -1114,7 +1176,7 @@ app.get('/api/bullpen', async (req, res) => {
   } catch (err) {
     if (fs.existsSync(bullpenCacheFile)) {
       const cached = JSON.parse(fs.readFileSync(bullpenCacheFile, 'utf8'));
-      return res.json({ success: true, data: cached.data, cached: true, stale: true, error: err.message });
+      return res.json({ success: true, data: cached.data, cached: true, stale: true, fetchedAt: cached.fetchedAt, error: err.message });
     }
     res.status(500).json({ error: 'Bullpen fetch failed: ' + err.message });
   }
@@ -1179,7 +1241,7 @@ app.get('/api/framing', async (req, res) => {
   } catch (err) {
     if (fs.existsSync(framingCacheFile)) {
       const cached = JSON.parse(fs.readFileSync(framingCacheFile, 'utf8'));
-      return res.json({ success: true, data: cached.data, cached: true, stale: true, count: cached.count, error: err.message });
+      return res.json({ success: true, data: cached.data, cached: true, stale: true, fetchedAt: cached.fetchedAt, count: cached.count, error: err.message });
     }
     res.status(500).json({ error: 'Framing fetch failed: ' + err.message });
   }
@@ -1242,7 +1304,7 @@ app.get('/api/sprint-speed', async (req, res) => {
   } catch (err) {
     if (fs.existsSync(sprintCacheFile)) {
       const cached = JSON.parse(fs.readFileSync(sprintCacheFile, 'utf8'));
-      return res.json({ success: true, data: cached.data, cached: true, stale: true, count: cached.count, error: err.message });
+      return res.json({ success: true, data: cached.data, cached: true, stale: true, fetchedAt: cached.fetchedAt, count: cached.count, error: err.message });
     }
     res.status(500).json({ error: 'Sprint speed fetch failed: ' + err.message });
   }
