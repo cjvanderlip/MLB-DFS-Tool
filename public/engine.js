@@ -959,7 +959,7 @@ function tryPlaceStack(stackPlayers, requiredSlots, pool) {
   return true;
 }
 
-function buildPortfolio(pool, opts = {}) {
+async function buildPortfolio(pool, opts = {}, onProgress = null) {
   const {
     numLineups = 20,
     maxExposure = 0.60,
@@ -975,6 +975,7 @@ function buildPortfolio(pool, opts = {}) {
     allowBvP = false,      // if false, pitcher and opposing batters cannot share a lineup
     playerOverrides = {},  // { playerName: { min: 0-1, max: 0-1 } } per-player exposure bounds
     stackPct5 = null,      // % of lineups that should target a 5-man stack (null = auto)
+    teamExposureOverrides = {}, // { teamName: { min: 0-1, max: 0-1 } } per-team stack exposure bounds
     context = {},
     iterations = 5000
   } = opts;
@@ -990,6 +991,7 @@ function buildPortfolio(pool, opts = {}) {
   // Also filter stacks that belong to banned teams
   const allowedStacks3 = stacks3.filter(s => !bannedTeams.includes(s.team));
   const allowedStacks5 = stacks5.filter(s => !bannedTeams.includes(s.team));
+  const totalAvailableStacks = allowedStacks3.length + allowedStacks5.length;
 
   // Track which locked teams have no stacks file entry so we can flag them
   const virtualStackTeams = new Set();
@@ -1001,11 +1003,22 @@ function buildPortfolio(pool, opts = {}) {
   const lineups = [];
   const exposureCounts = {};
   const usedStackIds = new Set();
+  // Tracks how many accepted lineups contain a 3+ batter stack per team
+  const teamStackCounts = {};
 
-  // Round-robin index for cycling locked teams across lineups
+  // Fix 4: playerName -> Set<lineupIndex> for O(players) overlap checking
+  const playerLineupIndex = new Map();
+
+  // Fix 2: Round-robin index for locked teams — only advances on accepted lineups
   let lockedTeamIdx = 0;
 
-  for (let i = 0; i < numLineups; i++) {
+  // Fix 1: Loop until numLineups valid lineups are built, with a safety cap on attempts
+  const maxAttempts = numLineups * 5;
+  let attempts = 0;
+
+  while (lineups.length < numLineups && attempts < maxAttempts) {
+    attempts++;
+
     // Build exclusion set: banned + over-exposed players (respecting per-player max overrides)
     const excludeOverExposed = new Set(bannedNames);
     if (lineups.length > 0) {
@@ -1017,7 +1030,25 @@ function buildPortfolio(pool, opts = {}) {
       });
     }
 
-    // Build force-include set: players whose min exposure won't be met unless included now
+    // Build set of teams whose stack exposure has hit its max — exclude them from stacking.
+    // Also build set of teams whose min exposure requires them to be stacked now.
+    const bannedStackTeams = new Set();
+    const forcedStackTeams = new Set();
+    if (Object.keys(teamExposureOverrides).length && lineups.length > 0) {
+      const remaining = numLineups - lineups.length;
+      for (const [team, ov] of Object.entries(teamExposureOverrides)) {
+        const count = teamStackCounts[team] || 0;
+        if (ov.max != null && count / lineups.length >= ov.max) bannedStackTeams.add(team);
+        if (ov.min != null) {
+          const targetCount = Math.ceil(numLineups * ov.min);
+          if (targetCount - count >= remaining) forcedStackTeams.add(team);
+        }
+      }
+    }
+
+    // Build force-include set: players whose min exposure won't be met unless included now.
+    // Fix 6: remaining is based on valid lineups still needed (not total attempts made),
+    // so the threshold triggers correctly regardless of how many attempts were discarded.
     const forceNames = new Set();
     if (Object.keys(playerOverrides).length) {
       const remaining = numLineups - lineups.length;
@@ -1033,7 +1064,9 @@ function buildPortfolio(pool, opts = {}) {
       });
     }
 
-    // Determine stack size preference for this lineup
+    // Fix 7: prefer5Man is based on accepted lineup count, so discarded attempts don't
+    // consume stack variety — the engine keeps targeting 5-man stacks until the quota
+    // of accepted lineups with 5-man stacks is actually met.
     let prefer5Man = null;
     if (target5ManCount != null) {
       prefer5Man = lineups5ManCount < target5ManCount;
@@ -1045,17 +1078,27 @@ function buildPortfolio(pool, opts = {}) {
     } else if (contestType === 'single') {
       lu = generateSingleLineup(pool, excludeOverExposed, context, iterations, allowBvP, forceNames);
     } else {
-      // Determine which locked team (if any) this lineup should feature
+      // Fix 2: Read current locked team before any advance; only advance on acceptance
       const targetLockedTeam = lockedTeams.length > 0
         ? lockedTeams[lockedTeamIdx % lockedTeams.length]
         : null;
-      if (lockedTeams.length > 0) lockedTeamIdx++;
+
+      // Fix 3: Recycle stack IDs when all available stacks have been used, so large
+      // portfolios maintain stack correlation structure throughout all lineups.
+      if (totalAvailableStacks > 0 && usedStackIds.size >= totalAvailableStacks) {
+        usedStackIds.clear();
+      }
+
+      // Fix 7: Pass a snapshot of usedStackIds so IDs are only committed when the
+      // lineup is actually accepted — discarded lineups don't consume stack slots.
+      const pendingStackIds = new Set(usedStackIds);
 
       lu = generateGppLineup(
         pool, excludeOverExposed, context,
-        allowedStacks3, allowedStacks5, usedStackIds,
+        allowedStacks3, allowedStacks5, pendingStackIds,
         iterations, contestSize,
-        targetLockedTeam, pool, allowBvP, forceNames, prefer5Man
+        targetLockedTeam, pool, allowBvP, forceNames, prefer5Man,
+        bannedStackTeams, forcedStackTeams
       );
 
       // Hard bring-back enforcement: if required and lineup has a stack but no
@@ -1090,37 +1133,69 @@ function buildPortfolio(pool, opts = {}) {
               }
               if (placed) break;
             }
+            // Fix 5: After bring-back swap, run a salary upgrade pass to recover any
+            // cap headroom left behind when a lower-salary bring-back replaced a
+            // higher-salary batter.
+            if (placed) {
+              const scoreFn = p => scoreGpp(p, { ...context, pool, contestSize });
+              lu = upgradeSalary(lu, pool, scoreFn, excludeOverExposed, allowBvP);
+            }
             // No valid bring-back found — discard this lineup rather than emit it
             // without a bring-back. The portfolio loop will attempt another iteration.
             if (!placed) lu = null;
           }
         }
       }
+
+      // Fix 7: Commit pending stack IDs only if lineup survived bring-back enforcement
+      if (lu) {
+        for (const id of pendingStackIds) {
+          if (!usedStackIds.has(id)) usedStackIds.add(id);
+        }
+      }
     }
 
     if (lu && lu.every(Boolean)) {
-      // Check maxOverlap: skip if any existing lineup shares too many players
+      // Fix 4: Check maxOverlap via the player index — O(players) instead of O(lineups²)
+      const luNames = new Set(lu.filter(Boolean).map(p => p.name));
       let tooSimilar = false;
       if (maxOverlap > 0 && lineups.length > 0) {
-        const luNames = new Set(lu.filter(Boolean).map(p => p.name));
-        for (const existing of lineups) {
-          const overlap = existing.filter(p => p && luNames.has(p.name)).length;
-          if (overlap > maxOverlap) { tooSimilar = true; break; }
+        const overlapCounts = new Map();
+        for (const name of luNames) {
+          const indices = playerLineupIndex.get(name);
+          if (!indices) continue;
+          for (const luIdx of indices) {
+            const c = (overlapCounts.get(luIdx) || 0) + 1;
+            if (c > maxOverlap) { tooSimilar = true; break; }
+            overlapCounts.set(luIdx, c);
+          }
+          if (tooSimilar) break;
         }
       }
       if (!tooSimilar) {
+        const acceptedIdx = lineups.length;
         lineups.push(lu);
         lu.forEach(p => {
           exposureCounts[p.name] = (exposureCounts[p.name] || 0) + 1;
+          // Fix 4: Maintain player→lineup index for future overlap checks
+          if (!playerLineupIndex.has(p.name)) playerLineupIndex.set(p.name, new Set());
+          playerLineupIndex.get(p.name).add(acceptedIdx);
         });
-        // Track 5-man stack usage for stackPct5 targeting
-        if (target5ManCount != null) {
-          const teamCts = {};
-          lu.forEach(p => { if (!rp(p, 'P')) teamCts[p.team] = (teamCts[p.team] || 0) + 1; });
-          if (Object.values(teamCts).some(c => c >= 5)) lineups5ManCount++;
-        }
+        // Fix 2: Advance locked-team round-robin only when a GPP lineup is accepted
+        if (contestType !== 'cash' && contestType !== 'single' && lockedTeams.length > 0) lockedTeamIdx++;
+        // Track 5-man stack usage and per-team stack counts
+        const teamCts = {};
+        lu.forEach(p => { if (!rp(p, 'P')) teamCts[p.team] = (teamCts[p.team] || 0) + 1; });
+        if (target5ManCount != null && Object.values(teamCts).some(c => c >= 5)) lineups5ManCount++;
+        Object.entries(teamCts).forEach(([team, c]) => {
+          if (c >= 3) teamStackCounts[team] = (teamStackCounts[team] || 0) + 1;
+        });
       }
     }
+
+    // Yield to browser each attempt to prevent "Page Unresponsive"
+    if (onProgress) onProgress(attempts, maxAttempts, lineups.length);
+    await new Promise(r => setTimeout(r, 0));
   }
 
   // Calculate portfolio stats
@@ -1156,11 +1231,23 @@ function buildPortfolio(pool, opts = {}) {
     }
   });
 
+  // Team exposure warning: flag teams that exceeded their override cap
+  const teamExposureWarnings = [];
+  if (lineups.length > 0) {
+    for (const [team, ov] of Object.entries(teamExposureOverrides)) {
+      const count = teamStackCounts[team] || 0;
+      const actualPct = count / lineups.length;
+      if (ov.max != null && actualPct > ov.max + 0.05) {
+        teamExposureWarnings.push({ team, pct: (actualPct * 100).toFixed(0), cap: (ov.max * 100).toFixed(0) });
+      }
+    }
+  }
+
   return {
-    lineups, playerExposure, teamExposure,
+    lineups, playerExposure, teamExposure, teamStackCounts,
     totalLineups: lineups.length,
     virtualStackTeams: [...virtualStackTeams],
-    pitcherWarnings,
+    pitcherWarnings, teamExposureWarnings,
     bannedTeams, lockedTeams
   };
 }
@@ -1177,22 +1264,27 @@ function generateSingleLineup(pool, excludeNames, context, iterations, allowBvP 
 
 // lockedTeam: if set, this team's stack must be used for this lineup.
 // fullPool: the unfiltered pool used for virtual stack synthesis (may differ from pool after exclusions).
-function generateGppLineup(pool, excludeNames, context, stacks3, stacks5, usedStackIds, iterations, contestSize, lockedTeam, fullPool, allowBvP = false, forceInclude = new Set(), prefer5Man = null) {
+function generateGppLineup(pool, excludeNames, context, stacks3, stacks5, usedStackIds, iterations, contestSize, lockedTeam, fullPool, allowBvP = false, forceInclude = new Set(), prefer5Man = null, bannedStackTeams = new Set(), forcedStackTeams = new Set()) {
   const requiredSlots = new Array(ROSTER_SIZE).fill(null);
   let usedStackTeam = null;
 
   // Build ordered candidate stacks. prefer5Man: true = favor 5-man, false = favor 3-man, null = auto.
   const sortByValue = (a, b) => (b.proj - (b.own || 0) * 0.3) - (a.proj - (a.own || 0) * 0.3);
   const buildCandidates = () => {
-    const avail5 = stacks5.filter(s => s.proj > 0 && !usedStackIds.has(s.id)).sort(sortByValue);
-    const avail3 = stacks3.filter(s => s.proj > 0 && !usedStackIds.has(s.id)).sort(sortByValue);
+    // Filter out stacks for teams that have hit their exposure max
+    const avail5 = stacks5.filter(s => s.proj > 0 && !usedStackIds.has(s.id) && !bannedStackTeams.has(s.team)).sort(sortByValue);
+    const avail3 = stacks3.filter(s => s.proj > 0 && !usedStackIds.has(s.id) && !bannedStackTeams.has(s.team)).sort(sortByValue);
     // Primary pool gets the first 7 slots in candidate list; secondary fills the rest
     const primary = prefer5Man === false ? avail3 : avail5;
     const secondary = prefer5Man === false ? avail5 : avail3;
     const allAvail = [...primary, ...secondary];
-    if (lockedTeam) {
-      const forTeam = allAvail.filter(s => s.team === lockedTeam);
-      const others = allAvail.filter(s => s.team !== lockedTeam).slice(0, 6);
+
+    // If any teams need to hit their min, force one of them as the target
+    const forcedTeam = lockedTeam || (forcedStackTeams.size > 0 ? [...forcedStackTeams][0] : null);
+
+    if (forcedTeam) {
+      const forTeam = allAvail.filter(s => s.team === forcedTeam);
+      const others = allAvail.filter(s => s.team !== forcedTeam).slice(0, 6);
       for (let i = forTeam.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
         [forTeam[i], forTeam[j]] = [forTeam[j], forTeam[i]];
@@ -1224,8 +1316,10 @@ function generateGppLineup(pool, excludeNames, context, stacks3, stacks5, usedSt
     }
   }
 
-  // If a locked team was requested but no stack was placed yet, build a virtual stack
-  if (lockedTeam && !usedStackTeam) {
+  // If a locked/forced team was requested but no stack was placed yet, build a virtual stack
+  const requiredTeam = lockedTeam || (forcedStackTeams.size > 0 && !usedStackTeam ? [...forcedStackTeams][0] : null);
+  if (requiredTeam && !usedStackTeam) {
+    const lockedTeam = requiredTeam; // shadow for the block below
     const srcPool = fullPool || pool;
     const virtual = buildVirtualStack(lockedTeam, srcPool, excludeNames);
     if (virtual) {

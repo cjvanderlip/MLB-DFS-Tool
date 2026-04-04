@@ -12,23 +12,13 @@
     },
     "ATL": {
       "era": 2,
-      "whip": 0.91,
-      "kPer9": 8,
-      "bbPer9": 2.17,
+      "whip": 0.9,
+      "kPer9": 7.57,
+      "bbPer9": 2.14,
       "hrPer9": 1.2,
-      "ip": 54,
-      "saves": 0,
-      "blownSaves": 0
-    },
-    "NYM": {
-      "era": 2.5,
-      "whip": 1.18,
-      "kPer9": 9.99,
-      "bbPer9": 3.59,
-      "hrPer9": 1.2,
-      "ip": 57.2,
+      "ip": 63,
       "saves": 1,
-      "blownSaves": 1
+      "blownSaves": 0
     },
     "LAD": {
       "era": 2.83,
@@ -60,6 +50,16 @@
       "saves": 1,
       "blownSaves": 0
     },
+    "NYM": {
+      "era": 3.02,
+      "whip": 1.29,
+      "kPer9": 9.73,
+      "bbPer9": 3.7,
+      "hrPer9": 1.2,
+      "ip": 65.2,
+      "saves": 1,
+      "blownSaves": 1
+    },
     "SEA": {
       "era": 3.09,
       "whip": 0.98,
@@ -69,6 +69,16 @@
       "ip": 64,
       "saves": 1,
       "blownSaves": 1
+    },
+    "SF": {
+      "era": 3.48,
+      "whip": 1.16,
+      "kPer9": 9.44,
+      "bbPer9": 3.34,
+      "hrPer9": 1.2,
+      "ip": 62,
+      "saves": 2,
+      "blownSaves": 0
     },
     "CHC": {
       "era": 3.5,
@@ -99,16 +109,6 @@
       "ip": 54,
       "saves": 1,
       "blownSaves": 1
-    },
-    "SF": {
-      "era": 3.74,
-      "whip": 1.21,
-      "kPer9": 9.34,
-      "bbPer9": 3.4,
-      "hrPer9": 1.2,
-      "ip": 53,
-      "saves": 1,
-      "blownSaves": 0
     },
     "DET": {
       "era": 3.78,
@@ -200,6 +200,26 @@
       "saves": 2,
       "blownSaves": 1
     },
+    "KC": {
+      "era": 4.3,
+      "whip": 1.36,
+      "kPer9": 8.94,
+      "bbPer9": 3.96,
+      "hrPer9": 1.2,
+      "ip": 52.1,
+      "saves": 3,
+      "blownSaves": 1
+    },
+    "MIN": {
+      "era": 4.32,
+      "whip": 1.48,
+      "kPer9": 9,
+      "bbPer9": 4.14,
+      "hrPer9": 1.2,
+      "ip": 50,
+      "saves": 1,
+      "blownSaves": 0
+    },
     "OAK": {
       "era": 4.33,
       "whip": 1.52,
@@ -220,16 +240,6 @@
       "saves": 3,
       "blownSaves": 1
     },
-    "KC": {
-      "era": 4.36,
-      "whip": 1.38,
-      "kPer9": 8.31,
-      "bbPer9": 4.15,
-      "hrPer9": 1.2,
-      "ip": 43.1,
-      "saves": 3,
-      "blownSaves": 1
-    },
     "HOU": {
       "era": 4.57,
       "whip": 1.33,
@@ -239,16 +249,6 @@
       "ip": 63,
       "saves": 3,
       "blownSaves": 0
-    },
-    "ARI": {
-      "era": 4.59,
-      "whip": 1.18,
-      "kPer9": 7.59,
-      "bbPer9": 3,
-      "hrPer9": 1.2,
-      "ip": 51,
-      "saves": 3,
-      "blownSaves": 1
     },
     "BOS": {
       "era": 4.91,
@@ -260,15 +260,15 @@
       "saves": 1,
       "blownSaves": 1
     },
-    "MIN": {
-      "era": 5.05,
-      "whip": 1.59,
-      "kPer9": 9.66,
-      "bbPer9": 4.61,
+    "ARI": {
+      "era": 5.25,
+      "whip": 1.4,
+      "kPer9": 7.35,
+      "bbPer9": 3.75,
       "hrPer9": 1.2,
-      "ip": 41,
-      "saves": 1,
-      "blownSaves": 0
+      "ip": 60,
+      "saves": 3,
+      "blownSaves": 1
     },
     "TB": {
       "era": 5.44,
@@ -301,6 +301,6 @@
       "blownSaves": 1
     }
   },
-  "fetchedAt": "2026-04-02T16:33:35.126Z",
+  "fetchedAt": "2026-04-03T16:57:16.336Z",
   "count": 30
 }

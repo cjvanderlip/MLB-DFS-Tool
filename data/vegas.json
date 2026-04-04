@@ -1,154 +1,156 @@
 {
   "DET": {
-    "impliedTotal": 4.67,
+    "impliedTotal": 4.39,
     "openTotal": 4.54,
     "openAt": "2026-03-30T20:58:14.227Z"
   },
   "SD": {
-    "impliedTotal": 4.12,
+    "impliedTotal": 3.56,
     "openTotal": 3.46,
     "openAt": "2026-03-30T20:58:14.227Z"
   },
   "KC": {
-    "impliedTotal": 5.54,
+    "impliedTotal": 4.46,
     "openTotal": 7.04,
     "openAt": "2026-03-30T20:58:14.227Z"
   },
   "ATL": {
-    "impliedTotal": 4.7,
+    "impliedTotal": 4.71,
     "openTotal": 4.98,
     "openAt": "2026-03-30T20:58:14.227Z"
   },
   "LAA": {
-    "impliedTotal": 1.67,
+    "impliedTotal": 3.94,
     "openTotal": 3.31,
     "openAt": "2026-03-30T20:58:14.227Z"
   },
   "HOU": {
-    "impliedTotal": 4.65,
+    "impliedTotal": 5.09,
     "openTotal": 4.42,
     "openAt": "2026-03-30T20:58:14.227Z"
   },
   "CLE": {
-    "impliedTotal": 2.29,
+    "impliedTotal": 3.44,
     "openTotal": 3.21,
     "openAt": "2026-03-30T20:58:14.227Z"
   },
   "SEA": {
-    "impliedTotal": 0.51,
+    "impliedTotal": 5.56,
     "openTotal": 3.33,
     "openAt": "2026-03-30T20:58:14.227Z"
   },
   "ARI": {
-    "impliedTotal": 4.3,
+    "impliedTotal": 4.79,
     "openTotal": 4.46,
     "openAt": "2026-03-30T20:58:14.227Z"
   },
   "LAD": {
-    "impliedTotal": 5.71,
+    "impliedTotal": 6.82,
     "openTotal": 5.29,
     "openAt": "2026-03-30T20:58:14.227Z"
   },
   "ATH": {
-    "impliedTotal": 3.5
+    "impliedTotal": 3.5,
+    "openTotal": 3.5,
+    "openAt": "2026-04-03T16:57:33.881Z"
   },
   "TOR": {
-    "impliedTotal": 4.81,
+    "impliedTotal": 5.17,
     "openTotal": 5.9,
     "openAt": "2026-03-30T20:58:14.227Z"
   },
   "COL": {
-    "impliedTotal": 0.57,
+    "impliedTotal": 3.25,
     "openTotal": 2.6,
     "openAt": "2026-03-30T20:58:14.227Z"
   },
   "MIA": {
-    "impliedTotal": 3.15,
+    "impliedTotal": 2.79,
     "openTotal": 4.79,
     "openAt": "2026-03-30T20:58:14.227Z"
   },
   "BAL": {
-    "impliedTotal": 4.44,
+    "impliedTotal": 4.38,
     "openTotal": 4.83,
     "openAt": "2026-03-30T20:58:14.227Z"
   },
   "MIN": {
-    "impliedTotal": 3.96,
+    "impliedTotal": 3.82,
     "openTotal": 3.46,
     "openAt": "2026-03-30T20:58:14.227Z"
   },
   "PHI": {
-    "impliedTotal": 3.16,
+    "impliedTotal": 6.75,
     "openTotal": 5.4,
     "openAt": "2026-03-30T20:58:14.227Z"
   },
   "TEX": {
-    "impliedTotal": 4.06,
+    "impliedTotal": 4.84,
     "openTotal": 4.17,
     "openAt": "2026-03-30T20:58:14.227Z"
   },
   "OAK": {
-    "impliedTotal": 0.19,
+    "impliedTotal": 4.91,
     "openTotal": 4.02,
     "openAt": "2026-03-30T20:58:14.227Z"
   },
   "CIN": {
-    "impliedTotal": 2.8,
+    "impliedTotal": 3.16,
     "openTotal": 4.54,
     "openAt": "2026-03-30T20:58:14.227Z"
   },
   "BOS": {
-    "impliedTotal": 4.38,
+    "impliedTotal": 4.44,
     "openTotal": 3.08,
     "openAt": "2026-03-30T20:58:14.227Z"
   },
   "NYM": {
-    "impliedTotal": 4.01,
+    "impliedTotal": 4,
     "openTotal": 5.01,
     "openAt": "2026-03-30T20:58:14.227Z"
   },
   "PIT": {
-    "impliedTotal": 5.7,
+    "impliedTotal": 4.12,
     "openTotal": 4.46,
     "openAt": "2026-03-30T20:58:14.227Z"
   },
   "MIL": {
-    "impliedTotal": 4.61,
+    "impliedTotal": 4.04,
     "openTotal": 4.15,
     "openAt": "2026-03-30T20:58:14.227Z"
   },
   "CWS": {
-    "impliedTotal": 2.69,
+    "impliedTotal": 3.33,
     "openTotal": 3.71,
     "openAt": "2026-03-30T20:58:14.227Z"
   },
   "STL": {
-    "impliedTotal": 2.83,
+    "impliedTotal": 3.11,
     "openTotal": 3.49,
     "openAt": "2026-03-30T20:58:14.227Z"
   },
   "TB": {
-    "impliedTotal": 3.89,
+    "impliedTotal": 3.68,
     "openTotal": 3.35,
     "openAt": "2026-03-30T20:58:14.227Z"
   },
   "CHC": {
-    "impliedTotal": 2.83,
+    "impliedTotal": 4.56,
     "openTotal": 4.19,
     "openAt": "2026-03-30T20:58:14.227Z"
   },
   "WSH": {
-    "impliedTotal": 3.34,
+    "impliedTotal": 2.68,
     "openTotal": 3.6,
     "openAt": "2026-03-30T20:58:14.227Z"
   },
   "NYY": {
-    "impliedTotal": 4.85,
+    "impliedTotal": 4.71,
     "openTotal": 3.67,
     "openAt": "2026-03-30T20:58:14.227Z"
   },
   "SF": {
-    "impliedTotal": 3.49,
+    "impliedTotal": 3.5,
     "openTotal": 4.54,
     "openAt": "2026-03-30T20:58:14.227Z"
   }

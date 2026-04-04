@@ -130,6 +130,65 @@ MLB DFS Tool/
 └── start.ps1
 ```
 
+## Workflow Guide
+
+### Daily Workflow
+
+1. **Load data** — Upload DK salary CSV and ROO projection export in the Player Pool tab. The tool auto-detects both file formats and merges them.
+2. **Fetch live context** — Click "Fetch Vegas Lines" for implied totals and "Fetch Weather" for park conditions. Both update the Game Environment Rankings automatically.
+3. **Review the pool** — Sort by GPP Score or Leverage to find underowned value. Statcast badges (barrel%, xwOBA) and batting order badges update after fetching confirmed lineups.
+4. **Build stacks** — Upload your 3-man and 5-man stack files or let the engine auto-select via virtual stacks. Review the Stacks tab ranked by projected value.
+5. **Generate portfolio** — Go to Portfolio Builder, configure exposure caps and stack settings, then click Generate. The engine builds diversified lineups respecting all constraints.
+6. **Simulate** — Click "Simulate Portfolio (Sim ROI)" to run ownership-weighted simulations against the field. Review cash rate and ROI before entering contests.
+7. **Export** — Export All Lineups CSV produces DraftKings multi-entry upload format. Save to Backtest History to track accuracy over time.
+
+---
+
+### Reading Sim Results
+
+The simulator runs Monte Carlo against an ownership-weighted field to estimate contest outcomes. Two key numbers:
+
+**Cash rate** — percentage of simulated contests your lineups finish in the money. A large-field GPP cashes roughly 20–22% of entries. Anything above ~27% indicates your lineups are consistently outscoring the field median.
+
+**Avg Sim ROI** — net return on investment across all simulations. This is the number that actually matters for profitability. Break-even is 0%; the rake alone typically costs 10–15%.
+
+---
+
+### High Cash Rate + Negative ROI
+
+This is the most common pattern and the most misread one. It means your lineups score above the field median often, but you're not winning big enough when it counts.
+
+**Why it happens:**
+
+GPP payouts are top-heavy. Cashing at 1.5x entry fee 30% of the time barely covers the 70% of lineups that earn nothing. Positive GPP ROI comes from hitting 10x–100x payouts, not from grinding near the cash line. If your lineups correlate with the field — same popular stacks, same chalk pitchers — then when they score well, so does everyone else, and your finish position is median rather than top 1–5%.
+
+**How to diagnose:**
+
+1. Open the Stack Exposure table in portfolio results. If 60%+ of your lineups share the same 1–2 teams, you are heavily correlated with the typical field construction.
+2. Check the Batter Exposure table. Players at 30%+ ownership showing 50%+ portfolio exposure are chalk sinks — you own them more than the field does, which gives zero leverage.
+3. Look at your pitcher selection. The most popular GPP pitcher on a slate is often owned 25–40% by the field. Using that pitcher in 60% of lineups costs you finish position every time he scores well, because everyone else also has him.
+
+**Fixes to improve ROI:**
+
+- **Lower your most-used stack team's exposure.** If one team appears in 70% of lineups, cap it at 40–50% in the Portfolio Builder's lock/ban controls. Force the engine to distribute across 2–3 correlated games.
+- **Increase 5-man stack %** via the Stack % (5-man) setting. Five-man stacks are rarer in the field and produce higher score variance — exactly what GPP ROI requires.
+- **Use contrarian pitcher pivots.** In the Player Pool, sort by Own%. Find a pitcher projected similarly to the chalk option but owned 8–15% instead of 25–40%. Use him as your primary pitcher in 30–40% of lineups.
+- **Check lineup overlap.** Reduce Max Overlap from 7 to 5. Tighter overlap forces more structural diversity, which reduces field correlation at the portfolio level.
+- **Review the Game Environment Rankings.** If your highest-owned stacks are from the slate's most popular game (highest O/U, best weather), you are building like the field. Pivot to the second-best game environment where fewer players will be stacked.
+
+**Target benchmarks for GPP ROI improvement:**
+
+| Metric | Neutral | Good | Strong |
+| ------ | ------- | ---- | ------ |
+| Cash rate | 22–26% | 27–32% | 33%+ |
+| Avg Sim ROI | -30% to -15% | -15% to 0% | 0%+ |
+| Top team stack exposure | <55% | <45% | <35% |
+| Portfolio unique players | <20 | 20–28 | 28+ |
+
+A cash rate above 29% with negative ROI is not a failure state — it means the projection model is working but the construction is too chalk. Adjust leverage first, then re-simulate before entering.
+
+---
+
 ## Troubleshooting
 
 **Port 3000 in use** — change `const PORT = 3000` in `server.js`

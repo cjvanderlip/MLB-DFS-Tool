@@ -30,6 +30,7 @@ const STATE = {
   // Portfolio
   portfolioLineups: [], portfolioExposure: {},
   playerExposureOverrides: {},
+  teamExposureOverrides: {},
 
   // Backtesting
   historyData: [],
@@ -44,6 +45,11 @@ const STATE = {
   framingRawData: {}, framingMap: {},
   sprintSpeedData: {},
 };
+
+// ── Constants (from Engine) ────────────────────────────────────────────────────
+const SALARY_CAP = 50000, CAP = SALARY_CAP, ROSTER_SIZE = 10;
+const DK_SLOTS = Engine.DK_SLOTS;
+const DISPLAY_LIMIT = 80, MIN_SALARY_PER_SLOT = 3000, OPTIMIZER_ITERATIONS = 5000;
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
 const n = v => parseFloat(v) || 0;
@@ -79,7 +85,7 @@ function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTi
 const debouncedRenderPlayers = debounce(() => renderPlayers(), 150);
 function addPlayerByPoolIdx(idx) { const p = STATE._playerPoolCache[idx]; if (p) addToLineup(p); }
 function addPlayerByLuIdx(idx) { const p = STATE._luPoolCache[idx]; if (p) addToLineup(p); }
-function addStackPlayer(sid, pidx) { const s = [...STACKS3, ...STACKS5].find(st => st.id === sid); if (s && s.players[pidx]) addToLineupByName(s.players[pidx]); }
+function addStackPlayer(sid, pidx) { const s = [...STATE.STACKS3, ...STATE.STACKS5].find(st => st.id === sid); if (s && s.players[pidx]) addToLineupByName(s.players[pidx]); }
 
 function updatePlayerOwn(idx, val) {
   const p = STATE._playerPoolCache[idx];
@@ -153,6 +159,9 @@ function detectFileType(fields) {
   const hasPosition = h.includes('position');
   if (hasFloor && hasMedian && hasCeiling && hasPosition) return 'roo';
   if (hasFloor && hasMedian && hasCeiling) return 'roo';
+  const hasProjVal = h.some(x => x === 'projected_value' || x === 'projected_fp');
+  const hasStdDev = h.some(x => x === 'std_dev');
+  if (hasProjVal && hasStdDev && hasPosition) return 'roo';
 
   // Optimal lineups file: SP1/SP2/C/1B/2B/3B/SS/OF1/OF2/OF3 + Salary + Proj + Stack
   const hasSP1 = h.some(x => x === 'sp1');
@@ -220,16 +229,20 @@ function loadROO(data, fname, idx) {
   if (idx == null) idx = nextRooSlot();
   const parsed = data.map(r => {
     const pos = (r.Position || r.position || r.Pos || r.pos || '').trim();
-    const own = n(r['Own%'] || r['own%'] || r.Own || r.own || 0);
-    const ceil = n(r.Ceiling || r.ceiling || 0);
+    const own = n(r['Own%'] || r['own%'] || r.Own || r.own || r['Ownership %'] || r.Ownership || r.ownership || 0);
+    const projVal = n(r['Projected FP'] || r['Projected Value'] || r.projected_value || 0);
+    const stdDev = n(r['Std Dev'] || r.std_dev || 0);
+    const median = n(r.Median || r.median || 0) || projVal;
+    const floor = n(r.Floor || r.floor || 0) || (projVal > 0 ? Math.max(0, projVal - stdDev) : 0);
+    const ceil = n(r.Ceiling || r.ceiling || 0) || (projVal > 0 ? projVal + 2 * stdDev : 0);
     return {
       name: (r.Player || r.player || r.Name || r.name || '').trim(),
       dkPos: pos, rosterPos: toRosterPos(pos),
-      team: (r.Team || r.team || '').trim(), opp: (r.Opp || r.opp || '').trim(),
-      hand: (r.Hand || r.hand || '').trim(), order: n(r.Order || r.order || 0),
+      team: (r.Team || r.team || '').trim(), opp: (r.Opp || r.opp || r.Opponent || r.opponent || '').trim(),
+      hand: (r.Hand || r.hand || '').trim(), order: n(r.Order || r.order || r['Bat Pos.'] || r['bat_pos.'] || 0),
       salary: n(r.Salary || r.salary || r.DK_Salary || 0),
-      floor: n(r.Floor || r.floor || 0), median: n(r.Median || r.median || 0),
-      ceiling: ceil, top: n(r['Top_finish'] || r.top_finish || 0),
+      floor, median, ceiling: ceil,
+      top: n(r['Top_finish'] || r.top_finish || 0),
       own, gpp: n(r['GPP%'] || r['gpp%'] || 0),
       lev: own > 0 ? (ceil / own * 10 - 10) : 0,
       dkId: '', nameId: '', avgPpg: 0, game: '', gameTime: '',
@@ -332,7 +345,7 @@ function loadStackFile(data, fname) {
   if (size === 3) { STATE.STACKS3 = parsed; setFileStatus('s3', fname, parsed.length + ' 3-man stacks'); }
   else { STATE.STACKS5 = parsed; setFileStatus('s5', fname, parsed.length + ' 5-man stacks'); }
 
-  const allStacks = [...STACKS3, ...STACKS5];
+  const allStacks = [...STATE.STACKS3, ...STATE.STACKS5];
   const teams = [...new Set(allStacks.map(s => s.team))].filter(Boolean).sort();
   document.getElementById('stack-team-sel').innerHTML = '<option value="ALL">All Teams</option>' + teams.map(t => `<option value="${t}">${t}</option>`).join('');
 
@@ -696,7 +709,7 @@ function renderPlayers() {
 
 // ── Stacks Rendering ──────────────────────────────────────────────────────────
 function renderStacks() {
-  const allStacks = [...STACKS3, ...STACKS5];
+  const allStacks = [...STATE.STACKS3, ...STATE.STACKS5];
   if (!allStacks.length) return;
   const poolTeams = new Set(STATE.POOL.map(p => p.team));
   const stackTeams = [...new Set(allStacks.map(s => s.team))];
@@ -836,7 +849,7 @@ function addToLineup(p) {
   }
 }
 function useStackById(id) {
-  const s = [...STACKS3, ...STACKS5].find(st => st.id === id);
+  const s = [...STATE.STACKS3, ...STATE.STACKS5].find(st => st.id === id);
   if (!s) return;
   s.players.forEach(name => { const p = STATE.POOL.find(r => r.name === name); if (p) addToLineup(p); });
   showTab('lineup');
@@ -934,7 +947,7 @@ function displayThreeLineups() {
   }).join('')}</div>`;
   document.getElementById('three-lineups-display').innerHTML = html;
   document.getElementById('three-lineups-display').style.display = 'block';
-  STATE.lineup = [...generatedLineups[0]];
+  STATE.lineup = [...STATE.generatedLineups[0]];
   renderLineup(); renderLuPool();
 }
 
@@ -1241,7 +1254,7 @@ function renderWeatherDisplay() {
     });
   }
 
-  el.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px">${Object.entries(weatherData).map(([city, w]) => {
+  el.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px">${Object.entries(STATE.weatherData).map(([city, w]) => {
     if (w.error) return `<div class="sk-card"><strong>${esc(city)}</strong><div style="color:var(--td);font-size:11px">Error: ${esc(w.error)}</div></div>`;
     const wm = Engine.weatherMultiplier(w);
     const teams = cityToTeams[city] || [];
@@ -1373,6 +1386,66 @@ function renderExposureOverrides() {
   </table>`;
 }
 
+// ── Team Exposure Overrides ───────────────────────────────────────────────────
+function toggleTeamExposureOverride(team) {
+  if (STATE.teamExposureOverrides[team]) {
+    delete STATE.teamExposureOverrides[team];
+  } else {
+    STATE.teamExposureOverrides[team] = { min: null, max: null };
+  }
+  renderTeamExposureOverrides();
+  saveSession();
+}
+
+function updateTeamExposureOverride(team, field, val) {
+  if (!STATE.teamExposureOverrides[team]) STATE.teamExposureOverrides[team] = { min: null, max: null };
+  const v = val === '' ? null : Math.max(0, Math.min(100, parseFloat(val)));
+  STATE.teamExposureOverrides[team][field] = isNaN(v) ? null : v;
+  saveSession();
+}
+
+function renderTeamExposureOverrides() {
+  const teams = [...new Set(STATE.POOL.map(p => p.team).filter(Boolean))].sort();
+  const chipsEl = document.getElementById('team-exp-override-chips');
+  const listEl = document.getElementById('team-exp-override-list');
+  if (!chipsEl || !listEl) return;
+
+  if (!teams.length) {
+    chipsEl.innerHTML = '<span style="font-size:11px;color:var(--tt)">Load players first</span>';
+    listEl.innerHTML = '';
+    return;
+  }
+
+  chipsEl.innerHTML = teams.map(t => {
+    const active = !!STATE.teamExposureOverrides[t];
+    return `<span class="chip${active ? ' selected' : ''}" style="cursor:pointer" onclick="toggleTeamExposureOverride(${JSON.stringify(t)})">${esc(t)}</span>`;
+  }).join('');
+
+  const overrideTeams = Object.keys(STATE.teamExposureOverrides);
+  if (!overrideTeams.length) {
+    listEl.innerHTML = '<div style="font-size:11px;color:var(--tt);padding:6px 0">Click a team above to add an override.</div>';
+    return;
+  }
+
+  listEl.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:12px">
+    <thead><tr>
+      <th style="text-align:left;padding:4px 6px;font-size:10px;color:var(--tt);font-weight:500;text-transform:uppercase;letter-spacing:.04em">Team</th>
+      <th style="padding:4px 6px;font-size:10px;color:var(--tt);font-weight:500;text-transform:uppercase;letter-spacing:.04em">Min %</th>
+      <th style="padding:4px 6px;font-size:10px;color:var(--tt);font-weight:500;text-transform:uppercase;letter-spacing:.04em">Max %</th>
+      <th></th>
+    </tr></thead>
+    <tbody>${overrideTeams.map(team => {
+      const ov = STATE.teamExposureOverrides[team];
+      return `<tr>
+        <td style="padding:4px 6px"><strong>${esc(team)}</strong></td>
+        <td style="padding:4px 6px;text-align:center"><input type="number" min="0" max="100" step="5" value="${ov.min ?? ''}" placeholder="—" style="width:52px;font-size:11px;padding:2px 4px;border:0.5px solid var(--brd-s);border-radius:4px;background:var(--bp);color:var(--tp);text-align:center" oninput="updateTeamExposureOverride(${JSON.stringify(team)},'min',this.value)"></td>
+        <td style="padding:4px 6px;text-align:center"><input type="number" min="0" max="100" step="5" value="${ov.max ?? ''}" placeholder="—" style="width:52px;font-size:11px;padding:2px 4px;border:0.5px solid var(--brd-s);border-radius:4px;background:var(--bp);color:var(--tp);text-align:center" oninput="updateTeamExposureOverride(${JSON.stringify(team)},'max',this.value)"></td>
+        <td style="padding:4px 6px"><button class="btn" style="padding:2px 7px;font-size:10px;color:var(--td)" onclick="toggleTeamExposureOverride(${JSON.stringify(team)})">✕</button></td>
+      </tr>`;
+    }).join('')}</tbody>
+  </table>`;
+}
+
 // Populate lock/ban team chip selectors from the current pool
 function renderPortfolioTeamSelectors() {
   const teams = [...new Set(STATE.POOL.map(p => p.team).filter(Boolean))].sort();
@@ -1386,6 +1459,7 @@ function renderPortfolioTeamSelectors() {
       `<span class="team-chip chip${selected.has(t) ? ' selected' : ''}" data-team="${escAttr(t)}" onclick="toggleTeamChip(this,'${escAttr(id)}')">${esc(t)}</span>`
     ).join('');
   });
+  renderTeamExposureOverrides();
 }
 
 function toggleTeamChip(el, containerId) {
@@ -1422,7 +1496,7 @@ function validatePortfolioSettings() {
 
   // Warn if a locked team has no stack in the stacks files
   lockedTeams.forEach(team => {
-    const hasStack = [...STACKS3, ...STACKS5].some(s => s.team === team);
+    const hasStack = [...STATE.STACKS3, ...STATE.STACKS5].some(s => s.team === team);
     if (!hasStack) {
       const batters = STATE.POOL.filter(p => p.team === team && !rp(p, 'P') && p.median > 0);
       if (batters.length >= 2) {
@@ -1472,29 +1546,49 @@ function generatePortfolio() {
     if (playerOverrides[name].max == null) delete playerOverrides[name].max;
   });
 
+  // Convert teamExposureOverrides from % to 0-1 ratios for engine
+  const teamOverrides = {};
+  Object.entries(STATE.teamExposureOverrides).forEach(([team, ov]) => {
+    teamOverrides[team] = {
+      min: ov.min != null ? ov.min / 100 : undefined,
+      max: ov.max != null ? ov.max / 100 : undefined,
+    };
+    if (teamOverrides[team].min == null) delete teamOverrides[team].min;
+    if (teamOverrides[team].max == null) delete teamOverrides[team].max;
+  });
+
   // Run validation warnings before generating
   validatePortfolioSettings();
 
   const btn = document.getElementById('gen-portfolio-btn');
   btn.textContent = 'Generating...'; btn.disabled = true;
 
-  setTimeout(() => {
-    const ctx = getEngineContext();
-    ctx.contestSize = portContestSize;
-    const result = Engine.buildPortfolio(getCalibratedPool(), {
-      numLineups, maxExposure, maxExposurePitcher, contestType, contestSize: portContestSize,
-      maxOverlap: maxOverlapVal,
-      requireBringBack, allowBvP,
-      playerOverrides, stackPct5,
-      stacks3: STATE.STACKS3, stacks5: STATE.STACKS5,
-      lockedTeams, bannedTeams,
-      context: ctx, iterations: OPTIMIZER_ITERATIONS
-    });
-    STATE.portfolioLineups = result.lineups;
-    STATE.portfolioExposure = result.playerExposure;
-    renderPortfolioResults(result);
-    btn.textContent = 'Generate Portfolio'; btn.disabled = false;
-  }, 50);
+  // Use requestAnimationFrame + async to keep UI responsive
+  requestAnimationFrame(async () => {
+    try {
+      const ctx = getEngineContext();
+      ctx.contestSize = portContestSize;
+      const result = await Engine.buildPortfolio(getCalibratedPool(), {
+        numLineups, maxExposure, maxExposurePitcher, contestType, contestSize: portContestSize,
+        maxOverlap: maxOverlapVal,
+        requireBringBack, allowBvP,
+        playerOverrides, teamExposureOverrides: teamOverrides, stackPct5,
+        stacks3: STATE.STACKS3, stacks5: STATE.STACKS5,
+        lockedTeams, bannedTeams,
+        context: ctx, iterations: OPTIMIZER_ITERATIONS
+      }, (done, total, built) => {
+        btn.textContent = `Generating... ${done}/${total} (${built} valid)`;
+      });
+      STATE.portfolioLineups = result.lineups;
+      STATE.portfolioExposure = result.playerExposure;
+      renderPortfolioResults(result);
+    } catch (e) {
+      console.error('Portfolio generation failed:', e);
+      showToast('Portfolio generation failed: ' + e.message, 'warn', 5000);
+    } finally {
+      btn.textContent = 'Generate Portfolio'; btn.disabled = false;
+    }
+  });
 }
 
 function renderPortfolioResults(result) {
@@ -1522,6 +1616,9 @@ function renderPortfolioResults(result) {
   }
   if (result.lockedTeams?.length) {
     postWarnings.push(`Locked teams rotated: <strong>${result.lockedTeams.map(esc).join(', ')}</strong>`);
+  }
+  if (result.teamExposureWarnings?.length) {
+    postWarnings.push(`<strong>Team stack cap exceeded:</strong> ${result.teamExposureWarnings.map(w => `${esc(w.team)} (${w.pct}% vs ${w.cap}% cap)`).join(', ')} — not enough viable lineups to stay within the cap.`);
   }
   if (postWarnings.length) {
     html += postWarnings.map(w => `<div class="ib blue" style="margin-bottom:6px;font-size:12px">${w}</div>`).join('');
@@ -2681,7 +2778,7 @@ async function loadInjuries() {
     const gtd = STATE.injuryData.filter(p => p.type === 'GTD').length;
     const il = STATE.injuryData.filter(p => p.type === 'IL').length;
     const noteText = data.note ? ` — ${esc(data.note)}` : '';
-    if (status) status.innerHTML = `<span class="pill ${injuryData.length ? 'pw' : 'pg'}">${injuryData.length} flags: ${il} IL, ${gtd} GTD (last 48h)${noteText}</span>`;
+    if (status) status.innerHTML = `<span class="pill ${STATE.injuryData.length ? 'pw' : 'pg'}">${STATE.injuryData.length} flags: ${il} IL, ${gtd} GTD (last 48h)${noteText}</span>`;
   } catch (e) {
     if (status) status.innerHTML = `<span class="pill pd">Injury fetch failed: ${esc(e.message)}</span>`;
   } finally {
@@ -3078,7 +3175,8 @@ function saveSession() {
         winLine: document.getElementById('port-win-line')?.value,
         payoutType: document.getElementById('port-payout-type')?.value,
       },
-      playerExposureOverrides: STATE.playerExposureOverrides
+      playerExposureOverrides: STATE.playerExposureOverrides,
+      teamExposureOverrides: STATE.teamExposureOverrides
     };
     localStorage.setItem(LS_KEY, JSON.stringify(session));
   } catch (e) { /* quota or private-mode error — ignore */ }
@@ -3125,6 +3223,12 @@ function restoreSession() {
     if (session.playerExposureOverrides) {
       STATE.playerExposureOverrides = session.playerExposureOverrides;
       renderExposureOverrides();
+    }
+
+    // Restore team exposure overrides
+    if (session.teamExposureOverrides) {
+      STATE.teamExposureOverrides = session.teamExposureOverrides;
+      renderTeamExposureOverrides();
     }
 
     // Restore lineup-builder BvP checkbox
