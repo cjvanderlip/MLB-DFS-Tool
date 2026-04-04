@@ -143,15 +143,31 @@ app.get('/api/weather/:city', async (req, res) => {
   }
 });
 
-// Batch weather for multiple cities
+// Batch weather for multiple teams — keyed by team code, fetched via GPS coords.
+// Accepts { teams: ['NYY','BOS',...] }. Falls back to { cities: [...] } for
+// backward compat, but teams+coords is more accurate (avoids wrong city centers).
 app.post('/api/weather/batch', async (req, res) => {
-  const { cities } = req.body;
-  if (!cities || !Array.isArray(cities)) return res.status(400).json({ error: 'cities array required' });
+  const { teams, cities } = req.body;
+  // Build a lookup: key → coord_or_city for wttr.in query
+  let lookup; // Map<key, queryString>
+  if (teams && Array.isArray(teams)) {
+    lookup = new Map();
+    [...new Set(teams)].forEach(team => {
+      const coord = STADIUM_COORDS[team];
+      if (coord) lookup.set(team, coord);
+    });
+  } else if (cities && Array.isArray(cities)) {
+    // Legacy city-name fallback
+    lookup = new Map([...new Set(cities)].map(c => [c, c]));
+  } else {
+    return res.status(400).json({ error: 'teams or cities array required' });
+  }
+  if (!lookup.size) return res.json({});
+
   const results = {};
-  const uniqueCities = [...new Set(cities)];
-  await Promise.all(uniqueCities.map(async (city) => {
+  await Promise.all([...lookup.entries()].map(async ([key, query]) => {
     try {
-      const response = await apiFetch(`https://wttr.in/${encodeURIComponent(city)}?format=j1`, { timeout: 8000 });
+      const response = await apiFetch(`https://wttr.in/${encodeURIComponent(query)}?format=j1`, { timeout: 8000 });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const contentType = response.headers.get('content-type') || '';
       if (!contentType.includes('application/json') && !contentType.includes('text/json')) {
@@ -162,7 +178,7 @@ app.post('/api/weather/batch', async (req, res) => {
       const current = data.current_condition?.[0] || {};
       const hourly = data.weather?.[0]?.hourly || [];
       const gameHour = hourly.find(h => parseInt(h.time) >= 1200 && parseInt(h.time) <= 1800) || hourly[2] || current;
-      results[city] = {
+      results[key] = {
         temp_f: parseInt(gameHour.tempF || current.temp_F || 72),
         wind_mph: parseInt(gameHour.windspeedMiles || current.windspeedMiles || 5),
         wind_dir: gameHour.winddir16Point || current.winddir16Point || 'N',
@@ -171,7 +187,7 @@ app.post('/api/weather/batch', async (req, res) => {
         condition: current.weatherDesc?.[0]?.value || 'Unknown'
       };
     } catch (e) {
-      results[city] = { error: e.message };
+      results[key] = { error: e.message };
     }
   }));
   res.json(results);
@@ -399,6 +415,30 @@ app.get('/api/history/summary', (req, res) => {
   const uniqueSlates = [...new Set(history.map(h => h.slateDate || ''))].length;
   const historySettings = readHistorySettings();
 
+  // Item 6: Finish percentile tracking — use recorded finish/entries when available.
+  // finishPct = (entries - finish) / entries * 100  (0 = last, 100 = first)
+  const withFinish = history.filter(h => h.finish > 0 && h.entries > 0);
+  const avgFinishPct = withFinish.length > 0
+    ? withFinish.reduce((s, h) => s + (h.entries - h.finish) / h.entries * 100, 0) / withFinish.length
+    : null;
+
+  // Cash rate: % of financially-tracked entries where winnings > 0
+  const cashRate = withFinancials.length > 0
+    ? (withFinancials.filter(h => (h.winnings || 0) > 0).length / withFinancials.length * 100)
+    : null;
+
+  // Item 9: Rake break-even thresholds.
+  // DraftKings typically takes 8–15% (we model 10%).
+  // Break-even cash rate = 1 / (payout_mult × (1 - rake)).
+  // If your actual cash rate is below this, you are losing money long-term.
+  const RAKE = 0.10;
+  const breakEven = {
+    gpp_top20:  { label: 'GPP top 20% (2x)',       requiredCashRate: parseFloat((1 / (2.0 * (1 - RAKE)) * 100).toFixed(1)) },
+    gpp_top10:  { label: 'GPP top 10% (3x)',        requiredCashRate: parseFloat((1 / (3.0 * (1 - RAKE)) * 100).toFixed(1)) },
+    double_up:  { label: 'Double-up (1.9x)',         requiredCashRate: parseFloat((1 / (1.9 * (1 - RAKE)) * 100).toFixed(1)) },
+    note: `At ${RAKE * 100}% rake. Your actual cash rate must exceed these thresholds to be long-term profitable.`
+  };
+
   res.json({
     totalEntries: history.length,
     entriesWithResults: withResults.length,
@@ -411,7 +451,13 @@ app.get('/api/history/summary', (req, res) => {
     avgProjected,
     avgActual,
     projectionAccuracy,
-    byContest
+    byContest,
+    // Item 6
+    avgFinishPct: avgFinishPct !== null ? parseFloat(avgFinishPct.toFixed(1)) : null,
+    cashRate: cashRate !== null ? parseFloat(cashRate.toFixed(1)) : null,
+    entriesWithFinish: withFinish.length,
+    // Item 9
+    breakEven
   });
 });
 
@@ -619,6 +665,22 @@ app.post('/api/actuals/apply', async (req, res) => {
     });
 
     writeHistory(history);
+
+    // Item 7: Persist full slate actuals for source quality tracker.
+    // Source quality needs all ~300 slate players (not just the ~10 rostered)
+    // so we write the complete playerScores map to a separate per-date file.
+    const slateActualsFile = path.join(dataDir, 'slate_actuals.json');
+    let slateActuals = {};
+    try { if (fs.existsSync(slateActualsFile)) slateActuals = JSON.parse(fs.readFileSync(slateActualsFile, 'utf8')); } catch (e) {}
+    slateActuals[date] = {};
+    Object.entries(playerScores).forEach(([normName, score]) => {
+      slateActuals[date][normName] = parseFloat(score.toFixed(2));
+    });
+    // Keep at most 60 dates to bound file size
+    const allDates = Object.keys(slateActuals).sort().reverse();
+    if (allDates.length > 60) allDates.slice(60).forEach(d => delete slateActuals[d]);
+    fs.writeFileSync(slateActualsFile, JSON.stringify(slateActuals, null, 2));
+
     res.json({ success: true, updated: updatedCount, playerCount: Object.keys(playerScores).length });
   } catch (err) {
     res.status(500).json({ error: 'Failed to apply actuals: ' + err.message });
@@ -722,24 +784,49 @@ app.post('/api/calibration', (req, res) => {
   } catch (e) { res.status(500).json({ error: 'Failed to save calibration' }); }
 });
 
-// ── Stadium City Mapping (for weather lookups) ──────────────────────────────
+// ── Stadium GPS Coordinates (for weather lookups) ────────────────────────────
+// Using exact stadium lat/lon instead of city names — city names were wrong for
+// several parks (Oracle Park → "San Francisco" city center, Wrigley vs Guaranteed
+// Rate both → "Chicago", NYM vs NYY both → "New York"). wttr.in accepts lat,lon.
 
-const STADIUM_CITIES = {
-  ARI: 'Phoenix', ATL: 'Atlanta', BAL: 'Baltimore', BOS: 'Boston',
-  CHC: 'Chicago', CWS: 'Chicago', CIN: 'Cincinnati', CLE: 'Cleveland',
-  COL: 'Denver', DET: 'Detroit', HOU: 'Houston', KC: 'Kansas City',
-  LAA: 'Anaheim', LAD: 'Los Angeles', MIA: 'Miami', MIL: 'Milwaukee',
-  MIN: 'Minneapolis', NYM: 'New York', NYY: 'New York', OAK: 'Oakland',
-  PHI: 'Philadelphia', PIT: 'Pittsburgh', SD: 'San Diego', SF: 'San Francisco',
-  SEA: 'Seattle', STL: 'St Louis', TB: 'St Petersburg', TEX: 'Arlington',
-  TOR: 'Toronto', WSH: 'Washington'
+const STADIUM_COORDS = {
+  ARI: '33.4453,-112.0667',  // Chase Field, Phoenix
+  ATL: '33.8908,-84.4677',   // Truist Park, Cumberland GA
+  BAL: '39.2838,-76.6216',   // Camden Yards, Baltimore
+  BOS: '42.3467,-71.0972',   // Fenway Park, Boston
+  CHC: '41.9484,-87.6553',   // Wrigley Field, Chicago
+  CWS: '41.8299,-87.6338',   // Guaranteed Rate Field, Chicago
+  CIN: '39.0976,-84.5082',   // Great American Ball Park, Cincinnati
+  CLE: '41.4962,-81.6852',   // Progressive Field, Cleveland
+  COL: '39.7560,-104.9942',  // Coors Field, Denver
+  DET: '42.3390,-83.0485',   // Comerica Park, Detroit
+  HOU: '29.7573,-95.3555',   // Minute Maid Park, Houston
+  KC:  '39.0517,-94.4803',   // Kauffman Stadium, Kansas City
+  LAA: '33.8003,-117.8827',  // Angel Stadium, Anaheim
+  LAD: '34.0739,-118.2400',  // Dodger Stadium, Los Angeles
+  MIA: '25.7781,-80.2198',   // loanDepot park, Miami
+  MIL: '43.0280,-87.9712',   // American Family Field, Milwaukee
+  MIN: '44.9817,-93.2781',   // Target Field, Minneapolis
+  NYM: '40.7571,-73.8458',   // Citi Field, Queens NY
+  NYY: '40.8296,-73.9262',   // Yankee Stadium, Bronx NY
+  OAK: '37.7516,-122.2005',  // Oakland Coliseum, Oakland
+  PHI: '39.9057,-75.1665',   // Citizens Bank Park, Philadelphia
+  PIT: '40.4469,-80.0057',   // PNC Park, Pittsburgh
+  SD:  '32.7076,-117.1570',  // Petco Park, San Diego
+  SF:  '37.7786,-122.3893',  // Oracle Park, San Francisco
+  SEA: '47.5914,-122.3325',  // T-Mobile Park, Seattle
+  STL: '38.6226,-90.1928',   // Busch Stadium, St. Louis
+  TB:  '27.7683,-82.6534',   // Tropicana Field, St. Petersburg
+  TEX: '32.7473,-97.0842',   // Globe Life Field, Arlington TX
+  TOR: '43.6415,-79.3892',   // Rogers Centre, Toronto
+  WSH: '38.8730,-77.0074',   // Nationals Park, Washington DC
 };
 
 // Dome/retractable roof stadiums (weather less impactful)
 const DOME_STADIUMS = ['MIA', 'TB', 'TOR', 'MIL', 'ARI', 'HOU', 'TEX', 'SEA', 'MIN'];
 
 app.get('/api/stadiums', (req, res) => {
-  res.json({ cities: STADIUM_CITIES, domes: DOME_STADIUMS });
+  res.json({ coords: STADIUM_COORDS, domes: DOME_STADIUMS });
 });
 
 // ── Odds API — Fetch & Calculate Implied Team Totals ────────────────────────
@@ -870,9 +957,9 @@ const PARK_ORIENTATION = {
   ARI: 90,   // Chase Field: retractable
 };
 
-// Update the stadiums endpoint to include orientation
+// Stadiums endpoint with orientation (wind-direction aware scoring)
 app.get('/api/stadiums/extended', (req, res) => {
-  res.json({ cities: STADIUM_CITIES, domes: DOME_STADIUMS, orientation: PARK_ORIENTATION });
+  res.json({ coords: STADIUM_COORDS, domes: DOME_STADIUMS, orientation: PARK_ORIENTATION });
 });
 
 // Wind direction string to degrees
@@ -969,9 +1056,25 @@ app.get('/api/lineups/:date', async (req, res) => {
 
 const statcastCacheFile = path.join(dataDir, 'statcast_cache.json');
 
+// Normalize a player name to the same key format used by the client pool lookup:
+// lowercase, strip everything except a-z and spaces. Handles apostrophes, hyphens,
+// diacritics (é→e handled by NFD decomposition), and suffix junk (Jr., III, etc.).
+function normalizeStatcastName(raw) {
+  return (raw || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // strip diacritics (é→e, ñ→n)
+    .toLowerCase()
+    .replace(/\b(jr|sr|ii|iii|iv)\.?\b/g, '')
+    .replace(/[^a-z ]/g, '')  // strip everything non-alpha
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 async function fetchStatcastLeaderboard() {
   const year = new Date().getFullYear();
-  const url = `https://baseballsavant.mlb.com/leaderboard/custom?year=${year}&type=batter&filter=&sort=4&sortDir=desc&min=q&selections=xba,xslg,xwoba,exit_velocity_avg,launch_angle_avg,barrel_batted_rate,hard_hit_percent&chart=false&x=xba&y=xba&r=no&chartType=beeswarm&csv=true`;
+  // min=10 instead of min=q (qualified) so early-season data is included.
+  // "Qualified" requires 502 PA — no one qualifies in April. min=10 catches
+  // anyone with meaningful early-season at-bats.
+  const url = `https://baseballsavant.mlb.com/leaderboard/custom?year=${year}&type=batter&filter=&sort=4&sortDir=desc&min=10&selections=xba,xslg,xwoba,exit_velocity_avg,launch_angle_avg,barrel_batted_rate,hard_hit_percent&chart=false&x=xba&y=xba&r=no&chartType=beeswarm&csv=true`;
   const resp = await apiFetch(url, { timeout: 20000, headers: { Accept: 'text/csv' } });
   if (!resp.ok) throw new Error(`Savant returned ${resp.status}`);
   const text = await resp.text();
@@ -985,9 +1088,12 @@ async function fetchStatcastLeaderboard() {
     headers.forEach((h, j) => row[h] = vals[j] || '');
     const name = row['last_name, first_name'] || row['player_name'] || '';
     if (!name) continue;
+    // Convert "Last, First" → "First Last" then normalize to match pool key format
     const parts = name.split(',');
-    const normalized = parts.length === 2 ? (parts[1].trim() + ' ' + parts[0].trim()) : name;
-    data[normalized.toLowerCase()] = {
+    const display = parts.length === 2 ? (parts[1].trim() + ' ' + parts[0].trim()) : name;
+    const key = normalizeStatcastName(display);
+    if (!key) continue;
+    data[key] = {
       barrelRate: parseFloat(row['barrel_batted_rate'] || row['brl_percent'] || 0) || 0,
       hardHitRate: parseFloat(row['hard_hit_percent'] || 0) || 0,
       exitVelo: parseFloat(row['exit_velocity_avg'] || 0) || 0,
@@ -1005,7 +1111,7 @@ app.get('/api/statcast', async (req, res) => {
       const cached = JSON.parse(fs.readFileSync(statcastCacheFile, 'utf8'));
       const age = Date.now() - new Date(cached.fetchedAt).getTime();
       if (age < 12 * 60 * 60 * 1000) {
-        return res.json({ success: true, data: cached.data, cached: true, fetchedAt: cached.fetchedAt });
+        return res.json({ success: true, data: cached.data, cached: true, fetchedAt: cached.fetchedAt, count: Object.keys(cached.data || {}).length });
       }
     }
     const data = await fetchStatcastLeaderboard();
@@ -1015,7 +1121,7 @@ app.get('/api/statcast', async (req, res) => {
   } catch (err) {
     if (fs.existsSync(statcastCacheFile)) {
       const cached = JSON.parse(fs.readFileSync(statcastCacheFile, 'utf8'));
-      return res.json({ success: true, data: cached.data, cached: true, stale: true, fetchedAt: cached.fetchedAt, error: err.message });
+      return res.json({ success: true, data: cached.data, cached: true, stale: true, fetchedAt: cached.fetchedAt, count: Object.keys(cached.data || {}).length, error: err.message });
     }
     res.status(500).json({ error: 'Statcast fetch failed: ' + err.message });
   }
@@ -1027,7 +1133,8 @@ const pitcherStatcastCacheFile = path.join(dataDir, 'pitcher_statcast_cache.json
 
 async function fetchPitcherStatcastLeaderboard() {
   const year = new Date().getFullYear();
-  const url = `https://baseballsavant.mlb.com/leaderboard/custom?year=${year}&type=pitcher&filter=&sort=4&sortDir=desc&min=q&selections=p_k_percent,p_bb_percent,whiff_percent,fastball_avg_speed,hard_hit_percent,xera,xba&chart=false&x=xba&y=xba&r=no&chartType=beeswarm&csv=true`;
+  // min=3 for pitchers — SPs make ~5 starts in a full month; 3 means at least 1 start.
+  const url = `https://baseballsavant.mlb.com/leaderboard/custom?year=${year}&type=pitcher&filter=&sort=4&sortDir=desc&min=3&selections=p_k_percent,p_bb_percent,whiff_percent,fastball_avg_speed,hard_hit_percent,xera,xba&chart=false&x=xba&y=xba&r=no&chartType=beeswarm&csv=true`;
   const resp = await apiFetch(url, { timeout: 20000, headers: { Accept: 'text/csv' } });
   if (!resp.ok) throw new Error(`Savant returned ${resp.status}`);
   const text = await resp.text();
@@ -1042,8 +1149,10 @@ async function fetchPitcherStatcastLeaderboard() {
     const name = row['last_name, first_name'] || row['player_name'] || '';
     if (!name) continue;
     const parts = name.split(',');
-    const normalized = parts.length === 2 ? (parts[1].trim() + ' ' + parts[0].trim()) : name;
-    data[normalized.toLowerCase()] = {
+    const display = parts.length === 2 ? (parts[1].trim() + ' ' + parts[0].trim()) : name;
+    const key = normalizeStatcastName(display);
+    if (!key) continue;
+    data[key] = {
       kPercent: parseFloat(row['p_k_percent'] || 0) || 0,
       bbPercent: parseFloat(row['p_bb_percent'] || 0) || 0,
       whiffRate: parseFloat(row['whiff_percent'] || 0) || 0,
@@ -1062,7 +1171,7 @@ app.get('/api/statcast/pitchers', async (req, res) => {
       const cached = JSON.parse(fs.readFileSync(pitcherStatcastCacheFile, 'utf8'));
       const age = Date.now() - new Date(cached.fetchedAt).getTime();
       if (age < 12 * 60 * 60 * 1000) {
-        return res.json({ success: true, data: cached.data, cached: true, fetchedAt: cached.fetchedAt });
+        return res.json({ success: true, data: cached.data, cached: true, fetchedAt: cached.fetchedAt, count: Object.keys(cached.data || {}).length });
       }
     }
     const data = await fetchPitcherStatcastLeaderboard();
@@ -1072,7 +1181,7 @@ app.get('/api/statcast/pitchers', async (req, res) => {
   } catch (err) {
     if (fs.existsSync(pitcherStatcastCacheFile)) {
       const cached = JSON.parse(fs.readFileSync(pitcherStatcastCacheFile, 'utf8'));
-      return res.json({ success: true, data: cached.data, cached: true, stale: true, fetchedAt: cached.fetchedAt, error: err.message });
+      return res.json({ success: true, data: cached.data, cached: true, stale: true, fetchedAt: cached.fetchedAt, count: Object.keys(cached.data || {}).length, error: err.message });
     }
     res.status(500).json({ error: 'Pitcher Statcast fetch failed: ' + err.message });
   }
@@ -1137,28 +1246,45 @@ app.get('/api/bullpen', async (req, res) => {
 
 const framingCacheFile = path.join(dataDir, 'framing_cache.json');
 
+// Proper CSV line parser that handles quoted fields containing commas
+function parseCSVLine(line) {
+  const result = [];
+  let cur = '';
+  let inQuote = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === '"') { inQuote = !inQuote; }
+    else if (c === ',' && !inQuote) { result.push(cur.trim()); cur = ''; }
+    else { cur += c; }
+  }
+  result.push(cur.trim());
+  return result;
+}
+
 async function fetchCatcherFraming() {
   // Use 2025 full-season data for robust sample sizes (2026 too early in season)
   const url = 'https://baseballsavant.mlb.com/leaderboard/catcher-framing?type=catcher&seasonStart=2025&seasonEnd=2025&team=&min=q&sortColumn=rv_tot&sortDirection=desc&csv=true';
-  const resp = await fetch(url, {
-    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
+  const resp = await apiFetch(url, {
+    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+    timeout: 20000
   });
   if (!resp.ok) throw new Error(`Savant framing HTTP ${resp.status}`);
   const text = await resp.text();
+  if (text.trimStart().startsWith('<')) throw new Error('Savant framing returned HTML (bot block)');
   const lines = text.trim().split('\n');
   if (lines.length < 2) throw new Error('Empty framing CSV');
-  const header = lines[0].replace(/"/g, '').split(',');
+  const header = parseCSVLine(lines[0]);
   const nameIdx = header.indexOf('name');
   const rvIdx = header.indexOf('rv_tot');
   const pctIdx = header.indexOf('pct_tot');
   const pitchesIdx = header.indexOf('pitches');
-  if (nameIdx < 0 || rvIdx < 0) throw new Error('Missing framing CSV columns');
+  if (nameIdx < 0 || rvIdx < 0) throw new Error(`Missing framing CSV columns (found: ${header.slice(0,6).join(', ')})`);
 
   const data = {};
   for (let i = 1; i < lines.length; i++) {
-    const vals = lines[i].replace(/"/g, '').split(',');
+    const vals = parseCSVLine(lines[i]);
     const rawName = vals[nameIdx] || '';
-    // CSV has "Last, First" — convert to "First Last"
+    // Savant framing CSV stores "Last, First" — convert to "First Last"
     const parts = rawName.split(',').map(s => s.trim());
     const displayName = parts.length >= 2 ? `${parts[1]} ${parts[0]}` : rawName;
     const key = displayName.toLowerCase().replace(/[^a-z ]/g, '').trim();
@@ -1205,23 +1331,26 @@ const sprintCacheFile = path.join(dataDir, 'sprint_cache.json');
 async function fetchSprintSpeed() {
   // Use 2025 full-season for reliable sample; 2026 has limited data early in season
   const url = 'https://baseballsavant.mlb.com/leaderboard/sprint_speed?min_season=2025&max_season=2025&position=&team=&min=10&csv=true';
-  const resp = await fetch(url, {
-    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
+  const resp = await apiFetch(url, {
+    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+    timeout: 20000
   });
   if (!resp.ok) throw new Error(`Savant sprint HTTP ${resp.status}`);
   const text = await resp.text();
+  if (text.trimStart().startsWith('<')) throw new Error('Savant sprint returned HTML (bot block)');
   const lines = text.trim().split('\n');
   if (lines.length < 2) throw new Error('Empty sprint CSV');
-  const header = lines[0].replace(/"/g, '').split(',');
-  const nameIdx = header.findIndex(h => h.trim() === 'last_name, first_name');
-  const speedIdx = header.findIndex(h => h.trim() === 'sprint_speed');
-  const boltsIdx = header.findIndex(h => h.trim() === 'bolts');
-  const hpIdx = header.findIndex(h => h.trim() === 'hp_to_1b');
-  if (nameIdx < 0 || speedIdx < 0) throw new Error('Missing sprint CSV columns');
+  const header = parseCSVLine(lines[0]);
+  // Sprint CSV uses quoted "last_name, first_name" as a single column header
+  const nameIdx = header.findIndex(h => h === 'last_name, first_name');
+  const speedIdx = header.findIndex(h => h === 'sprint_speed');
+  const boltsIdx = header.findIndex(h => h === 'bolts');
+  const hpIdx = header.findIndex(h => h === 'hp_to_1b');
+  if (nameIdx < 0 || speedIdx < 0) throw new Error(`Missing sprint CSV columns (found: ${header.slice(0,8).join(', ')})`);
 
   const data = {};
   for (let i = 1; i < lines.length; i++) {
-    const vals = lines[i].replace(/"/g, '').split(',');
+    const vals = parseCSVLine(lines[i]);
     const rawName = vals[nameIdx] || '';
     // CSV has "Last, First" — convert to "First Last"
     const parts = rawName.split(',').map(s => s.trim());
@@ -1276,7 +1405,7 @@ app.get('/api/form', async (req, res) => {
       const cached = JSON.parse(fs.readFileSync(formCacheFile, 'utf8'));
       const age = Date.now() - new Date(cached.fetchedAt).getTime();
       if (age < 4 * 60 * 60 * 1000 && cached.cacheKey === cacheKey) {
-        return res.json({ success: true, data: cached.data, cached: true });
+        return res.json({ success: true, data: cached.data, cached: true, playerCount: Object.keys(cached.data || {}).length });
       }
     }
 
@@ -1895,20 +2024,30 @@ app.post('/api/source-quality/update', (req, res) => {
     return res.status(400).json({ error: 'date and sources[] required' });
   }
 
-  // Fetch actuals for this date from history
-  const history = readHistory();
-  const allActuals = {};
-  history.forEach(entry => {
-    if (!entry.playerActuals) return;
-    const eDate = entry.slateDate || entry.date?.substring(0, 10);
-    if (eDate !== date) return;
-    Object.entries(entry.playerActuals).forEach(([name, score]) => {
-      // Take the highest score seen (handles duplicate entries for same slate)
-      if (allActuals[name] === undefined || score > allActuals[name]) {
-        allActuals[name] = score;
-      }
+  // Item 7: Use full slate actuals (all ~300 players) instead of lineup-only actuals.
+  // Full actuals are written by /api/actuals/apply to data/slate_actuals.json.
+  // Fall back to history entry playerActuals for backward compatibility.
+  const slateActualsFile = path.join(dataDir, 'slate_actuals.json');
+  let allActuals = {};
+  try {
+    if (fs.existsSync(slateActualsFile)) {
+      const sa = JSON.parse(fs.readFileSync(slateActualsFile, 'utf8'));
+      if (sa[date]) allActuals = sa[date];
+    }
+  } catch (e) {}
+
+  // Fallback: scrape from individual lineup history entries (old behavior, ~10 players only)
+  if (!Object.keys(allActuals).length) {
+    const history = readHistory();
+    history.forEach(entry => {
+      if (!entry.playerActuals) return;
+      const eDate = entry.slateDate || entry.date?.substring(0, 10);
+      if (eDate !== date) return;
+      Object.entries(entry.playerActuals).forEach(([name, score]) => {
+        if (allActuals[name] === undefined || score > allActuals[name]) allActuals[name] = score;
+      });
     });
-  });
+  }
 
   if (!Object.keys(allActuals).length) {
     return res.json({ updated: 0, message: 'No actuals found for this date. Apply actuals first.' });

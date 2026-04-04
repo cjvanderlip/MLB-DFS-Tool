@@ -97,13 +97,15 @@ function buildPairCorrelations(historyEntries) {
 
   const result = {};
   for (const [key, s] of Object.entries(acc)) {
-    if (s.n < 30) continue; // require 30+ co-appearances — Pearson r is statistically
-    // unreliable below this threshold (wide confidence intervals with n<30 make
-    // a computed r of 0.7 indistinguishable from 0.2 at the 95% level).
+    if (s.n < 10) continue; // require 10+ co-appearances minimum
     const num = s.n * s.sumXY - s.sumX * s.sumY;
     const den = Math.sqrt((s.n * s.sumXX - s.sumX ** 2) * (s.n * s.sumYY - s.sumY ** 2));
     if (den === 0) continue;
-    result[key] = Math.max(-1, Math.min(1, num / den));
+    const rawR = Math.max(-1, Math.min(1, num / den));
+    // Shrink toward 0 at low sample sizes — CI width at n=10 is ±0.63, at n=30 is ±0.37.
+    // At n=10 we trust 33% of the computed r; at n=30+ we trust it fully.
+    const trust = Math.min(1, s.n / 30);
+    result[key] = rawR * trust;
   }
   _pairCorr = result;
   return result;
@@ -362,75 +364,50 @@ function calcGppScore(player, contestSize = 1000) {
   return (ceilingValue * ownershipEdge + salaryValue + upside);
 }
 
-// ── Platoon Split Adjustments ───────────────────────────────────────────────
-
-// Returns multiplier for batter vs pitcher handedness matchup
-function platoonMultiplier(batterHand, pitcherHand) {
-  if (!batterHand || !pitcherHand) return 1.0;
-  const bh = batterHand.toUpperCase().charAt(0);
-  const ph = pitcherHand.toUpperCase().charAt(0);
-
-  // Switch hitters get slight advantage
-  if (bh === 'S' || bh === 'B') return 1.03;
-
-  // Opposite hand = platoon advantage
-  if (bh !== ph) return 1.08;
-
-  // Same hand = platoon disadvantage
-  return 0.92;
-}
-
-// Apply platoon adjustments to projections
-function adjustForPlatoon(batter, pitcherHand) {
-  if (rp(batter, 'P')) return batter; // Don't adjust pitchers
-  const mult = platoonMultiplier(batter.hand, pitcherHand);
-  return {
-    ...batter,
-    floor: batter.floor * mult,
-    median: batter.median * mult,
-    ceiling: batter.ceiling * mult,
-    platoonAdj: mult
-  };
-}
-
 // ── Weather Impact Adjustments ──────────────────────────────────────────────
 
 function weatherMultiplier(weather) {
   if (!weather || weather.error) return { hitting: 1.0, pitching: 1.0, label: 'Unknown', risk: 'none' };
 
-  let hitMult = 1.0, pitchMult = 1.0, label = '', risk = 'none';
   const temp = weather.temp_f || 72;
   const wind = weather.wind_mph || 5;
   const precip = weather.precip_chance || 0;
+  let label = '', risk = 'none';
 
-  // Temperature effect on hitting
-  if (temp >= 85) { hitMult += 0.06; label = 'Hot'; }
-  else if (temp >= 75) { hitMult += 0.03; label = 'Warm'; }
-  else if (temp <= 50) { hitMult -= 0.06; label = 'Cold'; }
-  else if (temp <= 60) { hitMult -= 0.03; label = 'Cool'; }
-  else { label = 'Mild'; }
+  // ── Temperature (Alan Nathan air-density model) ──────────────────────────
+  // Ball carries ~0.34% farther per °F above 72°F due to lower air density.
+  // Run scoring tracks roughly half of the batted-ball effect: ~0.17%/°F.
+  // Source: Nathan (2012) "The Physics of Baseball"; FanGraphs environment series.
+  // Capped at ±5% — beyond that projection CSVs should already capture extreme days.
+  const tempDev = temp - 72;
+  const tempHit = Math.max(-0.05, Math.min(0.05, tempDev * 0.0017));
 
-  // Wind effect (simplified - ideally need direction relative to park)
-  if (wind >= 15) {
-    hitMult += 0.04; // High wind generally increases scoring variance
-    pitchMult -= 0.03;
-    label += ' / Windy';
-  } else if (wind >= 10) {
-    hitMult += 0.02;
-    label += ' / Breezy';
-  }
+  // Cold hurts pitchers too (grip/spin degradation), but ~40% of the hitting effect.
+  // Hot has negligible impact on pitcher effectiveness.
+  // Old formula `pitchMult = 2.0 - hitMult` was wrong (exact inverse → 8%+ swings).
+  const tempPitch = tempDev < 0 ? tempDev * 0.0007 : 0;
 
-  // Precipitation risk
-  if (precip >= 50) {
-    risk = 'high';
-    label += ' / Rain Risk';
-  } else if (precip >= 30) {
-    risk = 'moderate';
-    label += ' / Slight Rain';
-  }
+  // ── Wind (direction-agnostic fallback) ───────────────────────────────────
+  // Without wind direction the sign is unknown — a 15 mph wind is equally likely
+  // to be in or out. High wind does increase overall variance (pop-ups + HRs both
+  // rise), so a tiny positive bias is defensible for GPP ceiling modelling.
+  // Direction-aware adjustments live in weatherMultiplierDirectional via windEffect.
+  const windHit = wind >= 15 ? 0.015 : wind >= 10 ? 0.007 : 0;
 
-  // Pitcher adjustment (cold helps pitchers, hot hurts them)
-  pitchMult = 2.0 - hitMult; // Inverse of hitting
+  const hitMult  = parseFloat((1.0 + tempHit + windHit).toFixed(4));
+  const pitchMult = parseFloat((1.0 + tempPitch).toFixed(4));
+
+  if (temp >= 85) label = 'Hot';
+  else if (temp >= 75) label = 'Warm';
+  else if (temp <= 50) label = 'Cold';
+  else if (temp <= 60) label = 'Cool';
+  else label = 'Mild';
+
+  if (wind >= 15) label += ' / Windy';
+  else if (wind >= 10) label += ' / Breezy';
+
+  if (precip >= 50) { risk = 'high';     label += ' / Rain Risk'; }
+  else if (precip >= 30) { risk = 'moderate'; label += ' / Slight Rain'; }
 
   return { hitting: hitMult, pitching: pitchMult, label, risk, temp, wind, precip };
 }
@@ -539,30 +516,17 @@ function teamScoringAdjustment(player, teamScoring) {
 
 // ── Enhanced Scoring Functions ───────────────────────────────────────────────
 
-// Optimal lineup exposure boost: rewards players that appear frequently in
-// optimizer-generated lineups. Returns a multiplier (1.0 if no data).
-// - Cash/Single: gentle boost (up to +10%) for high-exposure players
-// - GPP: moderate boost (up to +12%) but tempered — optimizer consensus is
-//   less valuable when seeking differentiation
-function optimalExposureBoost(p, context, mode) {
-  const { optimalExposure } = context;
-  if (!optimalExposure || !Object.keys(optimalExposure).length) return 1.0;
-  const exp = optimalExposure[p.name];
-  // Players absent from optimal lineups get a minimal penalty — not enough to
-  // wash out legitimate ceiling plays, just enough to break ties toward chalky picks.
-  if (!exp) return 0.98;
-  const pct = exp.pct; // 0-100
-  if (mode === 'cash') {
-    // Cash loves consensus plays — up to +10%
-    return 1.0 + Math.min(pct / 100, 1.0) * 0.10;
-  } else if (mode === 'single') {
-    // Single entry: moderate signal — up to +8%
-    return 1.0 + Math.min(pct / 100, 1.0) * 0.08;
-  } else {
-    // GPP: consensus is a weak signal — use gently as confirmation, not a driver.
-    // Absent players get only -2%, preserving their ceiling upside for tournament play.
-    return pct > 0 ? 1.0 + Math.min(pct / 100, 1.0) * 0.06 : 0.98;
-  }
+// Optimal lineup exposure boost — REMOVED FROM SCORING to break the circular loop.
+// The old implementation read optimalExposure (generated by the optimizer) and fed
+// it back into the scoring functions that drive the optimizer → a player appearing
+// often scored higher → appeared more → scored higher again, amplifying noise.
+//
+// optimalExposure is still computed and exposed as a diagnostic (show which players
+// appear in N% of generated lineups) but is no longer a scoring input.
+// If you want a prior signal, inject it via `context.priorExposure` populated from
+// the previous slate's actuals — that would be independent of the current run.
+function optimalExposureBoost(_p, _context, _mode) {
+  return 1.0; // no-op — circular loop broken
 }
 
 function buildPlayerContext(p, context = {}) {
@@ -576,36 +540,28 @@ function buildPlayerContext(p, context = {}) {
   const pf = parkMultiplier(homeTeam, parkFactors);
   const tsAdj = teamScoringAdjustment(p, teamScoring);
   const scW = (blendWeights?.Statcast ?? 100) / 100;
-  const fmW = (blendWeights?.['Form (14d)'] ?? 100) / 100;
   const scBoost = isP ? (1.0 + (pitcherStuffBoost(p) - 1.0) * scW) : (1.0 + (statcastCeilingBoost(p) - 1.0) * scW);
-  const fmBoost = 1.0 + (formMultiplier(p) - 1.0) * fmW;
   const umpTend = umpireData?.[homeTeam] || null;
   const umpBoost = umpireMultiplier(umpTend, isP);
 
   let wm = { hitting: 1.0, pitching: 1.0 };
-  if (weatherData && stadiums && homeTeam) {
-    const isDome = stadiums.domes?.includes(homeTeam);
-    if (!isDome) {
-      const city = stadiums.cities?.[homeTeam];
-      if (city && weatherData[city]) wm = weatherMultiplier(weatherData[city]);
-    }
+  if (weatherData && homeTeam) {
+    const isDome = stadiums?.domes?.includes(homeTeam);
+    // Weather is now keyed by team code (from GPS-accurate batch fetch)
+    if (!isDome && weatherData[homeTeam]) wm = weatherMultiplier(weatherData[homeTeam]);
   }
 
-  const platoon = p.platoonAdj || 1.0;
   // Composite multiplier chain.
-  // Each individual factor is small (±3–10%), but 11 factors multiplied together
-  // can compound to 2x+ when all align, which overwrites the projection signal.
+  // Each individual factor is small (±3–10%), but stacking can compound.
   // Cap the final batter/pitcher multiplier to ±35% of neutral (1.0) so that
   // game-environment adjustments remain meaningful without dominating projections.
-  // If your projection source already accounts for park, platoon, or Vegas, reduce
-  // the corresponding factor toward 1.0 via the blendWeights context option.
-  const rawBatterMult = vegasAdj * pf.run * wm.hitting * platoon * tsAdj.batting * scBoost * fmBoost * umpBoost * bpAdj * cfAdj * ssBoost;
-  const rawPitcherMult = vegasAdj * wm.pitching * tsAdj.pitching * scBoost * fmBoost * umpBoost * bpAdj * cfAdj * ssBoost;
+  const rawBatterMult = vegasAdj * pf.run * wm.hitting * tsAdj.batting * scBoost * umpBoost * bpAdj * cfAdj * ssBoost;
+  const rawPitcherMult = vegasAdj * wm.pitching * tsAdj.pitching * scBoost * umpBoost * bpAdj * cfAdj * ssBoost;
   const batterMult = Math.max(0.65, Math.min(1.35, rawBatterMult));
   const pitcherMult = Math.max(0.65, Math.min(1.35, rawPitcherMult));
   const hrMult = pf.hr; // GPP batters use hr park factor instead of run
 
-  return { isP, homeTeam, pf, vegasAdj, wm, tsAdj, scBoost, fmBoost, umpBoost, bpAdj, cfAdj, ssBoost, platoon, batterMult, pitcherMult, hrMult, rawBatterMult, rawPitcherMult };
+  return { isP, homeTeam, pf, vegasAdj, wm, tsAdj, scBoost, umpBoost, bpAdj, cfAdj, ssBoost, batterMult, pitcherMult, hrMult, rawBatterMult, rawPitcherMult };
 }
 
 function scoreCash(p, context = {}) {
@@ -724,7 +680,8 @@ function optimizeLineup(pool, scoreFn, opts = {}) {
     exposureLimits = null,
     forceInclude = new Set(),
     allowBvP = false,
-    maxBattersPerTeam = 5
+    maxBattersPerTeam = 5,
+    contestType = 'cash'  // 'cash' | 'gpp' | 'single' — controls salary bonus weight
   } = opts;
 
   // Pre-place forced players into open required slots
@@ -763,11 +720,16 @@ function optimizeLineup(pool, scoreFn, opts = {}) {
     return scoreCache.get(p.name);
   };
 
+  // Salary efficiency bonus — scales by contest type.
+  // Cash/single: high weight (15) — floor-focused, burning salary is always good.
+  // GPP: low weight (5) — ceiling-focused; cheap stacks can beat expensive chalk.
+  const salBonus = contestType === 'gpp' ? 5 : contestType === 'single' ? 10 : 15;
+
   // Composite lineup score: individual scores + salary efficiency bonus + stack bonus
   const lineupTotalScore = lineup => {
     const pts = lineup.reduce((s, p) => s + cachedScore(p), 0);
     const sal = lineup.reduce((s, p) => s + p.salary, 0);
-    return pts + (sal / SALARY_CAP) * 15 + (stackBonusFn ? stackBonusFn(lineup) : 0);
+    return pts + (sal / SALARY_CAP) * salBonus + (stackBonusFn ? stackBonusFn(lineup) : 0);
   };
 
   // ── Step 3: Per-slot candidate pools sorted by individual score ──────────
@@ -815,7 +777,7 @@ function optimizeLineup(pool, scoreFn, opts = {}) {
         // Compute new lineup score without allocating a full array when possible
         const newLu = [...lu]; newLu[i] = cand;
         const newScore = othersScore + cachedScore(cand)
-          + ((othersSalary + cand.salary) / SALARY_CAP) * 15
+          + ((othersSalary + cand.salary) / SALARY_CAP) * salBonus
           + (stackBonusFn ? stackBonusFn(newLu) : 0);
 
         if (newScore > bestScore) {
@@ -1012,7 +974,6 @@ async function buildPortfolio(pool, opts = {}, onProgress = null) {
     stacks3 = [],
     stacks5 = [],
     maxOverlap = 7,        // max players shared between any two lineups (0 = disabled)
-    requireBringBack = false, // GPP: reject lineups without at least one bring-back batter
     lockedTeams = [],      // teams whose stacks are prioritised every lineup
     bannedTeams = [],      // teams fully excluded from the portfolio
     allowBvP = false,      // if false, pitcher and opposing batters cannot share a lineup
@@ -1144,53 +1105,7 @@ async function buildPortfolio(pool, opts = {}, onProgress = null) {
         bannedStackTeams, forcedStackTeams
       );
 
-      // Hard bring-back enforcement: if required and lineup has a stack but no
-      // bring-back batter, attempt to swap in the best available bring-back.
-      // If no valid swap is found, null out the lineup so it is skipped entirely.
-      if (lu && requireBringBack) {
-        const players = lu.filter(Boolean);
-        const teamCounts = {};
-        players.forEach(p => { if (!rp(p, 'P')) teamCounts[p.team] = (teamCounts[p.team] || 0) + 1; });
-        const stackTeams = Object.entries(teamCounts).filter(([, c]) => c >= 3).map(([t]) => t);
-        if (stackTeams.length > 0) {
-          const oppTeams = new Set();
-          players.forEach(p => { if (stackTeams.includes(p.team) && p.opp) oppTeams.add(p.opp); });
-          const hasBB = players.some(p => !rp(p, 'P') && oppTeams.has(p.team));
-          if (!hasBB) {
-            // Find best bring-back candidate not already in lineup
-            const luNames = new Set(players.map(p => p.name));
-            const bbCandidates = pool.filter(p =>
-              !rp(p, 'P') && oppTeams.has(p.team) &&
-              !luNames.has(p.name) && !excludeOverExposed.has(p.name) && p.salary > 0
-            ).sort((a, b) => (b.median || 0) - (a.median || 0));
-            let placed = false;
-            for (const bb of bbCandidates) {
-              // Try replacing the lowest-scoring non-stacked batter
-              const swapCandidates = lu.map((p, idx) => ({ p, idx }))
-                .filter(({ p }) => p && !rp(p, 'P') && !stackTeams.includes(p?.team))
-                .sort((a, b) => (a.p.median || 0) - (b.p.median || 0));
-              for (const { idx } of swapCandidates) {
-                if (!DK_SLOTS[idx].eligible(bb)) continue;
-                const newSalary = lu.reduce((s, p, i) => s + (i === idx ? bb.salary : (p?.salary || 0)), 0);
-                if (newSalary <= SALARY_CAP) { lu[idx] = bb; placed = true; break; }
-              }
-              if (placed) break;
-            }
-            // Fix 5: After bring-back swap, run a salary upgrade pass to recover any
-            // cap headroom left behind when a lower-salary bring-back replaced a
-            // higher-salary batter.
-            if (placed) {
-              const scoreFn = p => scoreGpp(p, { ...context, pool, contestSize });
-              lu = upgradeSalary(lu, pool, scoreFn, excludeOverExposed, allowBvP);
-            }
-            // No valid bring-back found — discard this lineup rather than emit it
-            // without a bring-back. The portfolio loop will attempt another iteration.
-            if (!placed) lu = null;
-          }
-        }
-      }
-
-      // Fix 7: Commit pending stack IDs only if lineup survived bring-back enforcement
+      // Fix 7: Commit pending stack IDs when lineup is accepted
       if (lu) {
         for (const id of pendingStackIds) {
           if (!usedStackIds.has(id)) usedStackIds.add(id);
@@ -1291,18 +1206,19 @@ async function buildPortfolio(pool, opts = {}, onProgress = null) {
     totalLineups: lineups.length,
     virtualStackTeams: [...virtualStackTeams],
     pitcherWarnings, teamExposureWarnings,
-    bannedTeams, lockedTeams
+    bannedTeams, lockedTeams,
+    diversity: computePortfolioDiversity(lineups)
   };
 }
 
 function generateCashLineup(pool, excludeNames, context, iterations, allowBvP = false, forceInclude = new Set()) {
   const scoreFn = p => scoreCash(p, { ...context, pool });
-  return optimizeLineup(pool, scoreFn, { excludeNames, iterations, allowBvP, forceInclude });
+  return optimizeLineup(pool, scoreFn, { excludeNames, iterations, allowBvP, forceInclude, contestType: 'cash' });
 }
 
 function generateSingleLineup(pool, excludeNames, context, iterations, allowBvP = false, forceInclude = new Set()) {
   const scoreFn = p => scoreSingle(p, { ...context, pool });
-  return optimizeLineup(pool, scoreFn, { excludeNames, iterations, allowBvP, forceInclude });
+  return optimizeLineup(pool, scoreFn, { excludeNames, iterations, allowBvP, forceInclude, contestType: 'single' });
 }
 
 // lockedTeam: if set, this team's stack must be used for this lineup.
@@ -1312,11 +1228,27 @@ function generateGppLineup(pool, excludeNames, context, stacks3, stacks5, usedSt
   let usedStackTeam = null;
 
   // Build ordered candidate stacks. prefer5Man: true = favor 5-man, false = favor 3-man, null = auto.
-  const sortByValue = (a, b) => (b.proj - (b.own || 0) * 0.3) - (a.proj - (a.own || 0) * 0.3);
+  // Sort by: (proj * impliedTotal/4.5) - own*0.3 — teams in high run environments rank higher.
+  const vegasData = context?.vegasData || {};
+  const minImpliedTotal = context?.minImpliedTotal || 0;
+  const stackImplied = team => vegasData[team]?.impliedTotal || 4.5;
+  const sortByValue = (a, b) => {
+    const scoreA = a.proj * (stackImplied(a.team) / 4.5) - (a.own || 0) * 0.3;
+    const scoreB = b.proj * (stackImplied(b.team) / 4.5) - (b.own || 0) * 0.3;
+    return scoreB - scoreA;
+  };
+  // Gate: skip stacks from teams whose Vegas implied total is below threshold.
+  // Only applies when Vegas data is loaded and minImpliedTotal > 0.
+  const hasVegas = Object.keys(vegasData).length > 0;
+  const passesImplied = team => {
+    if (!hasVegas || minImpliedTotal <= 0) return true;
+    const it = vegasData[team]?.impliedTotal;
+    return it == null || it >= minImpliedTotal;
+  };
   const buildCandidates = () => {
-    // Filter out stacks for teams that have hit their exposure max
-    const avail5 = stacks5.filter(s => s.proj > 0 && !usedStackIds.has(s.id) && !bannedStackTeams.has(s.team)).sort(sortByValue);
-    const avail3 = stacks3.filter(s => s.proj > 0 && !usedStackIds.has(s.id) && !bannedStackTeams.has(s.team)).sort(sortByValue);
+    // Filter out stacks for teams that have hit their exposure max or are below min implied total
+    const avail5 = stacks5.filter(s => s.proj > 0 && !usedStackIds.has(s.id) && !bannedStackTeams.has(s.team) && passesImplied(s.team)).sort(sortByValue);
+    const avail3 = stacks3.filter(s => s.proj > 0 && !usedStackIds.has(s.id) && !bannedStackTeams.has(s.team) && passesImplied(s.team)).sort(sortByValue);
     // Primary pool gets the first 7 slots in candidate list; secondary fills the rest
     const primary = prefer5Man === false ? avail3 : avail5;
     const secondary = prefer5Man === false ? avail5 : avail3;
@@ -1382,7 +1314,7 @@ function generateGppLineup(pool, excludeNames, context, stacks3, stacks5, usedSt
   const scoreFn = p => scoreGpp(p, { ...context, pool, contestSize });
   const stackBonusFn = lu => gppStackBonus(lu, usedStackTeam);
 
-  return optimizeLineup(pool, scoreFn, { excludeNames, requiredSlots, iterations, stackBonusFn, allowBvP, forceInclude });
+  return optimizeLineup(pool, scoreFn, { excludeNames, requiredSlots, iterations, stackBonusFn, allowBvP, forceInclude, contestType: 'gpp' });
 }
 
 // ── Lineup Analysis ─────────────────────────────────────────────────────────
@@ -1488,11 +1420,10 @@ function weatherMultiplierDirectional(weather, windEffect) {
   const wind = weather.wind_mph || 5;
   const windStrength = Math.min(wind / 20, 1);
   const directionalBonus = windEffect * windStrength * 0.06;
-  const hitAdjust = directionalBonus - (wind >= 15 ? 0.04 : wind >= 10 ? 0.02 : 0);
   return {
     ...base,
-    hitting: Math.max(0.85, base.hitting + hitAdjust),
-    pitching: Math.max(0.85, base.pitching - hitAdjust),
+    hitting: Math.max(0.85, base.hitting + directionalBonus),
+    pitching: Math.max(0.85, base.pitching - directionalBonus),
     windLabel: windEffect > 0.3 ? 'Wind Out' : windEffect < -0.3 ? 'Wind In' : 'Neutral',
     windEffect
   };
@@ -1651,23 +1582,7 @@ function sprintSpeedBoost(player, sprintSpeedData) {
   return 1.0 + boost;
 }
 
-// ── Recent Form Multiplier ─────────────────────────────────────────────────
-
-function formMultiplier(player) {
-  const recentAvg = player.recentAvgDK;
-  const projectedMedian = player.median;
-  if (!recentAvg || !projectedMedian || projectedMedian <= 0) return 1.0;
-
-  const ratio = recentAvg / projectedMedian;
-  if (ratio >= 1.4) return 1.12;
-  if (ratio >= 1.2) return 1.07;
-  if (ratio >= 1.0) return 1.03;
-  if (ratio >= 0.85) return 0.98;
-  if (ratio >= 0.70) return 0.94;
-  return 0.90;
-}
-
-// ── Portfolio Overlap ──────────────────────────────────────────────────────
+// ── Portfolio Overlap & Diversity ──────────────────────────────────────────
 
 function calcPortfolioOverlap(lineups) {
   if (lineups.length < 2) return 0;
@@ -1682,10 +1597,40 @@ function calcPortfolioOverlap(lineups) {
   return maxOverlap;
 }
 
+// Full pairwise diversity stats.
+// score: 0–100 where 100 = every lineup is completely unique
+// distribution: { [sharedCount]: numPairs } histogram of all lineup pairs
+function computePortfolioDiversity(lineups) {
+  if (lineups.length < 2) return { avgOverlap: 0, maxOverlap: 0, score: 100, distribution: {}, pairs: 0 };
+
+  const dist = {};
+  let totalOverlap = 0;
+  let maxOv = 0;
+  let pairs = 0;
+
+  for (let i = 0; i < lineups.length; i++) {
+    const setA = new Set(lineups[i].filter(Boolean).map(p => p.name));
+    for (let j = i + 1; j < lineups.length; j++) {
+      let overlap = 0;
+      for (const p of lineups[j]) if (p && setA.has(p.name)) overlap++;
+      totalOverlap += overlap;
+      if (overlap > maxOv) maxOv = overlap;
+      dist[overlap] = (dist[overlap] || 0) + 1;
+      pairs++;
+    }
+  }
+
+  const avgOverlap = parseFloat((totalOverlap / pairs).toFixed(1));
+  const score = Math.round(Math.max(0, (ROSTER_SIZE - avgOverlap) / ROSTER_SIZE * 100));
+  return { avgOverlap, maxOverlap: maxOv, score, distribution: dist, pairs };
+}
+
 // ── Portfolio Simulation ─────────────────────────────────────────────────────
 
 // Build a synthetic opponent lineup by sampling players from the pool
 // weighted by their projected ownership (field proxy).
+// Realistic GPP field lineups stack — pick a primary team and lock in 3 batters
+// from that team first, then fill remaining slots with ownership-weighted picks.
 function buildFieldLineup(pool) {
   const batters = pool.filter(p => !rp(p, 'P') && p.own > 0 && p.salary > 0 && p.median > 0);
   const pitchers = pool.filter(p => rp(p, 'P') && p.own > 0 && p.salary > 0 && p.median > 0);
@@ -1694,7 +1639,7 @@ function buildFieldLineup(pool) {
   const lu = new Array(ROSTER_SIZE).fill(null);
   const usedNames = new Set();
 
-  // Ownership-weighted random pick
+  // Ownership-weighted random pick from a candidate set
   const pickWeighted = (candidates) => {
     const totalOwn = candidates.reduce((s, p) => s + (p.own || 1), 0);
     let r = Math.random() * totalOwn;
@@ -1705,15 +1650,40 @@ function buildFieldLineup(pool) {
     return candidates[candidates.length - 1];
   };
 
+  // Pick a primary stack team — weight teams by total ownership of their batters.
+  // This mirrors how GPP field constructs: high-own teams get stacked more often.
+  const teamOwn = {};
+  batters.forEach(p => { teamOwn[p.team] = (teamOwn[p.team] || 0) + (p.own || 1); });
+  const teams = Object.keys(teamOwn);
+  const totalTeamOwn = teams.reduce((s, t) => s + teamOwn[t], 0);
+  let r = Math.random() * totalTeamOwn;
+  let stackTeam = teams[teams.length - 1];
+  for (const t of teams) { r -= teamOwn[t]; if (r <= 0) { stackTeam = t; break; } }
+
+  // Attempt to fill 3 batter slots from the stack team first
+  const stackBatters = batters.filter(p => p.team === stackTeam);
+  let stackFilled = 0;
+  // Shuffle stack team batters by ownership so we don't always pick the same ones
+  const shuffledStack = stackBatters.slice().sort(() => Math.random() - 0.5 + (Math.random() > 0.5 ? 0.2 : -0.2));
+  for (let i = 2; i < ROSTER_SIZE && stackFilled < 3; i++) {
+    const slot = DK_SLOTS[i];
+    const eligible = shuffledStack.filter(p => !usedNames.has(p.name) && slot.eligible(p));
+    if (!eligible.length) continue;
+    const pick = pickWeighted(eligible);
+    lu[i] = pick; usedNames.add(pick.name); stackFilled++;
+  }
+
   // Fill pitchers first (slots 0,1)
   for (let i = 0; i < 2; i++) {
+    if (lu[i]) continue;
     const cands = pitchers.filter(p => !usedNames.has(p.name));
     if (!cands.length) break;
     const pick = pickWeighted(cands);
     lu[i] = pick; usedNames.add(pick.name);
   }
-  // Fill remaining slots
+  // Fill remaining empty batter slots with ownership-weighted picks
   for (let i = 2; i < ROSTER_SIZE; i++) {
+    if (lu[i]) continue;
     const slot = DK_SLOTS[i];
     const cands = batters.filter(p => !usedNames.has(p.name) && slot.eligible(p));
     if (!cands.length) continue;
@@ -1822,11 +1792,10 @@ return {
   optimalExposureBoost,
 
   // Adjustments
-  platoonMultiplier, adjustForPlatoon,
   weatherMultiplier, weatherMultiplierDirectional, parkMultiplier,
   vegasAdjustment, vegasPitcherAdjustment,
   teamScoringAdjustment,
-  statcastCeilingBoost, pitcherStuffBoost, bullpenAdjustment, catcherFramingAdjustment, sprintSpeedBoost, formMultiplier, calcPortfolioOverlap, umpireMultiplier,
+  statcastCeilingBoost, pitcherStuffBoost, bullpenAdjustment, catcherFramingAdjustment, sprintSpeedBoost, calcPortfolioOverlap, computePortfolioDiversity, umpireMultiplier,
 
   // Projection blending
   blendProjections,

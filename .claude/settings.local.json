@@ -40,7 +40,13 @@
       "WebFetch(domain:www.fantasylabs.com)",
       "WebFetch(domain:support.fantasylabs.com)",
       "WebFetch(domain:fantasylabs.zendesk.com)",
-      "WebFetch(domain:blogs.fangraphs.com)"
+      "WebFetch(domain:blogs.fangraphs.com)",
+      "WebFetch(domain:paydirtdfs.com)",
+      "WebFetch(domain:paydirtdata.com)",
+      "WebFetch(domain:x.com)",
+      "WebFetch(domain:dknetwork.draftkings.com)",
+      "WebFetch(domain:readdive.com)",
+      "WebFetch(domain:paydirt.ghost.io)"
     ]
   }
 }

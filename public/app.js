@@ -667,8 +667,6 @@ function renderPlayerRow(p, idx, maxC, usedNames) {
   const lc = p.lev > 5 ? 'lp' : p.lev < -2 ? 'ln' : 'lz';
   const inLu = usedNames.has(p.name);
   const gppS = Engine.calcGppScore(p, STATE.contestSize);
-  const platoonAdj = p.platoonAdj || 1.0;
-  const platoonLabel = platoonAdj > 1.01 ? '<span class="pill psu" style="font-size:9px">+plat</span>' : platoonAdj < 0.99 ? '<span class="pill pd" style="font-size:9px">-plat</span>' : '';
 
   // Multiplier deviation badge: warn when compound adjustments push the player
   // more than 25% away from their raw projection. This usually means multiple
@@ -688,7 +686,7 @@ function renderPlayerRow(p, idx, maxC, usedNames) {
       const pct = (em.deviation * 100).toFixed(0);
       const sign = em.deviation > 0 ? '+' : '';
       const color = em.deviation > 0 ? 'var(--tw)' : 'var(--td)';
-      multBadge = `<span class="pill" style="font-size:9px;margin-left:3px;background:var(--bw);color:${color}" title="Compound adjustments push this player ${sign}${pct}% from raw projection — check for double-counting if your CSV already prices in park/platoon/Vegas">\u26a0\ufe0f adj${sign}${pct}%</span>`;
+      multBadge = `<span class="pill" style="font-size:9px;margin-left:3px;background:var(--bw);color:${color}" title="Compound adjustments push this player ${sign}${pct}% from raw projection — check for double-counting if your CSV already prices in park/Vegas">\u26a0\ufe0f adj${sign}${pct}%</span>`;
     }
   } catch (e) { /* context incomplete — skip badge */ }
   const optExpVal = p.optExp > 0 ? `<span class="pill ${p.optExp > 30 ? 'psu' : p.optExp > 10 ? 'pi' : 'pg'}">${p.optExp.toFixed(1)}%</span>` : '\u2014';
@@ -708,7 +706,7 @@ function renderPlayerRow(p, idx, maxC, usedNames) {
       dvpBadge = `<span class="pill ${dvpClass}" style="font-size:9px;margin-left:3px" title="vs ${p.opp} ${dvpPos} rank ${dvpEntry.rank}/${dvpEntry.totalTeams} (${dvpEntry.avgAllowed} DK avg allowed)">DvP:${dvpLabel}</span>`;
     }
   }
-  return `<tr style="${inLu ? 'opacity:.38;' : ''}"><td><strong style="${formColor ? 'color:' + formColor : ''}">${esc(p.name)}</strong>${STATE.MODE === 'dk' && !p.hasRoo ? '<span style="font-size:10px;background:var(--bw);color:var(--tw);border-radius:3px;padding:1px 4px;margin-left:4px">no proj</span>' : ''}${confirmedBadge}${scBadge}${injuryBadge}${dvpBadge}${multBadge} ${platoonLabel}</td><td><span class="pill pi" style="font-size:10px">${esc(p.dkPos) || '\u2014'}</span></td><td>${esc(p.team)}</td><td>${p.salary > 0 ? '$' + p.salary.toLocaleString() : '\u2014'}</td><td>${p.order > 0 ? '#' + p.order : '\u2014'}</td><td>${p.floor > 0 ? p.floor.toFixed(1) : '\u2014'}</td><td>${p.median > 0 ? '<strong>' + p.median.toFixed(1) + '</strong>' : '\u2014'}</td><td>${p.ceiling > 0 ? `<div class="bar-w"><div class="bar" style="width:${bw}px"></div><span style="font-size:11px;color:var(--ts)">${p.ceiling.toFixed(1)}</span></div>` : '\u2014'}</td><td><input type="number" min="0" max="100" step="0.5" value="${p.own > 0 ? p.own.toFixed(1) : ''}" placeholder="0" title="Edit projected ownership %" style="width:50px;font-size:11px;padding:2px 4px;border:0.5px solid var(--brd-s);border-radius:4px;background:var(--bp);color:${p.own > 50 ? 'var(--td)' : p.own > 25 ? 'var(--tw)' : p.own > 10 ? 'var(--ti)' : 'var(--tp)'};text-align:center" oninput="updatePlayerOwn(${idx},this.value)"></td><td class="${lc}">${p.lev !== 0 ? (p.lev > 0 ? '+' : '') + p.lev.toFixed(1) : '\u2014'}</td><td style="color:var(--ti);font-weight:500">${gppS > 0 ? gppS.toFixed(1) : '\u2014'}</td><td>${optExpVal}</td><td>${p.avgPpg > 0 ? p.avgPpg.toFixed(1) : '\u2014'}</td><td>${kDisplay}</td><td><button class="btn" style="padding:3px 8px;font-size:11px" ${inLu ? 'disabled' : ''} onclick="addPlayerByPoolIdx(${idx})">+</button></td></tr>`;
+  return `<tr style="${inLu ? 'opacity:.38;' : ''}"><td><strong style="${formColor ? 'color:' + formColor : ''}">${esc(p.name)}</strong>${STATE.MODE === 'dk' && !p.hasRoo ? '<span style="font-size:10px;background:var(--bw);color:var(--tw);border-radius:3px;padding:1px 4px;margin-left:4px">no proj</span>' : ''}${confirmedBadge}${scBadge}${injuryBadge}${dvpBadge}${multBadge}</td><td><span class="pill pi" style="font-size:10px">${esc(p.dkPos) || '\u2014'}</span></td><td>${esc(p.team)}</td><td>${p.salary > 0 ? '$' + p.salary.toLocaleString() : '\u2014'}</td><td>${p.order > 0 ? '#' + p.order : '\u2014'}</td><td>${p.floor > 0 ? p.floor.toFixed(1) : '\u2014'}</td><td>${p.median > 0 ? '<strong>' + p.median.toFixed(1) + '</strong>' : '\u2014'}</td><td>${p.ceiling > 0 ? `<div class="bar-w"><div class="bar" style="width:${bw}px"></div><span style="font-size:11px;color:var(--ts)">${p.ceiling.toFixed(1)}</span></div>` : '\u2014'}</td><td><input type="number" min="0" max="100" step="0.5" value="${p.own > 0 ? p.own.toFixed(1) : ''}" placeholder="0" title="Edit projected ownership %" style="width:50px;font-size:11px;padding:2px 4px;border:0.5px solid var(--brd-s);border-radius:4px;background:var(--bp);color:${p.own > 50 ? 'var(--td)' : p.own > 25 ? 'var(--tw)' : p.own > 10 ? 'var(--ti)' : 'var(--tp)'};text-align:center" oninput="updatePlayerOwn(${idx},this.value)"></td><td class="${lc}">${p.lev !== 0 ? (p.lev > 0 ? '+' : '') + p.lev.toFixed(1) : '\u2014'}</td><td style="color:var(--ti);font-weight:500">${gppS > 0 ? gppS.toFixed(1) : '\u2014'}</td><td>${optExpVal}</td><td>${p.avgPpg > 0 ? p.avgPpg.toFixed(1) : '\u2014'}</td><td>${kDisplay}</td><td><button class="btn" style="padding:3px 8px;font-size:11px" ${inLu ? 'disabled' : ''} onclick="addPlayerByPoolIdx(${idx})">+</button></td></tr>`;
 }
 
 function renderPlayers() {
@@ -901,7 +899,7 @@ function autoFill() {
   else scoreFn = p => Engine.scoreSingle(p, ctx);
 
   const stackBonusFn = contestType === 'gpp' ? lu => Engine.gppStackBonus(lu, null) : null;
-  STATE.lineup = Engine.optimizeLineup(pool, scoreFn, { iterations: OPTIMIZER_ITERATIONS, stackBonusFn, allowBvP }) || new Array(ROSTER_SIZE).fill(null);
+  STATE.lineup = Engine.optimizeLineup(pool, scoreFn, { iterations: OPTIMIZER_ITERATIONS, stackBonusFn, allowBvP, contestType }) || new Array(ROSTER_SIZE).fill(null);
   renderLineup(); renderLuPool(); saveSession();
 }
 
@@ -1226,8 +1224,7 @@ async function fetchWeather() {
     }
   }
   const teams = [...new Set(STATE.POOL.map(p => p.team).filter(Boolean))];
-  const cities = [...new Set(teams.map(t => STATE.stadiumData.cities?.[t]).filter(Boolean))];
-  if (!cities.length) {
+  if (!teams.length) {
     el.innerHTML = '<div class="ib warn">No teams found. Upload player data first (ROO or DK Salaries), then come back here to fetch weather.</div>';
     return;
   }
@@ -1238,7 +1235,7 @@ async function fetchWeather() {
   try {
     const res = await fetch('/api/weather/batch', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ cities })
+      body: JSON.stringify({ teams })
     });
     if (!res.ok) throw new Error(`Server returned ${res.status}`);
     STATE.weatherData = await res.json();
@@ -1268,27 +1265,18 @@ function renderWeatherDisplay() {
     return;
   }
   const domes = STATE.stadiumData?.domes || [];
-  const cityToTeams = {};
-  if (STATE.stadiumData?.cities) {
-    Object.entries(STATE.stadiumData.cities).forEach(([team, city]) => {
-      if (!cityToTeams[city]) cityToTeams[city] = [];
-      cityToTeams[city].push(team);
-    });
-  }
 
-  el.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px">${Object.entries(STATE.weatherData).map(([city, w]) => {
-    if (w.error) return `<div class="sk-card"><strong>${esc(city)}</strong><div style="color:var(--td);font-size:11px">Error: ${esc(w.error)}</div></div>`;
+  // Weather is now keyed by team code, not city name
+  el.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px">${Object.entries(STATE.weatherData).map(([team, w]) => {
+    if (w.error) return `<div class="sk-card"><strong>${esc(team)}</strong><div style="color:var(--td);font-size:11px">Error: ${esc(w.error)}</div></div>`;
     const wm = Engine.weatherMultiplier(w);
-    const teams = cityToTeams[city] || [];
-    const isDome = teams.some(t => domes.includes(t));
-    // Find wind direction effect for home team at this city
-    const homeTeam = teams.find(t => !isDome) || teams[0];
-    const we = homeTeam ? (STATE.windEffects[homeTeam] ?? null) : null;
+    const isDome = domes.includes(team);
+    const we = STATE.windEffects[team] ?? null;
     const windDirLabel = we !== null ? (we > 0.3 ? 'Out' : we < -0.3 ? 'In' : 'Neutral') : '';
     const windDirColor = we !== null ? (we > 0.3 ? 'var(--tsu)' : we < -0.3 ? 'var(--td)' : 'var(--ts)') : 'var(--ts)';
     return `<div class="sk-card">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-        <strong style="font-size:12px">${esc(city)}</strong>
+        <strong style="font-size:12px">${esc(team)}</strong>
         ${isDome ? '<span class="pill pg" style="font-size:9px">DOME</span>' : `<span class="pill ${wm.risk === 'high' ? 'pd' : wm.risk === 'moderate' ? 'pw' : 'psu'}" style="font-size:9px">${wm.label}</span>`}
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;font-size:11px">
@@ -1551,7 +1539,6 @@ function generatePortfolio() {
   const contestType = document.getElementById('port-contest-type').value || 'gpp';
   const portContestSize = parseInt(document.getElementById('port-contest-size').value) || 1000;
   const maxOverlapVal = parseInt(document.getElementById('port-max-overlap')?.value) || 0;
-  const requireBringBack = document.getElementById('port-require-bringback')?.checked || false;
   const allowBvP = document.getElementById('port-allow-bvp')?.checked || false;
   const stackPct5Raw = document.getElementById('port-stack-pct5')?.value;
   const stackPct5 = stackPct5Raw !== '' && stackPct5Raw != null ? parseInt(stackPct5Raw) : null;
@@ -1590,10 +1577,11 @@ function generatePortfolio() {
     try {
       const ctx = getEngineContext();
       ctx.contestSize = portContestSize;
+      ctx.minImpliedTotal = parseFloat(document.getElementById('port-min-implied')?.value) || 0;
       const result = await Engine.buildPortfolio(getCalibratedPool(), {
         numLineups, maxExposure, maxExposurePitcher, contestType, contestSize: portContestSize,
         maxOverlap: maxOverlapVal,
-        requireBringBack, allowBvP,
+        allowBvP,
         playerOverrides, teamExposureOverrides: teamOverrides, stackPct5,
         stacks3: STATE.STACKS3, stacks5: STATE.STACKS5,
         lockedTeams, bannedTeams,
@@ -1646,14 +1634,42 @@ function renderPortfolioResults(result) {
     html += postWarnings.map(w => `<div class="ib blue" style="margin-bottom:6px;font-size:12px">${w}</div>`).join('');
   }
 
-  const maxOvlp = Engine.calcPortfolioOverlap(result.lineups);
+  const div = result.diversity || Engine.computePortfolioDiversity(result.lineups);
+  const divColor = div.score >= 50 ? 'var(--tsu)' : div.score >= 35 ? 'var(--tw)' : 'var(--td)';
+  const ovlpColor = div.maxOverlap > 7 ? 'var(--tw)' : 'var(--tsu)';
+
+  // Diversity histogram: bars for each overlap bucket 0–10
+  const maxDivPairs = Math.max(...Object.values(div.distribution || {}), 1);
+  const divBars = Array.from({ length: 11 }, (_, k) => {
+    const count = div.distribution?.[k] || 0;
+    const w = Math.round(count / maxDivPairs * 40);
+    const barColor = k <= 4 ? 'var(--tsu)' : k <= 6 ? 'var(--tw)' : 'var(--td)';
+    return `<div style="display:flex;align-items:center;gap:3px;font-size:9px;line-height:1.3">
+      <span style="width:12px;text-align:right;color:var(--tt)">${k}</span>
+      <div style="width:${w}px;height:5px;border-radius:2px;background:${barColor};min-width:${count?2:0}px"></div>
+      ${count ? `<span style="color:var(--ts)">${count}</span>` : ''}
+    </div>`;
+  }).join('');
+
   html += `<div class="mc-row">
     <div class="mc"><div class="mc-l">Lineups</div><div class="mc-v">${result.totalLineups}</div></div>
     <div class="mc"><div class="mc-l">Avg Salary</div><div class="mc-v">$${Math.round(avgSalary).toLocaleString()}</div></div>
     <div class="mc"><div class="mc-l">Avg Median</div><div class="mc-v">${avgMedian.toFixed(1)}</div></div>
     <div class="mc"><div class="mc-l">Unique Players</div><div class="mc-v">${Object.keys(result.playerExposure).length}</div></div>
-    <div class="mc"><div class="mc-l">Max Overlap</div><div class="mc-v" style="color:${maxOvlp > 7 ? 'var(--tw)' : 'var(--tsu)'}">${maxOvlp}</div><div class="mc-s">players shared</div></div>
-  </div>`;
+    <div class="mc" title="Diversity = (10 − avg shared players) / 10. Higher = less correlated portfolio.">
+      <div class="mc-l">Diversity</div>
+      <div class="mc-v" style="color:${divColor}">${div.score}%</div>
+      <div class="mc-s">avg ${div.avgOverlap} shared</div>
+    </div>
+    <div class="mc" title="Most players shared between any two lineups in the portfolio.">
+      <div class="mc-l">Max Overlap</div>
+      <div class="mc-v" style="color:${ovlpColor}">${div.maxOverlap}</div>
+      <div class="mc-s">players</div>
+    </div>
+  </div>
+  <div style="margin:8px 0 4px;font-size:10px;color:var(--tt);letter-spacing:.05em">OVERLAP DISTRIBUTION (shared players per lineup pair)</div>
+  <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">${divBars}</div>
+  ${div.score < 35 ? `<div class="ib warn" style="font-size:11px;margin-bottom:8px">Low diversity (${div.score}%) — consider lowering Max Lineup Overlap below ${div.maxOverlap} to spread variance across your portfolio.</div>` : ''}`;
 
   // Separate pitcher and batter exposure tables
   const allEntries = Object.entries(result.playerExposure).sort((a, b) => b[1].count - a[1].count);
@@ -2115,16 +2131,28 @@ function renderBacktestPanel(history, summary) {
   const summaryEl = document.getElementById('backtest-summary');
   const historyEl = document.getElementById('backtest-history');
 
-  // Summary cards — include unique slates count
+  // Summary cards
+  const cashRateColor = summary.cashRate !== null && summary.breakEven
+    ? (summary.cashRate >= summary.breakEven.double_up.requiredCashRate ? 'var(--tsu)' : 'var(--td)')
+    : 'var(--tp)';
+  const finishPctColor = summary.avgFinishPct !== null
+    ? (summary.avgFinishPct >= 50 ? 'var(--tsu)' : summary.avgFinishPct >= 20 ? 'var(--tw)' : 'var(--td)')
+    : 'var(--tp)';
+
   summaryEl.innerHTML = `<div class="mc-row">
     <div class="mc"><div class="mc-l">Total Entries</div><div class="mc-v">${summary.totalEntries}</div></div>
-    <div class="mc"><div class="mc-l">With Results</div><div class="mc-v">${summary.entriesWithResults}</div></div>
     <div class="mc"><div class="mc-l">Net Profit</div><div class="mc-v" style="color:${summary.netProfit >= 0 ? 'var(--tsu)' : 'var(--td)'}">$${summary.netProfit.toFixed(0)}</div></div>
     <div class="mc"><div class="mc-l">ROI</div><div class="mc-v" style="color:${summary.roi >= 0 ? 'var(--tsu)' : 'var(--td)'}">${summary.roi.toFixed(1)}%</div></div>
-    <div class="mc"><div class="mc-l">Avg Projected</div><div class="mc-v">${summary.avgProjected.toFixed(1)}</div></div>
-    <div class="mc"><div class="mc-l">Avg Actual</div><div class="mc-v">${summary.avgActual.toFixed(1)}</div></div>
+    <div class="mc"><div class="mc-l">Cash Rate</div><div class="mc-v" style="color:${cashRateColor}">${summary.cashRate !== null ? summary.cashRate.toFixed(1) + '%' : '—'}</div></div>
+    <div class="mc"><div class="mc-l">Avg Finish %ile</div><div class="mc-v" style="color:${finishPctColor}">${summary.avgFinishPct !== null ? summary.avgFinishPct.toFixed(1) + '%' : '—'}</div></div>
     <div class="mc"><div class="mc-l">Proj Accuracy</div><div class="mc-v">${summary.projectionAccuracy.toFixed(1)}%</div></div>
-  </div>`;
+  </div>
+  ${summary.breakEven ? `<div style="margin-top:8px;padding:8px 10px;background:var(--bs);border-radius:var(--r);font-size:11px;color:var(--tt)">
+    <strong style="color:var(--tp)">Break-even (10% rake):</strong>
+    GPP top 20%: <strong>${summary.breakEven.gpp_top20.requiredCashRate}%</strong> cash rate required ·
+    Double-up: <strong>${summary.breakEven.double_up.requiredCashRate}%</strong> required
+    ${summary.cashRate !== null ? `· Your rate: <strong style="color:${cashRateColor}">${summary.cashRate.toFixed(1)}%</strong>` : ''}
+  </div>` : ''}`;
 
   // Save current lineup button
   const todayStr = new Date().toISOString().substring(0, 10);
@@ -2134,6 +2162,8 @@ function renderBacktestPanel(history, summary) {
     </select>
     <input type="date" id="bt-slate-date" value="${todayStr}" style="font-size:12px;padding:5px 8px;border-radius:var(--r);border:0.5px solid var(--brd-s);background:var(--bp);color:var(--tp)" title="Slate date — must match the date you use when loading actuals">
     <input type="number" id="bt-buyin" placeholder="Buy-in $" style="width:80px;font-size:12px;padding:5px 8px;border-radius:var(--r);border:0.5px solid var(--brd-s);background:var(--bp);color:var(--tp)">
+    <input type="number" id="bt-finish" placeholder="Finish #" style="width:80px;font-size:12px;padding:5px 8px;border-radius:var(--r);border:0.5px solid var(--brd-s);background:var(--bp);color:var(--tp)" title="Your finish position (e.g. 42)">
+    <input type="number" id="bt-entries" placeholder="# Entries" style="width:90px;font-size:12px;padding:5px 8px;border-radius:var(--r);border:0.5px solid var(--brd-s);background:var(--bp);color:var(--tp)" title="Total entries in the contest">
     <button class="btn-g" onclick="saveLineupToHistory()">Save Current Lineup</button>
   </div>`;
 
@@ -2226,6 +2256,8 @@ async function saveLineupToHistory() {
   if (!players.length) return;
   const contest = document.getElementById('bt-contest').value;
   const buyin = parseFloat(document.getElementById('bt-buyin').value) || 0;
+  const finish = parseInt(document.getElementById('bt-finish')?.value) || null;
+  const entries = parseInt(document.getElementById('bt-entries')?.value) || null;
   const projectedPts = players.reduce((s, p) => s + (p.median || 0), 0);
   const projectedOwn = players.reduce((s, p) => s + (p.own || 0), 0);
   const salary = players.reduce((s, p) => s + p.salary, 0);
@@ -2261,7 +2293,7 @@ async function saveLineupToHistory() {
     await fetch('/api/history', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        contest, buyin, projectedPts, projectedOwn, salary, slateDate,
+        contest, buyin, finish, entries, projectedPts, projectedOwn, salary, slateDate,
         lineup: lineupSnapshot,
         poolSnapshot,
         sources: sourcesSnapshot
@@ -2575,6 +2607,144 @@ async function loadConfirmedLineups() {
   } catch (e) {
     if (el) el.innerHTML = `<div class="ib warn">Failed: ${esc(e.message)}</div>`;
     if (btn) { btn.textContent = 'Fetch Lineups'; btn.disabled = false; }
+  }
+}
+
+// ── Late-Scratch Monitor ───────────────────────────────────────────────────────
+// Polls /api/lineups/:date every 10 minutes. If any player currently in STATE.lineup
+// was previously seen in a confirmed batting order but is now absent → scratch alert.
+
+const _scratchMonitor = {
+  active: false,
+  timerId: null,
+  intervalMs: 10 * 60 * 1000,
+  nextPollAt: null,
+  countdownId: null,
+  alerts: [],           // { name, team, detectedAt }
+  // Snapshot of which players were confirmed IN a batting order at monitor-start.
+  // We only alert for players who WERE confirmed and then disappear — not for
+  // players who were never confirmed (pre-game starters not yet announced).
+  baselineConfirmed: new Set()
+};
+
+function normForMonitor(name) {
+  return (name || '').toLowerCase().replace(/[^a-z ]/g, '').trim();
+}
+
+function buildConfirmedSet(confirmedLineups) {
+  // Returns a Set of normalized names who appear in any confirmed batting order.
+  const s = new Set();
+  Object.values(confirmedLineups).forEach(g => {
+    if (!g.confirmed) return;
+    [...(g.homeOrder || []), ...(g.awayOrder || [])].forEach(n => s.add(normForMonitor(n)));
+  });
+  return s;
+}
+
+async function pollScratchMonitor() {
+  if (!_scratchMonitor.active) return;
+  const today = new Date().toISOString().substring(0, 10);
+  try {
+    const res = await fetch('/api/lineups/' + today);
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error || 'poll failed');
+
+    // Update STATE.confirmedLineups silently
+    STATE.confirmedLineups = {};
+    (data.games || []).forEach(g => { STATE.confirmedLineups[g.gamePk] = g; });
+    applyConfirmedToPool();
+
+    const nowConfirmed = buildConfirmedSet(STATE.confirmedLineups);
+
+    // Check every player currently in STATE.lineup
+    const rosteredPlayers = STATE.lineup.filter(Boolean);
+    rosteredPlayers.forEach(p => {
+      const norm = normForMonitor(p.name);
+      // Only alert if: player was confirmed when monitoring started AND now isn't
+      if (_scratchMonitor.baselineConfirmed.has(norm) && !nowConfirmed.has(norm)) {
+        const already = _scratchMonitor.alerts.some(a => normForMonitor(a.name) === norm);
+        if (!already) {
+          _scratchMonitor.alerts.push({ name: p.name, team: p.team || '', detectedAt: new Date().toLocaleTimeString() });
+        }
+      }
+    });
+
+    // Update baseline: if new players got confirmed, add them
+    nowConfirmed.forEach(n => _scratchMonitor.baselineConfirmed.add(n));
+
+    _scratchMonitor.lastPollAt = new Date();
+    _scratchMonitor.nextPollAt = new Date(Date.now() + _scratchMonitor.intervalMs);
+    renderScratchMonitorStatus();
+  } catch (e) {
+    const statusEl = document.getElementById('scratch-monitor-status');
+    if (statusEl) statusEl.innerHTML = `<div class="ib warn">Monitor poll failed: ${esc(e.message)}</div>`;
+  }
+}
+
+function renderScratchMonitorStatus() {
+  const statusEl = document.getElementById('scratch-monitor-status');
+  const alertEl  = document.getElementById('scratch-alerts');
+  const btn = document.getElementById('scratch-monitor-btn');
+
+  if (!_scratchMonitor.active) {
+    if (statusEl) statusEl.innerHTML = '';
+    if (btn) { btn.textContent = 'Monitor Scratches'; btn.style.background = ''; }
+    return;
+  }
+
+  const nextStr = _scratchMonitor.nextPollAt
+    ? _scratchMonitor.nextPollAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    : '—';
+  if (statusEl) statusEl.innerHTML = `<div class="ib blue" style="font-size:11px">Monitoring active · next poll ${nextStr}</div>`;
+  if (btn) { btn.textContent = 'Stop Monitor'; btn.style.background = 'var(--red, #c0392b)'; }
+
+  if (alertEl) {
+    if (_scratchMonitor.alerts.length === 0) {
+      alertEl.innerHTML = '';
+      return;
+    }
+    alertEl.innerHTML = `<div style="margin-top:8px;padding:10px 12px;background:#4a1010;border:1px solid #c0392b;border-radius:var(--r)">
+      <div style="font-size:12px;font-weight:600;color:#ff6b6b;margin-bottom:6px">SCRATCH ALERT — Rostered Players Missing From Confirmed Lineups</div>
+      ${_scratchMonitor.alerts.map((a, idx) =>
+        `<div style="font-size:11px;color:#ffaaaa;padding:3px 0">
+          <strong>${esc(a.name)}</strong>${a.team ? ' (' + esc(a.team) + ')' : ''} — not in batting order as of ${esc(a.detectedAt)}
+          <button onclick="dismissScratchAlert(${idx})" style="margin-left:8px;font-size:10px;padding:1px 6px;background:#c0392b;color:#fff;border:none;border-radius:3px;cursor:pointer">Dismiss</button>
+        </div>`
+      ).join('')}
+    </div>`;
+  }
+}
+
+function dismissScratchAlert(idx) {
+  _scratchMonitor.alerts.splice(idx, 1);
+  renderScratchMonitorStatus();
+}
+
+function toggleScratchMonitor() {
+  if (_scratchMonitor.active) {
+    // Stop
+    _scratchMonitor.active = false;
+    clearInterval(_scratchMonitor.timerId);
+    clearInterval(_scratchMonitor.countdownId);
+    _scratchMonitor.timerId = null;
+    _scratchMonitor.alerts = [];
+    _scratchMonitor.baselineConfirmed.clear();
+    renderScratchMonitorStatus();
+  } else {
+    // Start — snapshot current confirmed players as baseline
+    _scratchMonitor.active = true;
+    _scratchMonitor.alerts = [];
+    _scratchMonitor.baselineConfirmed = buildConfirmedSet(STATE.confirmedLineups);
+    // Warn if no roster loaded
+    if (!STATE.lineup.filter(Boolean).length) {
+      const statusEl = document.getElementById('scratch-monitor-status');
+      if (statusEl) statusEl.innerHTML = `<div class="ib warn">No lineup loaded — build a lineup first so the monitor knows which players to watch.</div>`;
+    }
+    // Run immediately, then on interval
+    pollScratchMonitor();
+    _scratchMonitor.timerId = setInterval(pollScratchMonitor, _scratchMonitor.intervalMs);
+    _scratchMonitor.nextPollAt = new Date(Date.now() + _scratchMonitor.intervalMs);
+    renderScratchMonitorStatus();
   }
 }
 
@@ -2975,9 +3145,9 @@ async function loadWindEffects() {
   STATE.windEffects = {};
   const teams = [...new Set(STATE.POOL.map(p => p.team).filter(Boolean))];
   for (const team of teams) {
-    const city = STATE.stadiumData.cities?.[team];
-    if (!city || !STATE.weatherData[city]) continue;
-    const w = STATE.weatherData[city];
+    // Weather is now keyed by team code (GPS-accurate)
+    if (!STATE.weatherData[team]) continue;
+    const w = STATE.weatherData[team];
     if (w.error) continue;
     try {
       const res = await fetch(`/api/wind-effect/${team}?wind_dir=${encodeURIComponent(w.wind_dir || '')}&wind_mph=${w.wind_mph || 0}`);
@@ -3003,9 +3173,9 @@ function renderSlateEnvironment() {
     const awayVegas = STATE.vegasData?.[away] || {};
     const total = (homeVegas.impliedTotal || 0) + (awayVegas.impliedTotal || 0);
     const pf = STATE.parkFactors?.[home] || { overall: 1.0, hr: 1.0 };
-    const city = STATE.stadiumData?.cities?.[home];
     const isDome = STATE.stadiumData?.domes?.includes(home);
-    const weather = city && STATE.weatherData?.[city] && !STATE.weatherData[city].error ? STATE.weatherData[city] : null;
+    // Weather is now keyed by team code (GPS-accurate)
+    const weather = STATE.weatherData?.[home] && !STATE.weatherData[home].error ? STATE.weatherData[home] : null;
     const wm = weather ? Engine.weatherMultiplier(weather) : { hitting: 1.0, risk: 'none' };
     const we = STATE.windEffects[home] || 0;
     const windLabel = we > 0.3 ? 'OUT' : we < -0.3 ? 'IN' : 'N';
@@ -3139,6 +3309,10 @@ function checkPositionScarcity() {
 }
 
 // ── Projection Blend UI ───────────────────────────────────────────────────────
+// Default weights: Statcast=100, Form=0 (disabled until validated), Platoon=0
+// (disabled — projection CSVs already price in matchup splits).
+const BLEND_DEFAULTS = { 'ROO': 100, 'Statcast': 100, 'Form (14d)': 0, 'Platoon': 0 };
+
 function renderBlendControls() {
   const el = document.getElementById('blend-controls');
   if (!el) return;
@@ -3146,7 +3320,6 @@ function renderBlendControls() {
   const sources = [];
   if (STATE.ROO.length) sources.push({ name: 'ROO', count: STATE.ROO.length });
   if (STATE.statcastData && Object.keys(STATE.statcastData).length) sources.push({ name: 'Statcast', count: Object.keys(STATE.statcastData).length });
-  if (STATE.formData && Object.keys(STATE.formData).length) sources.push({ name: 'Form (14d)', count: Object.keys(STATE.formData).length });
 
   if (sources.length < 2) {
     el.innerHTML = `<span style="font-size:11px;color:var(--tt)">
@@ -3159,18 +3332,22 @@ function renderBlendControls() {
   <div style="display:flex;flex-wrap:wrap;gap:12px">
     ${sources.map(s => {
       const wKey = 'blend-' + s.name.replace(/\W/g, '');
-      const current = STATE.blendWeights[s.name] ?? 100;
+      const defaultW = BLEND_DEFAULTS[s.name] ?? 100;
+      const current = STATE.blendWeights[s.name] ?? defaultW;
+      const isDisabled = defaultW === 0 && current === 0;
+      const label = s.name;
+      const hint = '';
       return `<div style="display:flex;flex-direction:column;gap:3px;min-width:120px">
-        <label style="font-size:11px;color:var(--tt)">${esc(s.name)} <span style="color:var(--ts)">(${s.count})</span></label>
+        <label style="font-size:11px;color:${isDisabled ? 'var(--tt)' : 'var(--ts)'}"${hint}>${esc(label)} <span style="color:var(--ts)">(${s.count})</span></label>
         <div style="display:flex;align-items:center;gap:6px">
           <input type="range" id="${wKey}" min="0" max="100" value="${current}" style="flex:1"
-            oninput="blendWeights['${esc(s.name)}']=parseInt(this.value);document.getElementById('${wKey}-lbl').textContent=this.value+'%';saveSession()">
+            oninput="STATE.blendWeights['${esc(s.name)}']=parseInt(this.value);document.getElementById('${wKey}-lbl').textContent=this.value+'%';saveSession()">
           <span id="${wKey}-lbl" style="font-size:11px;color:var(--ts);width:32px">${current}%</span>
         </div>
       </div>`;
     }).join('')}
   </div>
-  <div style="font-size:10px;color:var(--tt);margin-top:6px">Weights adjust the scoring multipliers in optimizer. Re-run Auto-fill or Generate to apply.</div>`;
+  <div style="font-size:10px;color:var(--tt);margin-top:6px">Weights adjust scoring multipliers. ⚠ = off by default. Re-run Auto-fill or Generate to apply.</div>`;
 }
 
 // ── Pool CSV Export ───────────────────────────────────────────────────────────
@@ -3180,7 +3357,7 @@ function exportPool() {
     'Name','Pos','Team','Opp','Game','Salary','BatOrder',
     'Floor','Median','Ceiling','Own%','Leverage','GPPScore','OptExp%','AvgPPG',
     'BarrelRate','HardHit%','xwOBA','RecentAvgDK','RecentGames','KRate',
-    'IsConfirmed','ConfirmedOrder','InjuryType','InjuryDesc','PlatoonAdj'
+    'IsConfirmed','ConfirmedOrder','InjuryType','InjuryDesc'
   ];
   const rows = STATE.POOL.map(p => [
     p.name, p.dkPos || p.rosterPos || '', p.team || '', p.opp || '', p.game || '',
@@ -3202,8 +3379,7 @@ function exportPool() {
     p.isConfirmed ? 'Y' : '',
     p.confirmedOrder || '',
     p.injuryType || '',
-    p.injuryDesc || '',
-    p.platoonAdj != null ? p.platoonAdj.toFixed(3) : ''
+    p.injuryDesc || ''
   ].map(csvQuote));
 
   const csv = [headers.map(csvQuote).join(','), ...rows.map(r => r.join(','))].join('\n');
@@ -3233,7 +3409,7 @@ function saveSession() {
         contestType: document.getElementById('port-contest-type')?.value,
         contestSize: document.getElementById('port-contest-size')?.value,
         maxOverlap: document.getElementById('port-max-overlap')?.value,
-        requireBringBack: document.getElementById('port-require-bringback')?.checked,
+        minImplied: document.getElementById('port-min-implied')?.value,
         allowBvP: document.getElementById('port-allow-bvp')?.checked || false,
         stackPct5: document.getElementById('port-stack-pct5')?.value,
         cashLine: document.getElementById('port-cash-line')?.value,
@@ -3277,7 +3453,7 @@ function restoreSession() {
     if (pc.contestType) { const el = document.getElementById('port-contest-type'); if (el) el.value = pc.contestType; }
     if (pc.contestSize) { const el = document.getElementById('port-contest-size'); if (el) el.value = pc.contestSize; }
     if (pc.maxOverlap != null) { const el = document.getElementById('port-max-overlap'); if (el) el.value = pc.maxOverlap; }
-    if (pc.requireBringBack != null) { const el = document.getElementById('port-require-bringback'); if (el) el.checked = pc.requireBringBack; }
+    if (pc.minImplied != null) { const el = document.getElementById('port-min-implied'); if (el) el.value = pc.minImplied; }
     if (pc.allowBvP != null) { const el = document.getElementById('port-allow-bvp'); if (el) el.checked = pc.allowBvP; }
     if (pc.stackPct5 != null) { const el = document.getElementById('port-stack-pct5'); if (el) el.value = pc.stackPct5; }
     if (pc.cashLine) { const el = document.getElementById('port-cash-line'); if (el) el.value = pc.cashLine; }

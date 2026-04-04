@@ -142,8 +142,11 @@
       <button class="btn" id="fetch-statcast-btn" onclick="loadStatcast()">Fetch Statcast</button>
       <button class="btn" id="fetch-form-btn" onclick="loadRecentForm()">Fetch 14-Day Form</button>
       <button class="btn" id="fetch-injuries-btn" onclick="loadInjuries()">Fetch Injuries</button>
+      <button class="btn" id="scratch-monitor-btn" onclick="toggleScratchMonitor()" title="Poll confirmed lineups every 10 min and alert if a rostered player is scratched">Monitor Scratches</button>
     </div>
     <div id="lineups-status"></div>
+    <div id="scratch-monitor-status"></div>
+    <div id="scratch-alerts"></div>
     <div id="statcast-status"></div>
     <div id="form-status"></div>
     <div id="injuries-status"></div>
@@ -329,13 +332,11 @@
     </div>
     <div class="config-item">
       <label>Max Lineup Overlap <span style="font-weight:400;text-transform:none;letter-spacing:0">(0=off)</span></label>
-      <input type="number" id="port-max-overlap" value="7" min="0" max="10" title="Max players shared between any two lineups. 0 = disabled." onchange="saveSession()">
+      <input type="number" id="port-max-overlap" value="6" min="0" max="10" title="Max players shared between any two lineups. 0 = disabled. GPP recommended: 5–6." onchange="saveSession()">
     </div>
-    <div class="config-item" style="justify-content:center">
-      <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
-        <input type="checkbox" id="port-require-bringback" style="width:14px;height:14px">
-        Require Bring-Back <span style="font-weight:400;text-transform:none;letter-spacing:0">(GPP only)</span>
-      </label>
+    <div class="config-item">
+      <label>Min Implied Total <span style="font-weight:400;text-transform:none;letter-spacing:0">(0=off)</span></label>
+      <input type="number" id="port-min-implied" value="0" min="0" max="7" step="0.5" title="Only stack teams whose Vegas implied run total meets this threshold. 0 = no filter. Recommended: 3.5–4.0." onchange="saveSession()">
     </div>
     <div class="config-item" style="justify-content:center">
       <label style="display:flex;align-items:center;gap:6px;cursor:pointer">

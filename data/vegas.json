@@ -1,21 +1,21 @@
 {
   "DET": {
-    "impliedTotal": 4.39,
+    "impliedTotal": 4.52,
     "openTotal": 4.54,
     "openAt": "2026-03-30T20:58:14.227Z"
   },
   "SD": {
-    "impliedTotal": 3.56,
+    "impliedTotal": 3.25,
     "openTotal": 3.46,
     "openAt": "2026-03-30T20:58:14.227Z"
   },
   "KC": {
-    "impliedTotal": 4.46,
+    "impliedTotal": 4.12,
     "openTotal": 7.04,
     "openAt": "2026-03-30T20:58:14.227Z"
   },
   "ATL": {
-    "impliedTotal": 4.71,
+    "impliedTotal": 4.67,
     "openTotal": 4.98,
     "openAt": "2026-03-30T20:58:14.227Z"
   },
@@ -25,12 +25,12 @@
     "openAt": "2026-03-30T20:58:14.227Z"
   },
   "HOU": {
-    "impliedTotal": 5.09,
+    "impliedTotal": 4.83,
     "openTotal": 4.42,
     "openAt": "2026-03-30T20:58:14.227Z"
   },
   "CLE": {
-    "impliedTotal": 3.44,
+    "impliedTotal": 3.57,
     "openTotal": 3.21,
     "openAt": "2026-03-30T20:58:14.227Z"
   },
@@ -40,7 +40,7 @@
     "openAt": "2026-03-30T20:58:14.227Z"
   },
   "ARI": {
-    "impliedTotal": 4.79,
+    "impliedTotal": 4.83,
     "openTotal": 4.46,
     "openAt": "2026-03-30T20:58:14.227Z"
   },
@@ -55,87 +55,87 @@
     "openAt": "2026-04-03T16:57:33.881Z"
   },
   "TOR": {
-    "impliedTotal": 5.17,
+    "impliedTotal": 4.85,
     "openTotal": 5.9,
     "openAt": "2026-03-30T20:58:14.227Z"
   },
   "COL": {
-    "impliedTotal": 3.25,
+    "impliedTotal": 3.48,
     "openTotal": 2.6,
     "openAt": "2026-03-30T20:58:14.227Z"
   },
   "MIA": {
-    "impliedTotal": 2.79,
+    "impliedTotal": 2.73,
     "openTotal": 4.79,
     "openAt": "2026-03-30T20:58:14.227Z"
   },
   "BAL": {
-    "impliedTotal": 4.38,
+    "impliedTotal": 4.17,
     "openTotal": 4.83,
     "openAt": "2026-03-30T20:58:14.227Z"
   },
   "MIN": {
-    "impliedTotal": 3.82,
+    "impliedTotal": 3.78,
     "openTotal": 3.46,
     "openAt": "2026-03-30T20:58:14.227Z"
   },
   "PHI": {
-    "impliedTotal": 6.75,
+    "impliedTotal": 7.02,
     "openTotal": 5.4,
     "openAt": "2026-03-30T20:58:14.227Z"
   },
   "TEX": {
-    "impliedTotal": 4.84,
+    "impliedTotal": 4.82,
     "openTotal": 4.17,
     "openAt": "2026-03-30T20:58:14.227Z"
   },
   "OAK": {
-    "impliedTotal": 4.91,
+    "impliedTotal": 4.67,
     "openTotal": 4.02,
     "openAt": "2026-03-30T20:58:14.227Z"
   },
   "CIN": {
-    "impliedTotal": 3.16,
+    "impliedTotal": 3.68,
     "openTotal": 4.54,
     "openAt": "2026-03-30T20:58:14.227Z"
   },
   "BOS": {
-    "impliedTotal": 4.44,
+    "impliedTotal": 4.25,
     "openTotal": 3.08,
     "openAt": "2026-03-30T20:58:14.227Z"
   },
   "NYM": {
-    "impliedTotal": 4,
+    "impliedTotal": 3.78,
     "openTotal": 5.01,
     "openAt": "2026-03-30T20:58:14.227Z"
   },
   "PIT": {
-    "impliedTotal": 4.12,
+    "impliedTotal": 4.33,
     "openTotal": 4.46,
     "openAt": "2026-03-30T20:58:14.227Z"
   },
   "MIL": {
-    "impliedTotal": 4.04,
+    "impliedTotal": 3.88,
     "openTotal": 4.15,
     "openAt": "2026-03-30T20:58:14.227Z"
   },
   "CWS": {
-    "impliedTotal": 3.33,
+    "impliedTotal": 3.65,
     "openTotal": 3.71,
     "openAt": "2026-03-30T20:58:14.227Z"
   },
   "STL": {
-    "impliedTotal": 3.11,
+    "impliedTotal": 2.98,
     "openTotal": 3.49,
     "openAt": "2026-03-30T20:58:14.227Z"
   },
   "TB": {
-    "impliedTotal": 3.68,
+    "impliedTotal": 3.72,
     "openTotal": 3.35,
     "openAt": "2026-03-30T20:58:14.227Z"
   },
   "CHC": {
-    "impliedTotal": 4.56,
+    "impliedTotal": 4.43,
     "openTotal": 4.19,
     "openAt": "2026-03-30T20:58:14.227Z"
   },
@@ -145,12 +145,12 @@
     "openAt": "2026-03-30T20:58:14.227Z"
   },
   "NYY": {
-    "impliedTotal": 4.71,
+    "impliedTotal": 4.77,
     "openTotal": 3.67,
     "openAt": "2026-03-30T20:58:14.227Z"
   },
   "SF": {
-    "impliedTotal": 3.5,
+    "impliedTotal": 3.72,
     "openTotal": 4.54,
     "openAt": "2026-03-30T20:58:14.227Z"
   }
