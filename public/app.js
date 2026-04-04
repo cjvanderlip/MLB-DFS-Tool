@@ -669,6 +669,28 @@ function renderPlayerRow(p, idx, maxC, usedNames) {
   const gppS = Engine.calcGppScore(p, STATE.contestSize);
   const platoonAdj = p.platoonAdj || 1.0;
   const platoonLabel = platoonAdj > 1.01 ? '<span class="pill psu" style="font-size:9px">+plat</span>' : platoonAdj < 0.99 ? '<span class="pill pd" style="font-size:9px">-plat</span>' : '';
+
+  // Multiplier deviation badge: warn when compound adjustments push the player
+  // more than 25% away from their raw projection. This usually means multiple
+  // factors (park + Vegas + weather + Statcast) are all stacking in the same
+  // direction — which may double-count factors already in the projection CSV.
+  let multBadge = '';
+  const multContext = {
+    vegasData: STATE.vegasData, parkFactors: STATE.parkFactors,
+    weatherData: STATE.weatherData, stadiums: STATE.stadiumData,
+    teamScoring: STATE.TEAM_SCORING, blendWeights: STATE.blendWeights,
+    bullpenData: STATE.bullpenData, framingMap: STATE.framingMap,
+    sprintSpeedData: STATE.sprintSpeedData
+  };
+  try {
+    const em = Engine.computeEffectiveMult(p, multContext);
+    if (em.isOver) {
+      const pct = (em.deviation * 100).toFixed(0);
+      const sign = em.deviation > 0 ? '+' : '';
+      const color = em.deviation > 0 ? 'var(--tw)' : 'var(--td)';
+      multBadge = `<span class="pill" style="font-size:9px;margin-left:3px;background:var(--bw);color:${color}" title="Compound adjustments push this player ${sign}${pct}% from raw projection — check for double-counting if your CSV already prices in park/platoon/Vegas">\u26a0\ufe0f adj${sign}${pct}%</span>`;
+    }
+  } catch (e) { /* context incomplete — skip badge */ }
   const optExpVal = p.optExp > 0 ? `<span class="pill ${p.optExp > 30 ? 'psu' : p.optExp > 10 ? 'pi' : 'pg'}">${p.optExp.toFixed(1)}%</span>` : '\u2014';
   const confirmedBadge = p.isConfirmed ? `<span class="pill psu" style="font-size:9px;margin-left:3px">${p.confirmedOrder ? '#' + p.confirmedOrder : 'SP'}</span>` : '';
   const scBadge = p.barrelRate > 0 ? `<span class="pill ${p.barrelRate >= 10 ? 'psu' : p.barrelRate >= 7 ? 'pi' : 'pg'}" style="font-size:9px;margin-left:3px">Brl:${p.barrelRate.toFixed(0)}%</span>` : '';
@@ -686,7 +708,7 @@ function renderPlayerRow(p, idx, maxC, usedNames) {
       dvpBadge = `<span class="pill ${dvpClass}" style="font-size:9px;margin-left:3px" title="vs ${p.opp} ${dvpPos} rank ${dvpEntry.rank}/${dvpEntry.totalTeams} (${dvpEntry.avgAllowed} DK avg allowed)">DvP:${dvpLabel}</span>`;
     }
   }
-  return `<tr style="${inLu ? 'opacity:.38;' : ''}"><td><strong style="${formColor ? 'color:' + formColor : ''}">${esc(p.name)}</strong>${STATE.MODE === 'dk' && !p.hasRoo ? '<span style="font-size:10px;background:var(--bw);color:var(--tw);border-radius:3px;padding:1px 4px;margin-left:4px">no proj</span>' : ''}${confirmedBadge}${scBadge}${injuryBadge}${dvpBadge} ${platoonLabel}</td><td><span class="pill pi" style="font-size:10px">${esc(p.dkPos) || '\u2014'}</span></td><td>${esc(p.team)}</td><td>${p.salary > 0 ? '$' + p.salary.toLocaleString() : '\u2014'}</td><td>${p.order > 0 ? '#' + p.order : '\u2014'}</td><td>${p.floor > 0 ? p.floor.toFixed(1) : '\u2014'}</td><td>${p.median > 0 ? '<strong>' + p.median.toFixed(1) + '</strong>' : '\u2014'}</td><td>${p.ceiling > 0 ? `<div class="bar-w"><div class="bar" style="width:${bw}px"></div><span style="font-size:11px;color:var(--ts)">${p.ceiling.toFixed(1)}</span></div>` : '\u2014'}</td><td><input type="number" min="0" max="100" step="0.5" value="${p.own > 0 ? p.own.toFixed(1) : ''}" placeholder="0" title="Edit projected ownership %" style="width:50px;font-size:11px;padding:2px 4px;border:0.5px solid var(--brd-s);border-radius:4px;background:var(--bp);color:${p.own > 50 ? 'var(--td)' : p.own > 25 ? 'var(--tw)' : p.own > 10 ? 'var(--ti)' : 'var(--tp)'};text-align:center" oninput="updatePlayerOwn(${idx},this.value)"></td><td class="${lc}">${p.lev !== 0 ? (p.lev > 0 ? '+' : '') + p.lev.toFixed(1) : '\u2014'}</td><td style="color:var(--ti);font-weight:500">${gppS > 0 ? gppS.toFixed(1) : '\u2014'}</td><td>${optExpVal}</td><td>${p.avgPpg > 0 ? p.avgPpg.toFixed(1) : '\u2014'}</td><td>${kDisplay}</td><td><button class="btn" style="padding:3px 8px;font-size:11px" ${inLu ? 'disabled' : ''} onclick="addPlayerByPoolIdx(${idx})">+</button></td></tr>`;
+  return `<tr style="${inLu ? 'opacity:.38;' : ''}"><td><strong style="${formColor ? 'color:' + formColor : ''}">${esc(p.name)}</strong>${STATE.MODE === 'dk' && !p.hasRoo ? '<span style="font-size:10px;background:var(--bw);color:var(--tw);border-radius:3px;padding:1px 4px;margin-left:4px">no proj</span>' : ''}${confirmedBadge}${scBadge}${injuryBadge}${dvpBadge}${multBadge} ${platoonLabel}</td><td><span class="pill pi" style="font-size:10px">${esc(p.dkPos) || '\u2014'}</span></td><td>${esc(p.team)}</td><td>${p.salary > 0 ? '$' + p.salary.toLocaleString() : '\u2014'}</td><td>${p.order > 0 ? '#' + p.order : '\u2014'}</td><td>${p.floor > 0 ? p.floor.toFixed(1) : '\u2014'}</td><td>${p.median > 0 ? '<strong>' + p.median.toFixed(1) + '</strong>' : '\u2014'}</td><td>${p.ceiling > 0 ? `<div class="bar-w"><div class="bar" style="width:${bw}px"></div><span style="font-size:11px;color:var(--ts)">${p.ceiling.toFixed(1)}</span></div>` : '\u2014'}</td><td><input type="number" min="0" max="100" step="0.5" value="${p.own > 0 ? p.own.toFixed(1) : ''}" placeholder="0" title="Edit projected ownership %" style="width:50px;font-size:11px;padding:2px 4px;border:0.5px solid var(--brd-s);border-radius:4px;background:var(--bp);color:${p.own > 50 ? 'var(--td)' : p.own > 25 ? 'var(--tw)' : p.own > 10 ? 'var(--ti)' : 'var(--tp)'};text-align:center" oninput="updatePlayerOwn(${idx},this.value)"></td><td class="${lc}">${p.lev !== 0 ? (p.lev > 0 ? '+' : '') + p.lev.toFixed(1) : '\u2014'}</td><td style="color:var(--ti);font-weight:500">${gppS > 0 ? gppS.toFixed(1) : '\u2014'}</td><td>${optExpVal}</td><td>${p.avgPpg > 0 ? p.avgPpg.toFixed(1) : '\u2014'}</td><td>${kDisplay}</td><td><button class="btn" style="padding:3px 8px;font-size:11px" ${inLu ? 'disabled' : ''} onclick="addPlayerByPoolIdx(${idx})">+</button></td></tr>`;
 }
 
 function renderPlayers() {
@@ -2023,11 +2045,20 @@ function renderSimResults(result) {
   const el = document.getElementById('sim-results');
 
   // Summary stats
-  let html = `<div class="mc-row">
-    <div class="mc"><div class="mc-l">Mean</div><div class="mc-v">${result.mean.toFixed(1)}</div></div>
+  // meanSE / p50SE are bootstrap standard errors — they quantify how much the
+  // estimate would shift if you re-ran the simulation (pure sampling noise).
+  const meanCIStr = result.meanCI ? ` <span style="font-size:10px;color:var(--ts)" title="95% CI from 20-group bootstrap — run more sims to narrow this">[${result.meanCI[0]}–${result.meanCI[1]}]</span>` : '';
+  const p50CIStr  = result.p50CI  ? ` <span style="font-size:10px;color:var(--ts)" title="95% CI from 20-group bootstrap">[${result.p50CI[0]}–${result.p50CI[1]}]</span>` : '';
+  const stabilityNote = result.meanSE > 1.5
+    ? `<div class="ib warn" style="margin-bottom:8px;font-size:12px">Simulation noise is high (SE=${result.meanSE.toFixed(2)}) — increase sim count for more stable estimates.</div>`
+    : result.meanSE <= 0.5
+      ? `<div class="ib" style="margin-bottom:8px;font-size:12px;color:var(--tsu)">Estimates are stable (SE=${result.meanSE.toFixed(2)}).</div>`
+      : '';
+  let html = stabilityNote + `<div class="mc-row">
+    <div class="mc"><div class="mc-l">Mean</div><div class="mc-v">${result.mean.toFixed(1)}${meanCIStr}</div></div>
     <div class="mc"><div class="mc-l">Std Dev</div><div class="mc-v">${result.std.toFixed(1)}</div></div>
     <div class="mc"><div class="mc-l">P10</div><div class="mc-v">${result.p10.toFixed(1)}</div></div>
-    <div class="mc"><div class="mc-l">P50</div><div class="mc-v">${result.p50.toFixed(1)}</div></div>
+    <div class="mc"><div class="mc-l">P50</div><div class="mc-v">${result.p50.toFixed(1)}${p50CIStr}</div></div>
     <div class="mc"><div class="mc-l">P90</div><div class="mc-v">${result.p90.toFixed(1)}</div></div>
     <div class="mc"><div class="mc-l">P99</div><div class="mc-v">${result.p99.toFixed(1)}</div></div>
     <div class="mc"><div class="mc-l">Max</div><div class="mc-v">${result.max.toFixed(1)}</div></div>
@@ -2214,13 +2245,26 @@ async function saveLineupToHistory() {
     own: p.own || 0, order: p.order || 0
   }));
 
+  // Capture per-source projection snapshots so /api/source-quality/update can
+  // compare each file's raw projections against actuals independently.
+  // Each entry is { name: filename, projections: { playerName: medianProjection } }
+  const sourcesSnapshot = STATE.ROO_SOURCES
+    .map((src, i) => {
+      if (!src || !src.data || !src.data.length) return null;
+      const projections = {};
+      src.data.forEach(p => { if (p.name && p.median > 0) projections[p.name] = p.median; });
+      return { name: src.fname, weight: STATE.rooWeights[i], projections };
+    })
+    .filter(Boolean);
+
   try {
     await fetch('/api/history', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contest, buyin, projectedPts, projectedOwn, salary, slateDate,
         lineup: lineupSnapshot,
-        poolSnapshot
+        poolSnapshot,
+        sources: sourcesSnapshot
       })
     });
     loadHistory();
@@ -2268,6 +2312,27 @@ async function fetchAndApplyActuals() {
     if (!res.ok || data.error) throw new Error(data.error || 'Failed');
     if (data.updated > 0) {
       statusEl.innerHTML = `<div class="ib success">${data.updated} lineup(s) updated — ${data.playerCount} players matched for ${dateStr}.</div>`;
+
+      // Refresh source quality using per-source snapshots saved at lineup creation time
+      const history = await fetch('/api/history').then(r => r.json());
+      const sourcesForDate = [];
+      const seen = new Set();
+      history.forEach(entry => {
+        const eDate = entry.slateDate || entry.date?.substring(0, 10);
+        if (eDate !== dateStr || !Array.isArray(entry.sources)) return;
+        entry.sources.forEach(s => {
+          if (s.name && !seen.has(s.name)) {
+            seen.add(s.name);
+            sourcesForDate.push({ name: s.name, projections: s.projections });
+          }
+        });
+      });
+      if (sourcesForDate.length) {
+        fetch('/api/source-quality/update', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ date: dateStr, sources: sourcesForDate })
+        }).then(() => renderSourceQuality()).catch(() => {});
+      }
     } else {
       statusEl.innerHTML = `<div class="ib warn">${esc(data.message || 'No matching lineups found for ' + dateStr + '. Make sure lineups were saved with this slate date.')}</div>`;
     }
@@ -3256,6 +3321,38 @@ function applyPendingLineupRestore() {
 }
 
 // ── Init: Load park factors on startup ────────────────────────────────────────
+// ── Source Quality Display ────────────────────────────────────────────────────
+async function renderSourceQuality() {
+  try {
+    const quality = await fetch('/api/source-quality').then(r => r.json());
+    const panel = document.getElementById('source-quality-panel');
+    const rows  = document.getElementById('source-quality-rows');
+    const entries = Object.entries(quality);
+    if (!entries.length) { panel.style.display = 'none'; return; }
+
+    rows.innerHTML = entries.map(([fname, q]) => {
+      const s = q.summary;
+      if (!s) return '';
+      const spearman = s.avgSpearman;
+      const bias     = s.avgBias;
+      // Spearman > 0.55 = good rank accuracy; < 0.35 = poor
+      const sqColor  = spearman >= 0.55 ? 'var(--tsu)' : spearman >= 0.40 ? 'var(--ti)' : 'var(--td)';
+      const sqLabel  = spearman >= 0.55 ? 'good' : spearman >= 0.40 ? 'fair' : 'poor';
+      // Bias: how much the source over/under-projects on average
+      const biasSign = bias > 0 ? '+' : '';
+      const biasColor = Math.abs(bias) < 0.08 ? 'var(--tsu)' : Math.abs(bias) < 0.15 ? 'var(--tw)' : 'var(--td)';
+      // Suggest adjusted weight based on Spearman (sources with higher rank accuracy get more weight)
+      return `<div style="display:flex;gap:10px;align-items:center;padding:4px 0;border-bottom:0.5px solid var(--brd-s);font-size:11px">
+        <span style="flex:1;color:var(--tp);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(fname)}">${esc(fname)}</span>
+        <span style="color:${sqColor};font-weight:600" title="Spearman rank correlation — how well this source ranks players vs actuals">r=${spearman.toFixed(2)} (${sqLabel})</span>
+        <span style="color:${biasColor}" title="Average over/under-projection relative to actuals">bias ${biasSign}${(bias * 100).toFixed(0)}%</span>
+        <span style="color:var(--ts)">${s.slateCount} slate${s.slateCount !== 1 ? 's' : ''}</span>
+      </div>`;
+    }).join('');
+    panel.style.display = entries.length ? 'block' : 'none';
+  } catch (e) { /* quality data not yet available — hide panel */ }
+}
+
 (async function init() {
   try {
     STATE.parkFactors = await fetch('/api/park-factors').then(r => r.json());
@@ -3263,6 +3360,8 @@ function applyPendingLineupRestore() {
     // Load saved calibration and apply to engine
     const cal = await fetch('/api/calibration').then(r => r.json());
     Engine.setCalibration(cal);
+    // Load source quality on startup (only shows if data exists)
+    renderSourceQuality();
   } catch (e) { /* Server may not be running during dev */ }
   restoreSession();
 })();

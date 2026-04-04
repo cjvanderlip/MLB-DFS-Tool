@@ -97,7 +97,9 @@ function buildPairCorrelations(historyEntries) {
 
   const result = {};
   for (const [key, s] of Object.entries(acc)) {
-    if (s.n < 5) continue; // require at least 5 co-appearances for reliability
+    if (s.n < 30) continue; // require 30+ co-appearances — Pearson r is statistically
+    // unreliable below this threshold (wide confidence intervals with n<30 make
+    // a computed r of 0.7 indistinguishable from 0.2 at the 95% level).
     const num = s.n * s.sumXY - s.sumX * s.sumY;
     const den = Math.sqrt((s.n * s.sumXX - s.sumX ** 2) * (s.n * s.sumYY - s.sumY ** 2));
     if (den === 0) continue;
@@ -260,6 +262,23 @@ function simulateLineup(lineup, numSims = 10000) {
     };
   });
 
+  // ── Bootstrap standard error ─────────────────────────────────────────────
+  // Split the sim results into B groups and compute the mean of each group.
+  // The std-dev of those group means estimates how much the mean estimate
+  // would vary if you re-ran the entire simulation — i.e. simulation noise.
+  // 95% CI ≈ mean ± 2 * SE.  Wide CI → run more sims; narrow CI → result is stable.
+  const B = 20; // number of bootstrap groups
+  const groupSize = Math.floor(numSims / B);
+  const groupMeans = [];
+  const groupP50s  = [];
+  for (let b = 0; b < B; b++) {
+    const slice = results.slice(b * groupSize, (b + 1) * groupSize).sort((a, c) => a - c);
+    groupMeans.push(slice.reduce((s, v) => s + v, 0) / slice.length);
+    groupP50s.push(slice[Math.floor(slice.length * 0.50)]);
+  }
+  const meanSE = parseFloat(Math.sqrt(groupMeans.reduce((s, v) => s + (v - mean) ** 2, 0) / B).toFixed(2));
+  const p50SE  = parseFloat(Math.sqrt(groupP50s.reduce((s, v) => s + (v - p50) ** 2, 0)  / B).toFixed(2));
+
   return {
     mean, std, p10, p25, p50, p75, p90, p95, p99,
     min: results[0],
@@ -267,7 +286,13 @@ function simulateLineup(lineup, numSims = 10000) {
     histogram: buildHistogram(results, 30),
     playerStats,
     numSims,
-    correlationScore: calcCorrelationScore(corrMatrix)
+    correlationScore: calcCorrelationScore(corrMatrix),
+    // Bootstrap uncertainty estimates — how stable are these numbers?
+    // meanSE / p50SE are the standard errors from splitting sims into 20 groups.
+    // If meanSE > 1.0, consider running more simulations for reliable estimates.
+    meanSE, p50SE,
+    meanCI: [parseFloat((mean - 2 * meanSE).toFixed(1)), parseFloat((mean + 2 * meanSE).toFixed(1))],
+    p50CI:  [parseFloat((p50  - 2 * p50SE ).toFixed(1)), parseFloat((p50  + 2 * p50SE ).toFixed(1))]
   };
 }
 
@@ -430,8 +455,10 @@ function vegasAdjustment(player, vegasData) {
   const impliedTotal = teamData.impliedTotal;
   const avgImplied = 4.5; // League average implied total
 
-  // Scale factor: if Vegas implies 5.5 runs vs 4.5 avg = 22% boost
-  return impliedTotal / avgImplied;
+  // Scale factor: if Vegas implies 5.5 runs vs 4.5 avg = ~20% boost.
+  // Clamped to ±25% so extreme implied totals don't dominate the projection.
+  const raw = impliedTotal / avgImplied;
+  return Math.max(0.75, Math.min(1.25, raw));
 }
 
 function vegasPitcherAdjustment(pitcher, vegasData) {
@@ -441,9 +468,13 @@ function vegasPitcherAdjustment(pitcher, vegasData) {
   if (!oppData || !oppData.impliedTotal) return 1.0;
 
   const oppImplied = oppData.impliedTotal;
-  // Low opponent implied total = good for pitcher
-  // If opp implied 3.5 vs avg 4.5 = pitcher gets boost
-  return (9 - oppImplied) / 4.5; // Inverse scale
+  const avgImplied = 4.5; // League average implied total
+  // Linear scale: each run above/below average moves multiplier by ~4.4%.
+  // Clamped to ±20% so extreme totals don't produce nonsensical adjustments.
+  // (Previous formula "(9 - oppImplied) / 4.5" could return negative values
+  // for teams with implied totals > 9, and could exceed 2x for very low totals.)
+  const raw = 1.0 + (avgImplied - oppImplied) / avgImplied * 0.20;
+  return Math.max(0.80, Math.min(1.20, raw));
 }
 
 // ── Projection Blending ─────────────────────────────────────────────────────
@@ -454,7 +485,7 @@ function blendProjections(sources, weights) {
   // weights: { sourceName: weight } (should sum to 1.0)
   const playerMap = {};
 
-  sources.forEach((source, si) => {
+  sources.forEach((source) => {
     const w = weights[source.name] || (1 / sources.length);
     source.players.forEach(p => {
       const key = p.name.toLowerCase();
@@ -561,12 +592,20 @@ function buildPlayerContext(p, context = {}) {
   }
 
   const platoon = p.platoonAdj || 1.0;
-  // Common multiplier chain for batters and pitchers
-  const batterMult = vegasAdj * pf.run * wm.hitting * platoon * tsAdj.batting * scBoost * fmBoost * umpBoost * bpAdj * cfAdj * ssBoost;
-  const pitcherMult = vegasAdj * wm.pitching * tsAdj.pitching * scBoost * fmBoost * umpBoost * bpAdj * cfAdj * ssBoost;
+  // Composite multiplier chain.
+  // Each individual factor is small (±3–10%), but 11 factors multiplied together
+  // can compound to 2x+ when all align, which overwrites the projection signal.
+  // Cap the final batter/pitcher multiplier to ±35% of neutral (1.0) so that
+  // game-environment adjustments remain meaningful without dominating projections.
+  // If your projection source already accounts for park, platoon, or Vegas, reduce
+  // the corresponding factor toward 1.0 via the blendWeights context option.
+  const rawBatterMult = vegasAdj * pf.run * wm.hitting * platoon * tsAdj.batting * scBoost * fmBoost * umpBoost * bpAdj * cfAdj * ssBoost;
+  const rawPitcherMult = vegasAdj * wm.pitching * tsAdj.pitching * scBoost * fmBoost * umpBoost * bpAdj * cfAdj * ssBoost;
+  const batterMult = Math.max(0.65, Math.min(1.35, rawBatterMult));
+  const pitcherMult = Math.max(0.65, Math.min(1.35, rawPitcherMult));
   const hrMult = pf.hr; // GPP batters use hr park factor instead of run
 
-  return { isP, homeTeam, pf, vegasAdj, wm, tsAdj, scBoost, fmBoost, umpBoost, bpAdj, cfAdj, ssBoost, platoon, batterMult, pitcherMult, hrMult };
+  return { isP, homeTeam, pf, vegasAdj, wm, tsAdj, scBoost, fmBoost, umpBoost, bpAdj, cfAdj, ssBoost, platoon, batterMult, pitcherMult, hrMult, rawBatterMult, rawPitcherMult };
 }
 
 function scoreCash(p, context = {}) {
@@ -658,18 +697,34 @@ function validatePlacement(candidate, others, allowBvP, maxBattersPerTeam) {
   return true;
 }
 
-// ── Enhanced Optimizer ──────────────────────────────────────────────────────
+// ── Local-Search Optimizer ──────────────────────────────────────────────────
+//
+// Replaces the previous random-sampling loop with a deterministic greedy
+// seed + exhaustive 1-swap local search.
+//
+// Why this is better than random sampling:
+//   • Random sampling over N iterations explores a tiny, biased fraction of
+//     the solution space and produces different results on every run.
+//   • Local search starts from the greedy-optimal seed (already the best
+//     single-pass solution) and then exhaustively tests every possible
+//     1-player substitution, accepting any that improve the lineup score.
+//   • It repeats until no single swap can improve things — i.e. it finds
+//     the true local optimum under the given constraints.
+//   • In practice this converges in 3–5 passes and covers the full
+//     candidate pool rather than a random subset.
+//
+// The `iterations` parameter is kept for API compatibility but is unused.
 
 function optimizeLineup(pool, scoreFn, opts = {}) {
   const {
     excludeNames = new Set(),
     requiredSlots = new Array(ROSTER_SIZE).fill(null),
-    iterations = 5000,
+    iterations: _iterations = 5000, // unused — kept so call sites don't need updating
     stackBonusFn = null,
-    exposureLimits = null, // { playerName: maxPct }
-    forceInclude = new Set(), // players that must appear in this lineup
-    allowBvP = false,      // if false, pitcher and opposing batters cannot share a lineup
-    maxBattersPerTeam = 5  // DK rule: max 5 batters from the same team
+    exposureLimits = null,
+    forceInclude = new Set(),
+    allowBvP = false,
+    maxBattersPerTeam = 5
   } = opts;
 
   // Pre-place forced players into open required slots
@@ -685,115 +740,103 @@ function optimizeLineup(pool, scoreFn, opts = {}) {
     }
   }
 
-  const lockedNames = new Set();
-  let lockedSalary = 0;
-  effectiveRequired.forEach(p => {
-    if (p) { lockedNames.add(p.name); lockedSalary += p.salary; }
-  });
+  // Build the full exclusion set (banned + over-exposed players)
+  const excluded = new Set(excludeNames);
+  if (exposureLimits) {
+    pool.forEach(p => { if ((exposureLimits[p.name] || 1) <= 0) excluded.add(p.name); });
+  }
+  effectiveRequired.forEach(p => { if (p) excluded.delete(p.name); }); // locked players are never excluded
 
-  // Build scored candidate pools per open slot (top 40 eligible per position)
-  const candidatePools = DK_SLOTS.map((slot, i) => {
-    if (effectiveRequired[i]) return null;
-    return pool.filter(p =>
-      slot.eligible(p) &&
-      !excludeNames.has(p.name) &&
-      !lockedNames.has(p.name) &&
-      p.salary > 0 &&
-      (p.median > 0 || p.ceiling > 0 || p.avgPpg > 0) &&
-      (!exposureLimits || !exposureLimits[p.name] || exposureLimits[p.name] > 0)
-    ).sort((a, b) => scoreFn(b) - scoreFn(a)).slice(0, 40);
-  });
-
-  // Fix 1: realistic per-slot reserve — use actual 5th-percentile salary per
-  // position rather than the hard-coded $3k floor, so budget headroom is
-  // calculated accurately and high-salary players aren't incorrectly filtered.
-  const slotMinSalary = DK_SLOTS.map((slot, i) => {
-    if (requiredSlots[i]) return 0;
-    const eligible = candidatePools[i];
-    if (!eligible || !eligible.length) return MIN_SALARY_PER_SLOT;
-    const sorted = [...eligible].sort((a, b) => a.salary - b.salary);
-    // Use the 10th-percentile salary so we reserve a realistic floor
-    const idx = Math.max(0, Math.floor(sorted.length * 0.10));
-    return sorted[idx].salary;
-  });
-
-  const openSlots = [];
-  for (let i = 0; i < ROSTER_SIZE; i++) {
-    if (!effectiveRequired[i]) openSlots.push(i);
+  // ── Step 1: Greedy seed ──────────────────────────────────────────────────
+  let lu = greedyFill(pool, scoreFn, excluded, effectiveRequired, allowBvP, maxBattersPerTeam);
+  if (!lu || lu.some(p => !p)) {
+    // Greedy couldn't fill — nothing to improve
+    return lu;
   }
 
-  let bestLineup = null, bestScore = -Infinity;
+  // ── Step 2: Cache per-player scores ─────────────────────────────────────
+  // scoreFn is pure with respect to lineup composition (context is captured
+  // in closure), so we can memoize to avoid redundant calculations.
+  const scoreCache = new Map();
+  const cachedScore = p => {
+    if (!scoreCache.has(p.name)) scoreCache.set(p.name, scoreFn(p));
+    return scoreCache.get(p.name);
+  };
 
-  for (let iter = 0; iter < iterations; iter++) {
-    const lu = [...effectiveRequired];
-    const usedNames = new Set(lockedNames);
-    let salaryUsed = lockedSalary, valid = true;
+  // Composite lineup score: individual scores + salary efficiency bonus + stack bonus
+  const lineupTotalScore = lineup => {
+    const pts = lineup.reduce((s, p) => s + cachedScore(p), 0);
+    const sal = lineup.reduce((s, p) => s + p.salary, 0);
+    return pts + (sal / SALARY_CAP) * 15 + (stackBonusFn ? stackBonusFn(lineup) : 0);
+  };
 
-    // Shuffle open slot order
-    const order = [...openSlots];
-    for (let i = order.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [order[i], order[j]] = [order[j], order[i]];
-    }
+  // ── Step 3: Per-slot candidate pools sorted by individual score ──────────
+  // Only built for open (non-locked) slots; excludes banned/over-exposed players.
+  const slotPools = DK_SLOTS.map((slot, i) => {
+    if (effectiveRequired[i]) return []; // locked — skip
+    return pool
+      .filter(p =>
+        slot.eligible(p) && !excluded.has(p.name) && p.salary > 0 &&
+        (p.median > 0 || p.ceiling > 0 || p.avgPpg > 0)
+      )
+      .sort((a, b) => cachedScore(b) - cachedScore(a));
+  });
 
-    for (let oi = 0; oi < order.length; oi++) {
-      const si = order[oi];
-      const cPool = candidatePools[si];
-      if (!cPool || !cPool.length) { valid = false; break; }
+  // ── Step 4: Exhaustive 1-swap local search ───────────────────────────────
+  // Each pass: for every open slot, try every eligible candidate from slotPools.
+  // Accept the best-improving swap found in that slot (greedy per slot).
+  // Repeat until a full pass produces no improvements (local optimum reached).
+  // Safety cap: 15 passes (typically converges in 3–5).
+  let improved = true;
+  let passes = 0;
 
-      // Fix 1: sum realistic minimums for remaining slots instead of flat $3k
-      let reserveForRemaining = 0;
-      for (let ri = oi + 1; ri < order.length; ri++) {
-        reserveForRemaining += slotMinSalary[order[ri]];
+  while (improved && passes < 15) {
+    improved = false;
+    passes++;
+
+    for (let i = 0; i < ROSTER_SIZE; i++) {
+      if (effectiveRequired[i]) continue; // don't touch locked players
+
+      const cur = lu[i];
+      const others = lu.filter((_, j) => j !== i).filter(Boolean);
+      const othersNames = new Set(others.map(p => p.name));
+      const othersSalary = others.reduce((s, p) => s + p.salary, 0);
+      const othersScore = others.reduce((s, p) => s + cachedScore(p), 0);
+
+      let bestScore = lineupTotalScore(lu); // only accept strict improvements
+      let bestPick = null;
+
+      for (const cand of slotPools[i]) {
+        if (othersNames.has(cand.name)) continue; // already in another slot
+        if (cand.name === cur?.name) continue;     // same player
+        if (othersSalary + cand.salary > SALARY_CAP) continue;
+        if (!validatePlacement(cand, others, allowBvP, maxBattersPerTeam)) continue;
+
+        // Compute new lineup score without allocating a full array when possible
+        const newLu = [...lu]; newLu[i] = cand;
+        const newScore = othersScore + cachedScore(cand)
+          + ((othersSalary + cand.salary) / SALARY_CAP) * 15
+          + (stackBonusFn ? stackBonusFn(newLu) : 0);
+
+        if (newScore > bestScore) {
+          bestScore = newScore;
+          bestPick = cand;
+        }
       }
-      const budgetForThis = SALARY_CAP - salaryUsed - reserveForRemaining;
 
-      // Dynamic BvP and team-stack constraints based on already-placed players
-      const others = lu.filter(Boolean);
-
-      const available = cPool.filter(p => {
-        if (usedNames.has(p.name)) return false;
-        if (p.salary > budgetForThis) return false;
-        if (!validatePlacement(p, others, allowBvP, maxBattersPerTeam)) return false;
-        return true;
-      });
-      if (!available.length) { valid = false; break; }
-
-      // Fix 3: rank-weighted sampling — rank 1 is (topN)x more likely than
-      // last rank, distributing probability as 1/rank so top picks win most
-      // often while still allowing diversity across iterations.
-      const topN = Math.min(available.length, 5 + Math.floor(Math.random() * 6));
-      const topCands = available.slice(0, topN);
-      const weights = topCands.map((_, k) => 1 / (k + 1));
-      const totalW = weights.reduce((s, w) => s + w, 0);
-      let r = Math.random() * totalW;
-      let pick = topCands[topCands.length - 1];
-      for (let k = 0; k < topCands.length; k++) {
-        r -= weights[k];
-        if (r <= 0) { pick = topCands[k]; break; }
+      if (bestPick) {
+        lu[i] = bestPick;
+        improved = true;
+        // Note: we continue to the next slot using the updated lineup, so later
+        // slots benefit from swaps made earlier in the same pass.
       }
-
-      lu[si] = pick;
-      usedNames.add(pick.name);
-      salaryUsed += pick.salary;
     }
-
-    if (!valid || lu.some(p => !p)) continue;
-    if (salaryUsed > SALARY_CAP) continue;
-
-    let total = lu.reduce((s, p) => s + scoreFn(p), 0);
-    // Fix 2: meaningful salary efficiency bonus — scales to ~15pts at full cap,
-    // which is large enough to consistently prefer $49,800 over $46,000 when
-    // player scores are otherwise equal, without overriding score differences.
-    total += (salaryUsed / SALARY_CAP) * 15;
-    if (stackBonusFn) total += stackBonusFn(lu);
-
-    if (total > bestScore) { bestScore = total; bestLineup = [...lu]; }
   }
 
-  const result = bestLineup || greedyFill(pool, scoreFn, excludeNames, effectiveRequired, allowBvP, maxBattersPerTeam);
-  // Post-optimization salary upgrade: push any unused cap into better players
-  return result ? upgradeSalary(result, pool, scoreFn, excludeNames, allowBvP, maxBattersPerTeam) : result;
+  // ── Step 5: Salary upgrade pass ─────────────────────────────────────────
+  // After local search converges, push any remaining cap headroom into higher-
+  // salary alternatives that score within 5% of the current player.
+  return upgradeSalary(lu, pool, scoreFn, excluded, allowBvP, maxBattersPerTeam);
 }
 
 function greedyFill(pool, scoreFn, excludeNames = new Set(), requiredSlots = new Array(ROSTER_SIZE).fill(null), allowBvP = false, maxBattersPerTeam = 5) {
@@ -927,7 +970,7 @@ function buildVirtualStack(team, pool, excludeNames) {
 // Try to fit stack players into requiredSlots. Returns true on success.
 // Pitchers in user-uploaded stacks are placed as pitchers only; batters from the
 // same team are counted against the DK 5-batter-per-team limit.
-function tryPlaceStack(stackPlayers, requiredSlots, pool) {
+function tryPlaceStack(stackPlayers, requiredSlots, _pool) {
   const tempLu = [...requiredSlots];
   let stackSalary = requiredSlots.reduce((s, p) => s + (p ? p.salary : 0), 0);
 
@@ -1795,6 +1838,23 @@ return {
 
   // Portfolio
   buildPortfolio,
+
+  // Multiplier introspection
+  // Returns how far the compound adjustment pushes a player from their raw projection.
+  // context = same object passed to scoreCash/scoreGpp (vegasData, parkFactors, etc.)
+  // Returns { rawBatterMult, rawPitcherMult, isOver, deviation }
+  // isOver = true when |rawMult - 1.0| > 0.25 (multipliers are dominating the projection)
+  computeEffectiveMult(p, context = {}) {
+    const pc = buildPlayerContext(p, context);
+    const raw = pc.isP ? pc.rawPitcherMult : pc.rawBatterMult;
+    const deviation = raw - 1.0;
+    return {
+      rawBatterMult:  parseFloat((pc.rawBatterMult  || 1.0).toFixed(4)),
+      rawPitcherMult: parseFloat((pc.rawPitcherMult || 1.0).toFixed(4)),
+      isOver: Math.abs(deviation) > 0.25,
+      deviation: parseFloat(deviation.toFixed(4))
+    };
+  },
 
   // Analysis
   analyzeLineup,

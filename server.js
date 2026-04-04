@@ -1711,6 +1711,271 @@ app.get('/api/dvp', async (req, res) => {
   }
 });
 
+// ── Multiplier Segment Analysis ──────────────────────────────────────────────
+//
+// Groups historical player-actuals by segments that correspond to adjustment
+// categories (team/park, batting order, ownership tier) and computes bias per
+// segment. This reveals whether each factor class is helping or hurting
+// projection accuracy — without needing the raw multiplier values stored.
+//
+// Interpretation:
+//   bias  > +10%  in a segment → projection consistently under-estimates that group
+//                               (multipliers for that segment may be too weak, or
+//                                the base projection already under-prices it)
+//   bias  < -10%  in a segment → projection consistently over-estimates that group
+//                               (multipliers may be too aggressive, or projections
+//                                already incorporate those factors and you're doubling)
+
+app.get('/api/history/multiplier-analysis', (req, res) => {
+  const history = readHistory();
+
+  const pairs = [];
+  history.forEach(entry => {
+    if (!entry.playerActuals || !Array.isArray(entry.lineup)) return;
+    entry.lineup.forEach(p => {
+      const actual = entry.playerActuals[p.name];
+      if (actual === undefined || actual === null) return;
+      const projected = p.median || 0;
+      if (projected <= 0) return;
+      const relError = (actual - projected) / projected;
+      pairs.push({
+        name: p.name,
+        team: p.team || 'UNK',
+        order: p.order || 0,
+        own: p.own || 0,
+        pos: (p.pos || '').includes('P') ? 'P' : 'BAT',
+        projected, actual, relError
+      });
+    });
+  });
+
+  if (pairs.length < 20) {
+    return res.json({
+      sufficient: false,
+      message: `Need at least 20 player actuals. Currently have ${pairs.length}.`
+    });
+  }
+
+  function segStats(arr) {
+    if (!arr.length) return null;
+    const n = arr.length;
+    const bias = arr.reduce((s, p) => s + p.relError, 0) / n;
+    const rmse = Math.sqrt(arr.reduce((s, p) => s + p.relError ** 2, 0) / n);
+    return { n, bias: parseFloat(bias.toFixed(4)), rmse: parseFloat(rmse.toFixed(4)) };
+  }
+
+  // ── Batting order tiers (order adjustment calibration) ─────────────────
+  const batters = pairs.filter(p => p.pos === 'BAT');
+  const orderTiers = {
+    'top (1-3)':    segStats(batters.filter(p => p.order >= 1 && p.order <= 3)),
+    'middle (4-6)': segStats(batters.filter(p => p.order >= 4 && p.order <= 6)),
+    'bottom (7-9)': segStats(batters.filter(p => p.order >= 7 && p.order <= 9)),
+    'unknown':      segStats(batters.filter(p => p.order === 0))
+  };
+
+  // ── Ownership tiers (leverage / GPP-score calibration) ─────────────────
+  const ownershipTiers = {
+    'chalk (>30%)':    segStats(pairs.filter(p => p.own > 30)),
+    'mid (15-30%)':    segStats(pairs.filter(p => p.own > 15 && p.own <= 30)),
+    'low (5-15%)':     segStats(pairs.filter(p => p.own > 5  && p.own <= 15)),
+    'contrarian (<5%)':segStats(pairs.filter(p => p.own > 0  && p.own <= 5))
+  };
+
+  // ── Per-team bias (park factor / Vegas calibration) ─────────────────────
+  const teamGroups = {};
+  pairs.forEach(p => {
+    if (!teamGroups[p.team]) teamGroups[p.team] = [];
+    teamGroups[p.team].push(p);
+  });
+  const teamBias = {};
+  Object.entries(teamGroups).forEach(([team, arr]) => {
+    if (arr.length >= 5) teamBias[team] = segStats(arr);
+  });
+
+  // ── Position bias (pitcher vs batter calibration) ───────────────────────
+  const positionBias = {
+    pitchers: segStats(pairs.filter(p => p.pos === 'P')),
+    batters:  segStats(pairs.filter(p => p.pos === 'BAT'))
+  };
+
+  // ── Actionable recommendations ───────────────────────────────────────────
+  const recommendations = [];
+
+  // Order tiers
+  const topOrder = orderTiers['top (1-3)'];
+  const botOrder = orderTiers['bottom (7-9)'];
+  if (topOrder && Math.abs(topOrder.bias) > 0.10) {
+    recommendations.push(topOrder.bias > 0
+      ? `Top-order batters are under-projected by ${(topOrder.bias * 100).toFixed(0)}% on average — consider increasing the order bonus in scoreGpp/scoreCash.`
+      : `Top-order batters are over-projected by ${Math.abs(topOrder.bias * 100).toFixed(0)}% — the batting order bonus may be too large.`
+    );
+  }
+  if (botOrder && botOrder.bias > 0.10) {
+    recommendations.push(`Bottom-order batters outperform projections by ${(botOrder.bias * 100).toFixed(0)}% — projection source may be systematically under-valuing them.`);
+  }
+
+  // Ownership tiers
+  const chalk  = ownershipTiers['chalk (>30%)'];
+  const contra = ownershipTiers['contrarian (<5%)'];
+  if (chalk && chalk.bias < -0.10) {
+    recommendations.push(`High-ownership chalk is over-projected by ${Math.abs(chalk.bias * 100).toFixed(0)}% — your chalk plays disappoint more often than expected.`);
+  }
+  if (contra && contra.bias < -0.15) {
+    recommendations.push(`Contrarian plays (<5% own) miss badly (${Math.abs(contra.bias * 100).toFixed(0)}% average over-projection) — the low-ownership edge isn't materializing in your data.`);
+  }
+
+  // Team bias outliers (potential park factor / Vegas miscalibration)
+  const teamBiasOutliers = Object.entries(teamBias)
+    .filter(([, s]) => Math.abs(s.bias) > 0.15 && s.n >= 8)
+    .sort((a, b) => Math.abs(b[1].bias) - Math.abs(a[1].bias))
+    .slice(0, 5);
+  if (teamBiasOutliers.length) {
+    teamBiasOutliers.forEach(([team, s]) => {
+      recommendations.push(
+        s.bias > 0
+          ? `${team} players are under-projected by ${(s.bias * 100).toFixed(0)}% (n=${s.n}) — park/Vegas boost may be too small or absent for this team.`
+          : `${team} players are over-projected by ${Math.abs(s.bias * 100).toFixed(0)}% (n=${s.n}) — park/Vegas boost may be double-counting factors already in your projection CSV.`
+      );
+    });
+  }
+
+  if (!recommendations.length) {
+    recommendations.push('No significant segment bias detected with current data. Collect more actuals for higher confidence.');
+  }
+
+  res.json({
+    sufficient: true,
+    sampleSize: pairs.length,
+    orderTiers,
+    ownershipTiers,
+    teamBias,
+    positionBias,
+    recommendations
+  });
+});
+
+// ── Source Quality Tracking ──────────────────────────────────────────────────
+
+const sourceQualityFile = path.join(dataDir, 'source_quality.json');
+
+function readSourceQuality() {
+  try {
+    if (fs.existsSync(sourceQualityFile)) return JSON.parse(fs.readFileSync(sourceQualityFile, 'utf8'));
+  } catch (e) {}
+  return {};
+}
+
+function writeSourceQuality(data) {
+  fs.writeFileSync(sourceQualityFile, JSON.stringify(data, null, 2));
+}
+
+function calcSpearman(pairs) {
+  const n = pairs.length;
+  if (n < 5) return null;
+  const sp = [...pairs].sort((a, b) => a.projected - b.projected);
+  const sa = [...pairs].sort((a, b) => a.actual - b.actual);
+  const pRank = new Array(n), aRank = new Array(n);
+  sp.forEach((item, rank) => { pRank[pairs.indexOf(item)] = rank; });
+  sa.forEach((item, rank) => { aRank[pairs.indexOf(item)] = rank; });
+  let d2 = 0;
+  for (let i = 0; i < n; i++) d2 += (pRank[i] - aRank[i]) ** 2;
+  return parseFloat((1 - (6 * d2) / (n * (n * n - 1))).toFixed(4));
+}
+
+app.get('/api/source-quality', (req, res) => {
+  res.json(readSourceQuality());
+});
+
+// Called by /api/actuals/apply (and can be called manually) to refresh
+// per-source accuracy after new actuals are loaded.
+// Body: { date, sources: [ { name: filename, projections: {playerName: median} } ] }
+app.post('/api/source-quality/update', (req, res) => {
+  const { date, sources } = req.body;
+  if (!date || !Array.isArray(sources) || !sources.length) {
+    return res.status(400).json({ error: 'date and sources[] required' });
+  }
+
+  // Fetch actuals for this date from history
+  const history = readHistory();
+  const allActuals = {};
+  history.forEach(entry => {
+    if (!entry.playerActuals) return;
+    const eDate = entry.slateDate || entry.date?.substring(0, 10);
+    if (eDate !== date) return;
+    Object.entries(entry.playerActuals).forEach(([name, score]) => {
+      // Take the highest score seen (handles duplicate entries for same slate)
+      if (allActuals[name] === undefined || score > allActuals[name]) {
+        allActuals[name] = score;
+      }
+    });
+  });
+
+  if (!Object.keys(allActuals).length) {
+    return res.json({ updated: 0, message: 'No actuals found for this date. Apply actuals first.' });
+  }
+
+  function normName(n) {
+    return (n || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
+  }
+
+  const quality = readSourceQuality();
+  let updatedSources = 0;
+
+  sources.forEach(({ name: fname, projections }) => {
+    if (!fname || !projections || !Object.keys(projections).length) return;
+
+    const pairs = [];
+    Object.entries(projections).forEach(([pName, projected]) => {
+      const norm = normName(pName);
+      // Direct match first
+      let actual = allActuals[pName] ?? allActuals[norm];
+      // Fallback: first-initial + last name
+      if (actual === undefined) {
+        const parts = norm.split(' ');
+        const lastName = parts[parts.length - 1];
+        const firstInit = norm.charAt(0);
+        const key = Object.keys(allActuals).find(k => {
+          const kp = normName(k).split(' ');
+          return kp[kp.length - 1] === lastName && normName(k).charAt(0) === firstInit;
+        });
+        if (key) actual = allActuals[key];
+      }
+      if (actual !== undefined && projected > 0) {
+        pairs.push({ projected, actual });
+      }
+    });
+
+    if (pairs.length < 5) return;
+
+    const bias = pairs.reduce((s, p) => s + (p.actual - p.projected) / p.projected, 0) / pairs.length;
+    const rmse = Math.sqrt(pairs.reduce((s, p) => s + ((p.actual - p.projected) / p.projected) ** 2, 0) / pairs.length);
+    const spearman = calcSpearman(pairs);
+
+    if (!quality[fname]) quality[fname] = { slates: [] };
+    quality[fname].slates = quality[fname].slates || [];
+    // Remove any existing entry for this date so we don't double-count
+    quality[fname].slates = quality[fname].slates.filter(s => s.date !== date);
+    quality[fname].slates.push({ date, n: pairs.length, bias: parseFloat(bias.toFixed(4)), rmse: parseFloat(rmse.toFixed(4)), spearman });
+    // Keep only last 60 slates
+    quality[fname].slates = quality[fname].slates.slice(-60);
+
+    // Compute rolling summary
+    const slates = quality[fname].slates;
+    quality[fname].summary = {
+      slateCount: slates.length,
+      avgSpearman: parseFloat((slates.reduce((s, sl) => s + (sl.spearman || 0), 0) / slates.length).toFixed(4)),
+      avgBias:     parseFloat((slates.reduce((s, sl) => s + sl.bias, 0) / slates.length).toFixed(4)),
+      avgRmse:     parseFloat((slates.reduce((s, sl) => s + sl.rmse, 0) / slates.length).toFixed(4)),
+      totalSamples: slates.reduce((s, sl) => s + sl.n, 0),
+      updatedAt: new Date().toISOString()
+    };
+    updatedSources++;
+  });
+
+  writeSourceQuality(quality);
+  res.json({ success: true, updatedSources, quality });
+});
+
 app.listen(PORT, () => {
   console.log(`MLB DFS Tool v2.0 running on http://localhost:${PORT}`);
   console.log(`Uploads: ${uploadDir}`);

@@ -48,6 +48,10 @@
     <div class="fi" id="fi-ts"><div class="fdot" id="fd-ts"></div><div class="fn" id="fn-ts">Team Scoring Percentages</div><div class="fc" id="fc-ts">not loaded</div></div>
     <div class="fi" id="fi-opt"><div class="fdot" id="fd-opt"></div><div class="fn" id="fn-opt">Optimal Lineups (optimizer export)</div><div class="fc" id="fc-opt">not loaded</div></div>
   </div>
+  <div id="source-quality-panel" style="display:none;margin-top:8px;padding:8px 10px;background:var(--bs);border-radius:var(--r);border:0.5px solid var(--brd-s)">
+    <div style="font-size:11px;font-weight:600;color:var(--ts);margin-bottom:6px">Projection Source Quality (from historical actuals)</div>
+    <div id="source-quality-rows"></div>
+  </div>
   <div class="drop" id="dropzone" onclick="document.getElementById('file-input').click()" ondragover="handleDrag(event,true)" ondragleave="handleDrag(event,false)" ondrop="handleDrop(event)">
     <input type="file" id="file-input" accept=".csv" multiple onchange="handleFiles(this.files)">
     <div style="width:36px;height:36px;margin:0 auto 10px;opacity:.4;border:2px solid var(--ts);border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:18px">+</div>
