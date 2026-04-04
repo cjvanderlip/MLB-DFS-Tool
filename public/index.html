@@ -338,6 +338,20 @@
       <label>Min Implied Total <span style="font-weight:400;text-transform:none;letter-spacing:0">(0=off)</span></label>
       <input type="number" id="port-min-implied" value="0" min="0" max="7" step="0.5" title="Only stack teams whose Vegas implied run total meets this threshold. 0 = no filter. Recommended: 3.5–4.0." onchange="saveSession()">
     </div>
+    <div class="config-item">
+      <label>Min Game O/U <span style="font-weight:400;text-transform:none;letter-spacing:0">(0=off)</span></label>
+      <input type="number" id="port-min-game-total" value="0" min="0" max="15" step="0.5" title="Only stack games with over/under ≥ this. 0 = no filter. Recommended: 8.0+" onchange="saveSession()">
+    </div>
+    <div class="config-item">
+      <label>Max Opp SP K/9 <span style="font-weight:400;text-transform:none;letter-spacing:0">(0=off)</span></label>
+      <input type="number" id="port-max-opp-k9" value="0" min="0" max="15" step="0.5" title="Skip stacking against SPs with K/9 above this. 0 = no filter. Recommended: 10." onchange="saveSession()">
+    </div>
+    <div class="config-item" style="justify-content:center">
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+        <input type="checkbox" id="port-block-neg-weather" style="width:14px;height:14px" onchange="saveSession()">
+        Skip Rain-Risk Stacks <span style="font-weight:400;text-transform:none;letter-spacing:0">(≥50% precip)</span>
+      </label>
+    </div>
     <div class="config-item" style="justify-content:center">
       <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
         <input type="checkbox" id="port-allow-bvp" style="width:14px;height:14px">
@@ -345,6 +359,15 @@
       </label>
     </div>
     <div class="config-item">
+      <label>Stack Size</label>
+      <select id="port-stack-size" title="Force all GPP lineups to use a specific stack size, or Mix to split 3-man + 5-man by percentage." onchange="toggleStackMix(); saveSession()">
+        <option value="mix">Mix (3 + 5-man)</option>
+        <option value="3">3-man only</option>
+        <option value="4">4-man only</option>
+        <option value="5">5-man only</option>
+      </select>
+    </div>
+    <div class="config-item" id="stack-mix-row">
       <label>5-Man Stack % <span style="font-weight:400;text-transform:none;letter-spacing:0">(of GPP lineups)</span></label>
       <input type="number" id="port-stack-pct5" value="50" min="0" max="100" step="5" placeholder="50" title="% of lineups targeting a 5-man stack. Remainder will target 3-man." onchange="saveSession()">
     </div>

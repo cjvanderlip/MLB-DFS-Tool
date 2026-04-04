@@ -687,6 +687,53 @@ app.post('/api/actuals/apply', async (req, res) => {
   }
 });
 
+// Ownership calibration: compare projected own% vs actual own% across history entries
+function calcOwnershipCalibration(history) {
+  const pairs = [];
+  history.forEach(entry => {
+    if (!entry.actualOwnership || !Array.isArray(entry.lineup)) return;
+    entry.lineup.forEach(p => {
+      const actualOwn = entry.actualOwnership[p.name];
+      if (actualOwn == null || (p.own || 0) <= 0) return;
+      pairs.push({ name: p.name, projected: p.own, actual: actualOwn, error: actualOwn - p.own });
+    });
+  });
+  if (pairs.length < 5) return null;
+  const n = pairs.length;
+  const avgError = pairs.reduce((s, p) => s + p.error, 0) / n;
+  const rmse = Math.sqrt(pairs.reduce((s, p) => s + p.error * p.error, 0) / n);
+  const mae = pairs.reduce((s, p) => s + Math.abs(p.error), 0) / n;
+  // Correlation
+  const avgP = pairs.reduce((s, p) => s + p.projected, 0) / n;
+  const avgA = pairs.reduce((s, p) => s + p.actual, 0) / n;
+  let sumXY = 0, sumXX = 0, sumYY = 0;
+  pairs.forEach(p => {
+    sumXY += (p.projected - avgP) * (p.actual - avgA);
+    sumXX += (p.projected - avgP) ** 2;
+    sumYY += (p.actual - avgA) ** 2;
+  });
+  const corr = sumXX > 0 && sumYY > 0 ? sumXY / Math.sqrt(sumXX * sumYY) : 0;
+  // Bucket analysis: low (<10%), mid (10-25%), high (>25%) projected ownership
+  const bucket = (min, max) => {
+    const b = pairs.filter(p => p.projected >= min && p.projected < max);
+    return b.length >= 3 ? { count: b.length, avgError: parseFloat((b.reduce((s, p) => s + p.error, 0) / b.length).toFixed(2)) } : null;
+  };
+  return {
+    sampleSize: n,
+    slates: [...new Set(history.filter(h => h.actualOwnership).map(h => h.slateDate || ''))].length,
+    avgError: parseFloat(avgError.toFixed(2)),
+    rmse: parseFloat(rmse.toFixed(2)),
+    mae: parseFloat(mae.toFixed(2)),
+    correlation: parseFloat(corr.toFixed(4)),
+    lowOwn: bucket(0, 10),
+    midOwn: bucket(10, 25),
+    highOwn: bucket(25, 100),
+    diagnosis: Math.abs(avgError) < 2 ? 'well_calibrated'
+      : avgError > 0 ? 'under_projecting_ownership'
+      : 'over_projecting_ownership'
+  };
+}
+
 // GET /api/history/analysis — projection accuracy statistics for model tuning
 app.get('/api/history/analysis', (req, res) => {
   const history = readHistory();
@@ -747,6 +794,46 @@ app.get('/api/history/analysis', (req, res) => {
 
   const confidence = pairs.length >= 100 ? 'high' : pairs.length >= 40 ? 'medium' : pairs.length >= 20 ? 'low' : 'insufficient';
 
+  // ── Simulation distribution calibration ──────────────────────────────────
+  // For each player, compute p90 from their floor/median/ceiling distribution
+  // then check what fraction of actuals exceeded that p90 threshold.
+  // If the sim is well-calibrated, ~10% of actuals should exceed p90.
+  // If it's consistently << 10%, tails are too fat (overconfident ceiling).
+  // If >> 10%, tails are too tight (underconfident).
+  let simCalibration = null;
+  const simPairs = pairs.filter(p => p.ceiling > 0 && p.floor >= 0);
+  if (simPairs.length >= 10) {
+    let exceedP90 = 0, exceedP75 = 0, belowP10 = 0;
+    simPairs.forEach(p => {
+      // Reconstruct the asymmetric distribution the engine uses
+      const leftStd = Math.max((p.projected - p.floor) / 1.5, 0.5);
+      const rightStd = Math.max((p.ceiling - p.projected) / 1.5, 0.5);
+      // P90 ≈ median + 1.28 × rightStd (90th percentile of right-skewed normal)
+      const estP90 = p.projected + 1.28 * rightStd;
+      // P75 ≈ median + 0.67 × rightStd
+      const estP75 = p.projected + 0.67 * rightStd;
+      // P10 ≈ median - 1.28 × leftStd
+      const estP10 = p.projected - 1.28 * leftStd;
+      if (p.actual > estP90) exceedP90++;
+      if (p.actual > estP75) exceedP75++;
+      if (p.actual < estP10) belowP10++;
+    });
+    const n = simPairs.length;
+    simCalibration = {
+      sampleSize: n,
+      actualP90ExceedRate: parseFloat((exceedP90 / n * 100).toFixed(1)),
+      expectedP90Rate: 10.0,
+      actualP75ExceedRate: parseFloat((exceedP75 / n * 100).toFixed(1)),
+      expectedP75Rate: 25.0,
+      actualBelowP10Rate: parseFloat((belowP10 / n * 100).toFixed(1)),
+      expectedP10Rate: 10.0,
+      // Diagnosis
+      tailDiagnosis: exceedP90 / n < 0.05 ? 'tails_too_fat'
+        : exceedP90 / n > 0.18 ? 'tails_too_tight'
+        : 'well_calibrated'
+    };
+  }
+
   res.json({
     sampleSize: pairs.length,
     sufficient: pairs.length >= 20,
@@ -761,7 +848,9 @@ app.get('/api/history/analysis', (req, res) => {
       pitcherCalibration: pitcherStats?.calibrationFactor ?? 1.0,
       batterCalibration: batterStats?.calibrationFactor ?? 1.0,
       confidence
-    }
+    },
+    simCalibration,
+    ownershipCalibration: calcOwnershipCalibration(history)
   });
 });
 

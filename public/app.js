@@ -1428,7 +1428,7 @@ function renderTeamExposureOverrides() {
 
   chipsEl.innerHTML = teams.map(t => {
     const active = !!STATE.teamExposureOverrides[t];
-    return `<span class="chip${active ? ' selected' : ''}" style="cursor:pointer" onclick="toggleTeamExposureOverride(${JSON.stringify(t)})">${esc(t)}</span>`;
+    return `<span class="chip${active ? ' selected' : ''}" style="cursor:pointer" onclick="toggleTeamExposureOverride('${escAttr(t)}')">${esc(t)}</span>`;
   }).join('');
 
   const overrideTeams = Object.keys(STATE.teamExposureOverrides);
@@ -1448,9 +1448,9 @@ function renderTeamExposureOverrides() {
       const ov = STATE.teamExposureOverrides[team];
       return `<tr>
         <td style="padding:4px 6px"><strong>${esc(team)}</strong></td>
-        <td style="padding:4px 6px;text-align:center"><input type="number" min="0" max="100" step="5" value="${ov.min ?? ''}" placeholder="—" style="width:52px;font-size:11px;padding:2px 4px;border:0.5px solid var(--brd-s);border-radius:4px;background:var(--bp);color:var(--tp);text-align:center" oninput="updateTeamExposureOverride(${JSON.stringify(team)},'min',this.value)"></td>
-        <td style="padding:4px 6px;text-align:center"><input type="number" min="0" max="100" step="5" value="${ov.max ?? ''}" placeholder="—" style="width:52px;font-size:11px;padding:2px 4px;border:0.5px solid var(--brd-s);border-radius:4px;background:var(--bp);color:var(--tp);text-align:center" oninput="updateTeamExposureOverride(${JSON.stringify(team)},'max',this.value)"></td>
-        <td style="padding:4px 6px"><button class="btn" style="padding:2px 7px;font-size:10px;color:var(--td)" onclick="toggleTeamExposureOverride(${JSON.stringify(team)})">✕</button></td>
+        <td style="padding:4px 6px;text-align:center"><input type="number" min="0" max="100" step="5" value="${ov.min ?? ''}" placeholder="—" style="width:52px;font-size:11px;padding:2px 4px;border:0.5px solid var(--brd-s);border-radius:4px;background:var(--bp);color:var(--tp);text-align:center" oninput="updateTeamExposureOverride('${escAttr(team)}','min',this.value)"></td>
+        <td style="padding:4px 6px;text-align:center"><input type="number" min="0" max="100" step="5" value="${ov.max ?? ''}" placeholder="—" style="width:52px;font-size:11px;padding:2px 4px;border:0.5px solid var(--brd-s);border-radius:4px;background:var(--bp);color:var(--tp);text-align:center" oninput="updateTeamExposureOverride('${escAttr(team)}','max',this.value)"></td>
+        <td style="padding:4px 6px"><button class="btn" style="padding:2px 7px;font-size:10px;color:var(--td)" onclick="toggleTeamExposureOverride('${escAttr(team)}')">✕</button></td>
       </tr>`;
     }).join('')}</tbody>
   </table>`;
@@ -1485,6 +1485,12 @@ function toggleTeamChip(el, containerId) {
   }
   el.classList.toggle('selected');
   validatePortfolioSettings();
+}
+
+function toggleStackMix() {
+  const val = document.getElementById('port-stack-size')?.value;
+  const row = document.getElementById('stack-mix-row');
+  if (row) row.style.display = val === 'mix' ? '' : 'none';
 }
 
 function validatePortfolioSettings() {
@@ -1540,8 +1546,10 @@ function generatePortfolio() {
   const portContestSize = parseInt(document.getElementById('port-contest-size').value) || 1000;
   const maxOverlapVal = parseInt(document.getElementById('port-max-overlap')?.value) || 0;
   const allowBvP = document.getElementById('port-allow-bvp')?.checked || false;
+  const stackSizeVal = document.getElementById('port-stack-size')?.value || 'mix';
+  const stackSize = stackSizeVal !== 'mix' ? parseInt(stackSizeVal) : null;
   const stackPct5Raw = document.getElementById('port-stack-pct5')?.value;
-  const stackPct5 = stackPct5Raw !== '' && stackPct5Raw != null ? parseInt(stackPct5Raw) : null;
+  const stackPct5 = stackSize == null && stackPct5Raw !== '' && stackPct5Raw != null ? parseInt(stackPct5Raw) : null;
   const lockedTeams = getCheckedTeams('port-lock-teams');
   const bannedTeams = getCheckedTeams('port-ban-teams');
   // Convert playerExposureOverrides from % to 0-1 ratios for engine
@@ -1578,11 +1586,14 @@ function generatePortfolio() {
       const ctx = getEngineContext();
       ctx.contestSize = portContestSize;
       ctx.minImpliedTotal = parseFloat(document.getElementById('port-min-implied')?.value) || 0;
+      ctx.minGameTotal = parseFloat(document.getElementById('port-min-game-total')?.value) || 0;
+      ctx.maxOppK9 = parseFloat(document.getElementById('port-max-opp-k9')?.value) || 0;
+      ctx.blockNegWeather = document.getElementById('port-block-neg-weather')?.checked || false;
       const result = await Engine.buildPortfolio(getCalibratedPool(), {
         numLineups, maxExposure, maxExposurePitcher, contestType, contestSize: portContestSize,
         maxOverlap: maxOverlapVal,
         allowBvP,
-        playerOverrides, teamExposureOverrides: teamOverrides, stackPct5,
+        playerOverrides, teamExposureOverrides: teamOverrides, stackPct5, stackSize,
         stacks3: STATE.STACKS3, stacks5: STATE.STACKS5,
         lockedTeams, bannedTeams,
         context: ctx, iterations: OPTIMIZER_ITERATIONS
@@ -2188,8 +2199,31 @@ function renderBacktestPanel(history, summary) {
         <td>$${h.buyin || 0}</td>
         <td><input type="number" step="0.01" value="${h.winnings || ''}" placeholder="\u2014" style="width:70px;font-size:11px;padding:2px 4px;border-radius:4px;border:0.5px solid var(--brd-s);background:var(--bp);color:var(--tp)" onchange="updateHistoryField('${h.id}','winnings',this.value)"></td>
         <td style="color:${roiColor};font-weight:500">${roi}</td>
-        <td><button class="btn" style="padding:2px 6px;font-size:10px;color:var(--td)" onclick="deleteHistoryEntry('${h.id}')">x</button></td>
-      </tr>`;
+        <td style="white-space:nowrap">
+          ${hasPlayerActuals ? `<button class="btn" style="padding:2px 6px;font-size:10px" onclick="toggleAttribution('${h.id}')" title="Score attribution breakdown">📊</button>` : ''}
+          <button class="btn" style="padding:2px 6px;font-size:10px" onclick="toggleOwnershipEntry('${h.id}')" title="Enter actual ownership">own%</button>
+          <button class="btn" style="padding:2px 6px;font-size:10px;color:var(--td)" onclick="deleteHistoryEntry('${h.id}')">x</button>
+        </td>
+      </tr>
+      <tr id="attr-row-${h.id}" style="display:none"><td colspan="9"><div id="attr-content-${h.id}" style="padding:6px 8px;background:var(--bs);border-radius:var(--r);font-size:11px;color:var(--tt)">Loading...</div></td></tr>
+      <tr id="own-row-${h.id}" style="display:none"><td colspan="9">
+        <div style="padding:6px 8px;background:var(--bs);border-radius:var(--r);font-size:11px">
+          <strong style="color:var(--tt)">Actual Ownership %</strong>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">
+            ${(h.lineup || []).filter(p => (p.own || 0) > 0).map(p => {
+              const actual = h.actualOwnership?.[p.name];
+              return `<label style="display:flex;align-items:center;gap:2px">
+                <span style="color:var(--ts)">${esc(p.name.split(' ').pop())}(${(p.own||0).toFixed(0)}%)</span>
+                <input type="number" step="0.1" min="0" max="100" value="${actual != null ? actual : ''}" placeholder="—"
+                  style="width:48px;font-size:10px;padding:2px 3px;border-radius:3px;border:0.5px solid var(--brd-s);background:var(--bp);color:var(--tp)"
+                  data-hist-id="${h.id}" data-player="${esc(p.name)}" class="own-actual-input">
+              </label>`;
+            }).join('')}
+          </div>
+          <button class="btn" style="margin-top:4px;padding:2px 8px;font-size:10px" onclick="saveActualOwnership('${h.id}')">Save Ownership</button>
+          ${h.actualOwnership ? '<span style="margin-left:6px;color:var(--tsu);font-size:10px">✓ saved</span>' : ''}
+        </div>
+      </td></tr>`;
     }).join('')}</tbody></table></div>`;
   } else {
     histHtml = '<div class="empty" style="padding:20px">No lineup history yet. Save lineups to track performance.</div>';
@@ -2315,6 +2349,122 @@ async function updateHistoryField(id, field, value) {
   } catch (e) { console.error('Update history failed:', e); }
 }
 
+function toggleOwnershipEntry(id) {
+  const row = document.getElementById('own-row-' + id);
+  if (row) row.style.display = row.style.display === 'none' ? '' : 'none';
+}
+
+async function saveActualOwnership(id) {
+  const inputs = document.querySelectorAll(`.own-actual-input[data-hist-id="${id}"]`);
+  const actualOwnership = {};
+  inputs.forEach(inp => {
+    const val = parseFloat(inp.value);
+    if (!isNaN(val) && val >= 0) actualOwnership[inp.dataset.player] = val;
+  });
+  if (!Object.keys(actualOwnership).length) return;
+  try {
+    await fetch('/api/history/' + id, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ actualOwnership })
+    });
+    showToast(`Ownership saved for ${Object.keys(actualOwnership).length} players`, 'success');
+    loadHistory();
+  } catch (e) { showToast('Failed to save ownership', 'error'); }
+}
+
+function toggleAttribution(id) {
+  const row = document.getElementById('attr-row-' + id);
+  if (!row) return;
+  if (row.style.display === 'none') {
+    row.style.display = '';
+    renderAttribution(id);
+  } else {
+    row.style.display = 'none';
+  }
+}
+
+function renderAttribution(id) {
+  const el = document.getElementById('attr-content-' + id);
+  const h = STATE.historyData.find(e => e.id === id);
+  if (!h || !h.playerActuals || !h.lineup) {
+    el.innerHTML = '<span style="color:var(--tw)">No actuals loaded for this entry.</span>';
+    return;
+  }
+
+  // Classify each player's role: SP, primary stack, secondary stack, bring-back, fill
+  const lineup = h.lineup;
+  const teamCounts = {};
+  lineup.forEach(p => {
+    if (!(p.pos || '').includes('P')) teamCounts[p.team] = (teamCounts[p.team] || 0) + 1;
+  });
+  const stackTeams = Object.entries(teamCounts).filter(([, c]) => c >= 3).sort((a, b) => b[1] - a[1]);
+  const primaryStack = stackTeams[0]?.[0] || null;
+  const secondaryStack = stackTeams[1]?.[0] || null;
+  const stackTeamSet = new Set(stackTeams.map(([t]) => t));
+
+  // Find bring-back: non-pitcher, not on a stack team, but on a team that opposes a stack team
+  const oppTeams = new Set();
+  lineup.forEach(p => { if (stackTeamSet.has(p.team)) oppTeams.add(p.opp); });
+
+  const roles = { SP: [], 'Primary Stack': [], 'Secondary Stack': [], 'Bring-Back': [], 'Fill/Pivot': [] };
+
+  lineup.forEach(p => {
+    const actual = h.playerActuals[p.name];
+    if (actual == null) return;
+    const entry = { name: p.name, actual, projected: p.median || 0 };
+    if ((p.pos || '').includes('P')) {
+      roles['SP'].push(entry);
+    } else if (p.team === primaryStack) {
+      roles['Primary Stack'].push(entry);
+    } else if (p.team === secondaryStack) {
+      roles['Secondary Stack'].push(entry);
+    } else if (oppTeams.has(p.team) && !stackTeamSet.has(p.team)) {
+      roles['Bring-Back'].push(entry);
+    } else {
+      roles['Fill/Pivot'].push(entry);
+    }
+  });
+
+  const totalActual = Object.values(roles).flat().reduce((s, e) => s + e.actual, 0);
+  if (totalActual <= 0) {
+    el.innerHTML = '<span style="color:var(--tw)">Total actual score is 0 — cannot compute attribution.</span>';
+    return;
+  }
+
+  // Build horizontal bar chart
+  const colors = { SP: '#4e79a7', 'Primary Stack': '#59a14f', 'Secondary Stack': '#9c755f', 'Bring-Back': '#edc948', 'Fill/Pivot': '#b07aa1' };
+  let barsHtml = '<div style="display:flex;height:22px;border-radius:4px;overflow:hidden;margin-bottom:8px">';
+  const segments = [];
+  Object.entries(roles).forEach(([role, players]) => {
+    const pts = players.reduce((s, e) => s + e.actual, 0);
+    if (pts <= 0) return;
+    const pct = pts / totalActual * 100;
+    segments.push({ role, pts, pct, count: players.length });
+    barsHtml += `<div style="width:${pct}%;background:${colors[role]};display:flex;align-items:center;justify-content:center;font-size:9px;color:#fff;font-weight:600;min-width:20px" title="${role}: ${pts.toFixed(1)} pts (${pct.toFixed(1)}%)">${pct >= 8 ? pct.toFixed(0) + '%' : ''}</div>`;
+  });
+  barsHtml += '</div>';
+
+  // Legend + detail table
+  let detailHtml = '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:6px">';
+  segments.forEach(s => {
+    detailHtml += `<span style="font-size:10px"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${colors[s.role]};margin-right:3px"></span>${s.role}: <strong>${s.pts.toFixed(1)}</strong> pts (${s.pct.toFixed(1)}%)</span>`;
+  });
+  detailHtml += '</div>';
+
+  // Player-level breakdown
+  detailHtml += '<table style="font-size:10px;width:100%"><thead><tr><th>Player</th><th>Role</th><th>Proj</th><th>Actual</th><th>Δ</th></tr></thead><tbody>';
+  Object.entries(roles).forEach(([role, players]) => {
+    players.forEach(p => {
+      const delta = p.actual - p.projected;
+      const deltaColor = delta >= 0 ? 'var(--tsu)' : 'var(--td)';
+      detailHtml += `<tr><td>${esc(p.name)}</td><td><span style="color:${colors[role]}">${role}</span></td><td>${p.projected.toFixed(1)}</td><td><strong>${p.actual.toFixed(1)}</strong></td><td style="color:${deltaColor}">${delta >= 0 ? '+' : ''}${delta.toFixed(1)}</td></tr>`;
+    });
+  });
+  detailHtml += '</tbody></table>';
+
+  el.innerHTML = `<strong style="color:var(--tp)">Score Attribution</strong> · ${totalActual.toFixed(1)} total pts` + barsHtml + detailHtml;
+}
+
 async function deleteHistoryEntry(id) {
   try {
     await fetch('/api/history/' + id, { method: 'DELETE' });
@@ -2438,6 +2588,71 @@ function renderModelAnalysis(data) {
       <button class="btn" onclick="resetCalibration()">Reset to Default</button>
       <span id="cal-status" style="font-size:11px;color:var(--ts)"></span>
     </div>
+
+    ${data.simCalibration ? `
+    <div class="sec-label" style="margin-top:12px">Simulation Tail Calibration</div>
+    <div style="background:var(--bs);border-radius:var(--r);padding:12px;margin-bottom:10px;font-size:12px">
+      <div style="margin-bottom:4px;color:var(--tt)">${data.simCalibration.sampleSize} player outcomes analyzed</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px">
+        <div>
+          <div style="color:var(--tt);font-size:10px;text-transform:uppercase">Actual > P90</div>
+          <div style="font-size:16px;font-weight:600;color:${Math.abs(data.simCalibration.actualP90ExceedRate - 10) < 5 ? 'var(--tsu)' : 'var(--tw)'}">${data.simCalibration.actualP90ExceedRate}%</div>
+          <div style="font-size:10px;color:var(--tt)">expected ~10%</div>
+        </div>
+        <div>
+          <div style="color:var(--tt);font-size:10px;text-transform:uppercase">Actual > P75</div>
+          <div style="font-size:16px;font-weight:600;color:${Math.abs(data.simCalibration.actualP75ExceedRate - 25) < 8 ? 'var(--tsu)' : 'var(--tw)'}">${data.simCalibration.actualP75ExceedRate}%</div>
+          <div style="font-size:10px;color:var(--tt)">expected ~25%</div>
+        </div>
+        <div>
+          <div style="color:var(--tt);font-size:10px;text-transform:uppercase">Actual < P10</div>
+          <div style="font-size:16px;font-weight:600;color:${Math.abs(data.simCalibration.actualBelowP10Rate - 10) < 5 ? 'var(--tsu)' : 'var(--tw)'}">${data.simCalibration.actualBelowP10Rate}%</div>
+          <div style="font-size:10px;color:var(--tt)">expected ~10%</div>
+        </div>
+      </div>
+      <div style="font-size:11px;color:${data.simCalibration.tailDiagnosis === 'well_calibrated' ? 'var(--tsu)' : 'var(--tw)'}">
+        ${data.simCalibration.tailDiagnosis === 'well_calibrated' ? '✓ Distributions are well-calibrated — tail probabilities match observed rates.'
+        : data.simCalibration.tailDiagnosis === 'tails_too_fat' ? '⚠ Distributions have tails that are too fat — ceiling projections are overconfident. Consider reducing Score Diversity slider or tightening ceiling estimates.'
+        : '⚠ Distributions have tails that are too tight — ceiling projections are underconfident. Consider increasing Score Diversity slider.'}
+      </div>
+    </div>
+    ` : ''}
+
+    ${data.ownershipCalibration ? `
+    <div class="sec-label" style="margin-top:12px">Ownership Projection Calibration</div>
+    <div style="background:var(--bs);border-radius:var(--r);padding:12px;margin-bottom:10px;font-size:12px">
+      <div style="margin-bottom:4px;color:var(--tt)">${data.ownershipCalibration.sampleSize} player-ownership pairs across ${data.ownershipCalibration.slates} slate${data.ownershipCalibration.slates !== 1 ? 's' : ''}</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px">
+        <div>
+          <div style="color:var(--tt);font-size:10px;text-transform:uppercase">MAE</div>
+          <div style="font-size:16px;font-weight:600;color:${data.ownershipCalibration.mae < 5 ? 'var(--tsu)' : 'var(--tw)'}">${data.ownershipCalibration.mae}%</div>
+          <div style="font-size:10px;color:var(--tt)">avg absolute error</div>
+        </div>
+        <div>
+          <div style="color:var(--tt);font-size:10px;text-transform:uppercase">Correlation</div>
+          <div style="font-size:16px;font-weight:600;color:${data.ownershipCalibration.correlation > 0.7 ? 'var(--tsu)' : data.ownershipCalibration.correlation > 0.4 ? 'var(--ti)' : 'var(--td)'}">${data.ownershipCalibration.correlation.toFixed(3)}</div>
+          <div style="font-size:10px;color:var(--tt)">projected vs actual</div>
+        </div>
+        <div>
+          <div style="color:var(--tt);font-size:10px;text-transform:uppercase">Avg Bias</div>
+          <div style="font-size:16px;font-weight:600;color:${Math.abs(data.ownershipCalibration.avgError) < 2 ? 'var(--tsu)' : 'var(--tw)'}">${data.ownershipCalibration.avgError > 0 ? '+' : ''}${data.ownershipCalibration.avgError}%</div>
+          <div style="font-size:10px;color:var(--tt)">${data.ownershipCalibration.avgError > 0 ? 'under-projecting' : data.ownershipCalibration.avgError < 0 ? 'over-projecting' : 'neutral'}</div>
+        </div>
+      </div>
+      ${data.ownershipCalibration.lowOwn || data.ownershipCalibration.midOwn || data.ownershipCalibration.highOwn ? `
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:6px">
+        ${data.ownershipCalibration.lowOwn ? `<div style="font-size:10px"><span style="color:var(--tt)">Low Own (<10%)</span><br>bias: <strong>${data.ownershipCalibration.lowOwn.avgError > 0 ? '+' : ''}${data.ownershipCalibration.lowOwn.avgError}%</strong> (${data.ownershipCalibration.lowOwn.count})</div>` : '<div></div>'}
+        ${data.ownershipCalibration.midOwn ? `<div style="font-size:10px"><span style="color:var(--tt)">Mid Own (10-25%)</span><br>bias: <strong>${data.ownershipCalibration.midOwn.avgError > 0 ? '+' : ''}${data.ownershipCalibration.midOwn.avgError}%</strong> (${data.ownershipCalibration.midOwn.count})</div>` : '<div></div>'}
+        ${data.ownershipCalibration.highOwn ? `<div style="font-size:10px"><span style="color:var(--tt)">High Own (>25%)</span><br>bias: <strong>${data.ownershipCalibration.highOwn.avgError > 0 ? '+' : ''}${data.ownershipCalibration.highOwn.avgError}%</strong> (${data.ownershipCalibration.highOwn.count})</div>` : '<div></div>'}
+      </div>` : ''}
+      <div style="font-size:11px;color:${data.ownershipCalibration.diagnosis === 'well_calibrated' ? 'var(--tsu)' : 'var(--tw)'}">
+        ${data.ownershipCalibration.diagnosis === 'well_calibrated' ? '✓ Ownership projections are well-calibrated.'
+        : data.ownershipCalibration.diagnosis === 'under_projecting_ownership' ? '⚠ Under-projecting ownership — actual own% is higher than projected. Your "contrarian" plays may not be as contrarian as you think.'
+        : '⚠ Over-projecting ownership — actual own% is lower than projected. You may be over-fading popular plays.'}
+      </div>
+    </div>
+    ` : ''}
+
     <div id="active-calibration" style="margin-top:8px;font-size:11px;color:var(--tt)"></div>
   `;
   renderActiveCalibration();
@@ -3410,7 +3625,11 @@ function saveSession() {
         contestSize: document.getElementById('port-contest-size')?.value,
         maxOverlap: document.getElementById('port-max-overlap')?.value,
         minImplied: document.getElementById('port-min-implied')?.value,
+        minGameTotal: document.getElementById('port-min-game-total')?.value,
+        maxOppK9: document.getElementById('port-max-opp-k9')?.value,
+        blockNegWeather: document.getElementById('port-block-neg-weather')?.checked || false,
         allowBvP: document.getElementById('port-allow-bvp')?.checked || false,
+        stackSize: document.getElementById('port-stack-size')?.value,
         stackPct5: document.getElementById('port-stack-pct5')?.value,
         cashLine: document.getElementById('port-cash-line')?.value,
         winLine: document.getElementById('port-win-line')?.value,
@@ -3454,7 +3673,11 @@ function restoreSession() {
     if (pc.contestSize) { const el = document.getElementById('port-contest-size'); if (el) el.value = pc.contestSize; }
     if (pc.maxOverlap != null) { const el = document.getElementById('port-max-overlap'); if (el) el.value = pc.maxOverlap; }
     if (pc.minImplied != null) { const el = document.getElementById('port-min-implied'); if (el) el.value = pc.minImplied; }
+    if (pc.minGameTotal != null) { const el = document.getElementById('port-min-game-total'); if (el) el.value = pc.minGameTotal; }
+    if (pc.maxOppK9 != null) { const el = document.getElementById('port-max-opp-k9'); if (el) el.value = pc.maxOppK9; }
+    if (pc.blockNegWeather != null) { const el = document.getElementById('port-block-neg-weather'); if (el) el.checked = pc.blockNegWeather; }
     if (pc.allowBvP != null) { const el = document.getElementById('port-allow-bvp'); if (el) el.checked = pc.allowBvP; }
+    if (pc.stackSize != null) { const el = document.getElementById('port-stack-size'); if (el) { el.value = pc.stackSize; toggleStackMix(); } }
     if (pc.stackPct5 != null) { const el = document.getElementById('port-stack-pct5'); if (el) el.value = pc.stackPct5; }
     if (pc.cashLine) { const el = document.getElementById('port-cash-line'); if (el) el.value = pc.cashLine; }
     if (pc.winLine) { const el = document.getElementById('port-win-line'); if (el) el.value = pc.winLine; }
