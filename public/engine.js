@@ -154,11 +154,6 @@ function getCorrelation(p1, p2) {
     return Math.min(0.95, 0.15 * _corrScale); // Same team, far apart
   }
 
-  // Bring-back: opposing team batter in same game
-  if (!isP1 && !isP2 && p1.opp === p2.team && p2.opp === p1.team) {
-    return Math.min(0.95, 0.12 * _corrScale);
-  }
-
   // Pitcher and own team batters: slight positive (team wins = pitcher gets W bonus)
   if (isP1 && !isP2 && p1.team === p2.team) return Math.min(0.95, 0.05 * _corrScale);
   if (isP2 && !isP1 && p2.team === p1.team) return Math.min(0.95, 0.05 * _corrScale);
@@ -372,14 +367,15 @@ function calcGppScore(player, contestSize = 1000) {
   const rightStd = Math.max((ceiling - median) / 1.5, 0.5);
   const p90 = median + 1.28 * rightStd;
 
-  // Percentile-target blend: weight toward P90 for GPP upside selection
+  // Percentile-target blend: ceiling-weighted for GPP upside selection
   const targetScore = 0.3 * median + 0.7 * p90;
 
-  // Ownership leverage: fade chalk harder in larger fields
+  // Ownership leverage: full fade — differentiate from chalk in large fields
   const ownershipEdge = own > 0 ? (1 / (1 + own / 100 * Math.log10(contestSize))) : 1;
 
   // Salary efficiency bonus (pts/$1k at ceiling level)
-  const salaryValue = (ceiling / salary) * 1000 * 0.25;
+  // GPP is ceiling-hunting, not value-hunting — reduced to avoid biasing toward cheap plays.
+  const salaryValue = (ceiling / salary) * 1000 * 0.15;
 
   return (targetScore * ownershipEdge + salaryValue);
 }
@@ -550,7 +546,7 @@ function optimalExposureBoost(_p, _context, _mode) {
 }
 
 function buildPlayerContext(p, context = {}) {
-  const { vegasData, parkFactors, weatherData, stadiums, teamScoring, umpireData, blendWeights, bullpenData, framingMap, sprintSpeedData } = context;
+  const { vegasData, parkFactors, weatherData, stadiums, teamScoring, umpireData, blendWeights, bullpenData, framingMap, sprintSpeedData, dvpData, pool } = context;
   const isP = rp(p, 'P');
   const homeTeam = p.game ? p.game.split('@')[1] : p.team;
   const bpAdj = bullpenAdjustment(p, bullpenData);
@@ -567,21 +563,36 @@ function buildPlayerContext(p, context = {}) {
   let wm = { hitting: 1.0, pitching: 1.0 };
   if (weatherData && homeTeam) {
     const isDome = stadiums?.domes?.includes(homeTeam);
-    // Weather is now keyed by team code (from GPS-accurate batch fetch)
     if (!isDome && weatherData[homeTeam]) wm = weatherMultiplier(weatherData[homeTeam]);
   }
 
+  // ── Platoon split: find opposing SP in pool, compare hands ─────────────────
+  // Only applied to batters with known hand vs. a pitcher with known hand.
+  // Pitchers skip — platoon direction is the batter-side effect, not pitcher-side.
+  let platoonMult = 1.0;
+  if (!isP && p.hand && pool) {
+    // Prefer confirmed SP, then fall back to highest-salary pitcher facing this team
+    const oppPitchers = pool.filter(q => rp(q, 'P') && q.opp === p.team && q.hand);
+    const oppSP = oppPitchers.find(q => q.isConfirmed) || oppPitchers.sort((a, b) => (b.salary || 0) - (a.salary || 0))[0];
+    if (oppSP?.hand) platoonMult = platoonMultiplier(p.hand, oppSP.hand);
+  }
+
+  // ── DvP: how many DK pts the opposing team allows to this position ──────────
+  const dvpMult = dvpMultiplier(p, dvpData);
+
+  // ── Unconfirmed lineup penalty ──────────────────────────────────────────────
+  const unconfMult = unconfirmedMultiplier(p, context);
+
   // Composite multiplier chain.
-  // Each individual factor is small (±3–10%), but stacking can compound.
-  // Cap the final batter/pitcher multiplier to ±35% of neutral (1.0) so that
-  // game-environment adjustments remain meaningful without dominating projections.
-  const rawBatterMult = vegasAdj * pf.run * wm.hitting * tsAdj.batting * scBoost * umpBoost * bpAdj * cfAdj * ssBoost;
-  const rawPitcherMult = vegasAdj * wm.pitching * tsAdj.pitching * scBoost * umpBoost * bpAdj * cfAdj * ssBoost;
+  // Each factor is small (±3–12%), stacking compounds. Cap at ±35% so no single
+  // adjustment dominates the projection. Platoon and DvP are batter-only.
+  const rawBatterMult = vegasAdj * pf.run * wm.hitting * tsAdj.batting * scBoost * umpBoost * bpAdj * cfAdj * ssBoost * platoonMult * dvpMult * unconfMult;
+  const rawPitcherMult = vegasAdj * wm.pitching * tsAdj.pitching * scBoost * umpBoost * bpAdj * cfAdj * ssBoost * unconfMult;
   const batterMult = Math.max(0.65, Math.min(1.35, rawBatterMult));
   const pitcherMult = Math.max(0.65, Math.min(1.35, rawPitcherMult));
   const hrMult = pf.hr; // GPP batters use hr park factor instead of run
 
-  return { isP, homeTeam, pf, vegasAdj, wm, tsAdj, scBoost, umpBoost, bpAdj, cfAdj, ssBoost, batterMult, pitcherMult, hrMult, rawBatterMult, rawPitcherMult };
+  return { isP, homeTeam, pf, vegasAdj, wm, tsAdj, scBoost, umpBoost, bpAdj, cfAdj, ssBoost, platoonMult, dvpMult, unconfMult, batterMult, pitcherMult, hrMult, rawBatterMult, rawPitcherMult };
 }
 
 function scoreCash(p, context = {}) {
@@ -597,8 +608,11 @@ function scoreCash(p, context = {}) {
   }
 
   const paMult = orderPAMult(p.order);
+  // Flat order bonus for top-4 hitters on top of the PA multiplier.
+  // Ensures early-order players rank meaningfully higher for cash floor builds.
+  const orderBonus = p.order > 0 && p.order <= 4 ? (5 - p.order) * 0.8 : 0;
   const variance = (p.ceiling || 0) - (p.floor || 0);
-  return ((p.median || 0) * 2.0 + (p.floor || 0) * 1.5 - variance * 0.3)
+  return ((p.median || 0) * 2.0 + (p.floor || 0) * 1.5 - variance * 0.3 + orderBonus)
     * paMult * pc.batterMult * optBoost;
 }
 
@@ -628,8 +642,8 @@ function scoreGpp(p, context = {}) {
     const kBonus = (p.kRate || 0) > 25 ? 2.0 : (p.kRate || 0) > 20 ? 1.0 : 0;
     const winProb = p.winProb || 0.5;
     const matchup = getPitcherMatchupScore(p, context);
-    const ownPenalty = (p.own || 0) * 0.1 * (Math.log10(Math.max(contestSize, 10)) / 3);
-    return ((p.ceiling || 0) * 1.2 + (p.median || 0) * 0.5 + matchup - ownPenalty + kBonus + winProb * 2)
+    const ownPenalty = (p.own || 0) * 0.08 * (Math.log10(Math.max(contestSize, 10)) / 3);
+    return ((p.ceiling || 0) * 0.8 + (p.median || 0) * 1.0 + matchup - ownPenalty + kBonus + winProb * 2)
       * pc.pitcherMult * optBoost;
   }
 
@@ -741,9 +755,11 @@ function optimizeLineup(pool, scoreFn, opts = {}) {
   };
 
   // Salary efficiency bonus — scales by contest type.
-  // Cash/single: high weight (15) — floor-focused, burning salary is always good.
-  // GPP: low weight (5) — ceiling-focused; cheap stacks can beat expensive chalk.
-  const salBonus = contestType === 'gpp' ? 5 : contestType === 'single' ? 10 : 15;
+  // Cash: high weight (15) — floor-focused, burning salary is always good.
+  // GPP: raised to 15 — matches cash pressure; combined with reduced per-dollar efficiency bias
+  //      in calcGppScore (0.35 → 0.15), pushes lineups from ~$45k toward cap.
+  // Single: midpoint (13).
+  const salBonus = contestType === 'gpp' ? 15 : contestType === 'single' ? 13 : 15;
 
   // Composite lineup score: individual scores + salary efficiency bonus + stack bonus
   const lineupTotalScore = lineup => {
@@ -818,7 +834,7 @@ function optimizeLineup(pool, scoreFn, opts = {}) {
   // ── Step 5: Salary upgrade pass ─────────────────────────────────────────
   // After local search converges, push any remaining cap headroom into higher-
   // salary alternatives that score within 5% of the current player.
-  return upgradeSalary(lu, pool, scoreFn, excluded, allowBvP, maxBattersPerTeam);
+  return upgradeSalary(lu, pool, scoreFn, excluded, allowBvP, maxBattersPerTeam, effectiveRequired);
 }
 
 function greedyFill(pool, scoreFn, excludeNames = new Set(), requiredSlots = new Array(ROSTER_SIZE).fill(null), allowBvP = false, maxBattersPerTeam = 5) {
@@ -854,7 +870,7 @@ function greedyFill(pool, scoreFn, excludeNames = new Set(), requiredSlots = new
 // salary alternative that fits in cap and scores at least 92% as well.
 // Repeats until no further upgrades are possible. Directly closes the
 // "leaving money on the table" gap without touching diversity mechanics.
-function upgradeSalary(lu, pool, scoreFn, excludeNames, allowBvP = false, maxBattersPerTeam = 5) {
+function upgradeSalary(lu, pool, scoreFn, excludeNames, allowBvP = false, maxBattersPerTeam = 5, lockedSlots = null) {
   let changed = true;
   while (changed) {
     changed = false;
@@ -863,6 +879,7 @@ function upgradeSalary(lu, pool, scoreFn, excludeNames, allowBvP = false, maxBat
     if (headroom <= 0) break;
     const luNames = new Set(lu.filter(Boolean).map(p => p.name));
     for (let i = 0; i < ROSTER_SIZE; i++) {
+      if (lockedSlots && lockedSlots[i]) continue; // don't touch locked/stack players
       const cur = lu[i];
       if (!cur) continue;
       const curScore = scoreFn(cur);
@@ -873,7 +890,7 @@ function upgradeSalary(lu, pool, scoreFn, excludeNames, allowBvP = false, maxBat
         if (p.salary <= cur.salary) return false;
         if (p.salary > cur.salary + headroom) return false;
         if (!DK_SLOTS[i].eligible(p)) return false;
-        if (scoreFn(p) < curScore * 0.95) return false;
+        if (scoreFn(p) < curScore * 0.90) return false;
         if (!validatePlacement(p, others, allowBvP, maxBattersPerTeam)) return false;
         return true;
       }).sort((a, b) => b.salary - a.salary)[0];
@@ -889,56 +906,132 @@ function upgradeSalary(lu, pool, scoreFn, excludeNames, allowBvP = false, maxBat
   return lu;
 }
 
+// ── Stack Adjacency Scoring ──────────────────────────────────────────────────
+// Measures how tightly clustered a group of players is in the batting order.
+// Returns 0–1: 1.0 = all consecutive (gap ≤ 1), 0 = spread out or no order data.
+// Stacks with adjacent orders generate meaningful inning-by-inning run correlation —
+// a 3-4-5 stack can chain singles into multi-run innings; a 1-4-8 stack cannot.
+function computeStackAdjacency(stackPlayers) {
+  const withOrder = stackPlayers.filter(p => p && p.order > 0)
+    .sort((a, b) => a.order - b.order);
+  if (withOrder.length < 2) return 0; // need at least 2 confirmed orders to evaluate
+
+  let maxGap = 0, totalGap = 0;
+  for (let i = 1; i < withOrder.length; i++) {
+    const gap = withOrder[i].order - withOrder[i - 1].order;
+    maxGap = Math.max(maxGap, gap);
+    totalGap += gap;
+  }
+  const avgGap = totalGap / (withOrder.length - 1);
+
+  if (maxGap <= 1) return 1.00;                          // perfectly consecutive  e.g. 2-3-4
+  if (maxGap <= 2 && avgGap <= 1.5) return 0.75;        // one small gap e.g. 2-3-5
+  if (maxGap <= 2) return 0.50;                          // all gaps ≤ 2 e.g. 1-3-5
+  if (maxGap <= 3 && avgGap <= 2.0) return 0.25;        // tolerable spread
+  return 0.00;                                            // too spread out
+}
+
+// Resolve stack player names against pool, then compute adjacency.
+function computeStackAdjacencyFromPool(playerNames, pool) {
+  const players = playerNames
+    .map(name => pool.find(p => p.name.toLowerCase() === name.toLowerCase()))
+    .filter(Boolean);
+  return computeStackAdjacency(players);
+}
+
 // ── Stack Bonus Functions ───────────────────────────────────────────────────
 
-function gppStackBonus(lu, usedStackTeam) {
-  let bonus = 0;
+// payoutType controls how aggressively stacking is rewarded:
+//   winner / top10  — high-variance contests; big stacks win or bust → heavy bonus
+//   top20 (default) — standard large-field GPP; balanced stacking
+//   double / cash   — floor-focused; stacking less important → light bonus
+const STACK_BONUS_WEIGHT = {
+  winner: 2.0,
+  top10:  1.5,
+  top20:  1.0,
+  double: 0.6,
+  cash:   0.4,
+};
 
-  // Bring-back bonus
-  if (usedStackTeam) {
-    const oppTeams = new Set();
-    lu.forEach(p => { if (p.team === usedStackTeam && p.opp) oppTeams.add(p.opp); });
-    const bringBacks = lu.filter(p => !rp(p, 'P') && oppTeams.has(p.team));
-    if (bringBacks.length >= 1) bonus += 4;
-    if (bringBacks.length >= 2) bonus += 3;
-  }
+function gppStackBonus(lu, usedStackTeam, payoutType = 'top20') {
+  const weight = STACK_BONUS_WEIGHT[payoutType] ?? 1.0;
+  let bonus = 0;
 
   // Same-team correlation bonus
   const teamCounts = {};
   lu.forEach(p => { if (!rp(p, 'P')) teamCounts[p.team] = (teamCounts[p.team] || 0) + 1; });
   Object.values(teamCounts).forEach(c => {
-    if (c >= 5) bonus += 5;
-    else if (c >= 4) bonus += 3;
-    else if (c >= 3) bonus += 1.5;
+    if (c >= 5) bonus += 3;
+    else if (c >= 4) bonus += 2;
+    else if (c >= 3) bonus += 1;
   });
 
-  // Batting order adjacency bonus within stacks
+  // Batting order adjacency bonus within stacks.
+  // gap=1: perfectly adjacent pair (+1.0) — highest run-chain correlation.
+  // gap=2: one batter between them (+0.5) — still meaningful, e.g. 3-5 with #4 batting around them.
+  // gap≥3: no bonus — too far apart in the order to share inning benefits reliably.
   Object.entries(teamCounts).forEach(([team, count]) => {
     if (count >= 3) {
-      const orders = lu.filter(p => p.team === team && !rp(p, 'P') && p.order > 0)
-        .map(p => p.order).sort((a, b) => a - b);
-      for (let i = 0; i < orders.length - 1; i++) {
-        if (orders[i + 1] - orders[i] === 1) bonus += 1.5; // Adjacent order bonus
+      const ordered = lu.filter(p => p.team === team && !rp(p, 'P') && p.order > 0)
+        .sort((a, b) => a.order - b.order);
+      for (let i = 0; i < ordered.length - 1; i++) {
+        const gap = ordered[i + 1].order - ordered[i].order;
+        if (gap === 1) bonus += 1.0;
+        else if (gap === 2) bonus += 0.5;
       }
     }
   });
 
-  return bonus;
+  return bonus * weight;
 }
 
 // ── Portfolio Builder ───────────────────────────────────────────────────────
 
 // Build a virtual stack for a team from the player pool when no stacks
-// file entry exists for that team. Picks top-N batters by median score.
-function buildVirtualStack(team, pool, excludeNames, size = 3) {
+// file entry exists for that team.
+//
+// Selection strategy — order of preference:
+//   1. Slide a window of `size` through batters sorted by confirmed batting order,
+//      scoring each window as (sum of vegas-adjusted medians) + (adjacency score × 3).
+//      The 3-pt adjacency bonus favours a tight cluster unless a non-adjacent window
+//      projects 3+ more total points — projection still wins when the gap is large.
+//   2. Fallback when fewer than `size` batters have confirmed orders: pick top-N by
+//      vegas-adjusted median (original behaviour).
+function buildVirtualStack(team, pool, excludeNames, size = 3, vegasData = {}) {
+  const impliedTotal = vegasData[team]?.impliedTotal || 4.5;
+  const vegasScale = impliedTotal / 4.5;
+
   const batters = pool.filter(p =>
     p.team === team && !rp(p, 'P') &&
     !excludeNames.has(p.name) &&
     p.salary > 0 && (p.median > 0 || p.avgPpg > 0)
-  ).sort((a, b) => (b.median || b.avgPpg || 0) - (a.median || a.avgPpg || 0));
+  );
 
-  if (batters.length < 2) return null;
-  const chosen = batters.slice(0, size);
+  if (batters.length < size) return null;
+
+  // ── Order-aware sliding window ───────────────────────────────────────────
+  const orderedBatters = batters.filter(b => b.order > 0).sort((a, b) => a.order - b.order);
+
+  let chosen = null;
+  let bestScore = -Infinity;
+
+  if (orderedBatters.length >= size) {
+    for (let start = 0; start <= orderedBatters.length - size; start++) {
+      const window = orderedBatters.slice(start, start + size);
+      const adjScore = computeStackAdjacency(window);
+      const projScore = window.reduce((s, p) => s + (p.median || p.avgPpg || 0) * vegasScale, 0);
+      const score = projScore + adjScore * 3.0;
+      if (score > bestScore) { bestScore = score; chosen = window; }
+    }
+  }
+
+  // ── Fallback: not enough confirmed orders ─────────────────────────────────
+  if (!chosen) {
+    chosen = [...batters]
+      .sort((a, b) => (b.median || b.avgPpg || 0) * vegasScale - (a.median || a.avgPpg || 0) * vegasScale)
+      .slice(0, size);
+  }
+
   return {
     id: `virtual_${team}_${size}`,
     players: chosen.map(p => p.name),
@@ -951,9 +1044,9 @@ function buildVirtualStack(team, pool, excludeNames, size = 3) {
 
 // Synthesize N-man virtual stacks for every team present in pool.
 // Used when stackSize is set to 4, or as fallback when no stack files are loaded.
-function buildAutoStacks(pool, size) {
+function buildAutoStacks(pool, size, vegasData = {}) {
   const teams = [...new Set(pool.filter(p => !rp(p, 'P') && p.salary > 0).map(p => p.team))];
-  return teams.map(team => buildVirtualStack(team, pool, new Set(), size)).filter(Boolean);
+  return teams.map(team => buildVirtualStack(team, pool, new Set(), size, vegasData)).filter(Boolean);
 }
 
 // Try to fit stack players into requiredSlots. Returns true on success.
@@ -1000,7 +1093,7 @@ async function buildPortfolio(pool, opts = {}, onProgress = null) {
     contestSize = 1000,
     stacks3 = [],
     stacks5 = [],
-    maxOverlap = 7,        // max players shared between any two lineups (0 = disabled)
+    maxOverlap = 5,        // max players shared between any two lineups (0 = disabled)
     lockedTeams = [],      // teams whose stacks are prioritised every lineup
     bannedTeams = [],      // teams fully excluded from the portfolio
     allowBvP = false,      // if false, pitcher and opposing batters cannot share a lineup
@@ -1009,8 +1102,18 @@ async function buildPortfolio(pool, opts = {}, onProgress = null) {
     stackSize = null,      // 3 | 4 | 5 | null — forces all lineups to use this stack size; overrides stackPct5
     teamExposureOverrides = {}, // { teamName: { min: 0-1, max: 0-1 } } per-team stack exposure bounds
     context = {},
-    iterations = 5000
+    iterations = 5000,
+    simFilter = false,     // if true, generate overflow lineups and keep top numLineups by sim ROI
+    simFilterPct = 50,     // % of extra lineups to generate beyond numLineups (e.g. 50 = 150% total)
+    simFilterSims = 1500,  // number of sim iterations for the filter pass (higher = more accurate ranking)
+    payoutType = 'top20',  // payout structure passed to simulatePortfolio for filter scoring
+    simROIMin = null,      // lower bound for sim ROI band (e.g. -15 = -15%). null = no lower bound
+    simROIMax = null,      // upper bound for sim ROI band (e.g. 0 = 0%). null = no upper bound
   } = opts;
+
+  // targetLineups: how many to generate before sim-filter trims back to numLineups.
+  // Exposure caps (hardMax) always use numLineups so caps aren't inflated by overflow.
+  const targetLineups = simFilter ? Math.round(numLineups * (1 + simFilterPct / 100)) : numLineups;
 
   // Pre-compute stack targeting counts.
   // stackSize takes priority over stackPct5:
@@ -1023,7 +1126,8 @@ async function buildPortfolio(pool, opts = {}, onProgress = null) {
   } else if (stackSize === 4) {
     target5ManCount = null; // 4-man handled via autoStacks4 pool below
   } else {
-    target5ManCount = stackPct5 != null ? Math.round(numLineups * stackPct5 / 100) : null;
+    target5ManCount = stackPct5 != null ? Math.round(numLineups * stackPct5 / 100)
+                     : (stacks5.length > 0 ? Math.round(numLineups * 0.5) : 0);
   }
   let lineups5ManCount = 0;
 
@@ -1037,11 +1141,13 @@ async function buildPortfolio(pool, opts = {}, onProgress = null) {
 
   // When stackSize=4, synthesize 4-man virtual stacks from pool and use exclusively.
   // For stackSize=3/5, auto-synth is used only as fallback (virtual stack path in generateGppLineup).
-  const autoStacks4 = stackSize === 4 ? buildAutoStacks(pool, 4).filter(s => !bannedTeams.includes(s.team)) : [];
+  const autoStacks4 = stackSize === 4 ? buildAutoStacks(pool, 4, context?.vegasData || {}).filter(s => !bannedTeams.includes(s.team)) : [];
 
-  // Effective stacks passed to generateGppLineup
-  const effectiveStacks3 = stackSize === 4 ? autoStacks4 : allowedStacks3;
-  const effectiveStacks5 = stackSize === 4 ? []           : allowedStacks5;
+  // Effective stacks passed to generateGppLineup.
+  // stackSize=5 → only 5-man stacks; stackSize=3 → only 3-man stacks;
+  // stackSize=4 → auto-synth 4-man passed as stacks3; mix → both pools.
+  const effectiveStacks3 = stackSize === 4 ? autoStacks4 : stackSize === 5 ? [] : allowedStacks3;
+  const effectiveStacks5 = stackSize === 3 ? []           : stackSize === 4 ? [] : allowedStacks5;
 
   const totalAvailableStacks = effectiveStacks3.length + effectiveStacks5.length;
 
@@ -1064,30 +1170,41 @@ async function buildPortfolio(pool, opts = {}, onProgress = null) {
   // Fix 2: Round-robin index for locked teams — only advances on accepted lineups
   let lockedTeamIdx = 0;
 
-  // Fix 1: Loop until numLineups valid lineups are built, with a safety cap on attempts
-  const maxAttempts = numLineups * 5;
+  // Fix 1: Loop until targetLineups valid lineups are built, with a safety cap on attempts.
+  // When simFilter is on, targetLineups > numLineups so we generate an overflow pool to
+  // sim-rank and trim. Exposure hard-caps always reference numLineups so the per-player
+  // and per-team caps aren't inflated by the extra overflow lineups.
+  const maxAttempts = targetLineups * 5;
   let attempts = 0;
 
-  while (lineups.length < numLineups && attempts < maxAttempts) {
+  while (lineups.length < targetLineups && attempts < maxAttempts) {
     attempts++;
 
     // Build exclusion set: banned + over-exposed players (respecting per-player max overrides)
     const excludeOverExposed = new Set(bannedNames);
-    if (lineups.length > 0) {
-      pool.forEach(p => {
-        const ov = playerOverrides[p.name];
-        const threshold = ov?.max != null ? ov.max : (rp(p, 'P') ? maxExposurePitcher : maxExposure);
-        const exposure = (exposureCounts[p.name] || 0) / lineups.length;
-        if (exposure >= threshold) excludeOverExposed.add(p.name);
-      });
-    }
+    pool.forEach(p => {
+      const ov = playerOverrides[p.name];
+      const count = exposureCounts[p.name] || 0;
+      if (ov?.max != null) {
+        // Hard cap for per-player override: same approach as team exposure overrides.
+        // Running-ratio (count/lineups.length) oscillates and can overshoot the target,
+        // especially for batters in GPP stacks. Hard cap gives exact enforcement.
+        const hardMax = Math.floor(numLineups * ov.max);
+        if (count >= hardMax) excludeOverExposed.add(p.name);
+      } else if (lineups.length > 0) {
+        // Running ratio for global defaults (no individual override set)
+        const threshold = rp(p, 'P') ? maxExposurePitcher : maxExposure;
+        if (count / lineups.length >= threshold) excludeOverExposed.add(p.name);
+      }
+    });
 
     // Build set of teams whose stack exposure has hit its max — exclude them from stacking.
     // Also build set of teams whose min exposure requires them to be stacked now.
+    // remaining uses numLineups (not targetLineups) so min-exposure targets don't drift.
     const bannedStackTeams = new Set();
     const forcedStackTeams = new Set();
     if (Object.keys(teamExposureOverrides).length) {
-      const remaining = numLineups - lineups.length;
+      const remaining = Math.max(0, numLineups - lineups.length);
       for (const [team, ov] of Object.entries(teamExposureOverrides)) {
         const count = teamStackCounts[team] || 0;
 
@@ -1106,7 +1223,7 @@ async function buildPortfolio(pool, opts = {}, onProgress = null) {
 
         if (ov.min != null) {
           const targetCount = Math.ceil(numLineups * ov.min);
-          if (targetCount - count >= remaining) forcedStackTeams.add(team);
+          if (remaining > 0 && targetCount - count >= remaining) forcedStackTeams.add(team);
         }
       }
     }
@@ -1114,15 +1231,16 @@ async function buildPortfolio(pool, opts = {}, onProgress = null) {
     // Build force-include set: players whose min exposure won't be met unless included now.
     // Fix 6: remaining is based on valid lineups still needed (not total attempts made),
     // so the threshold triggers correctly regardless of how many attempts were discarded.
+    // remaining is clamped to numLineups so overflow doesn't suppress forced includes.
     const forceNames = new Set();
     if (Object.keys(playerOverrides).length) {
-      const remaining = numLineups - lineups.length;
+      const remaining = Math.max(0, numLineups - lineups.length);
       pool.forEach(p => {
         const ov = playerOverrides[p.name];
         if (!ov?.min) return;
         const targetCount = Math.ceil(numLineups * ov.min);
         const currentCount = exposureCounts[p.name] || 0;
-        if (targetCount - currentCount >= remaining) {
+        if (remaining > 0 && targetCount - currentCount >= remaining) {
           forceNames.add(p.name);
           excludeOverExposed.delete(p.name); // can't exclude a forced player
         }
@@ -1163,7 +1281,7 @@ async function buildPortfolio(pool, opts = {}, onProgress = null) {
         effectiveStacks3, effectiveStacks5, pendingStackIds,
         iterations, contestSize,
         targetLockedTeam, pool, allowBvP, forceNames, prefer5Man,
-        bannedStackTeams, forcedStackTeams, stackSize
+        bannedStackTeams, forcedStackTeams, stackSize, teamStackCounts, payoutType
       );
 
       // Fix 7: Commit pending stack IDs when lineup is accepted
@@ -1175,6 +1293,14 @@ async function buildPortfolio(pool, opts = {}, onProgress = null) {
     }
 
     if (lu && lu.every(Boolean)) {
+      // Validate stack size constraint: reject lineups that don't meet the forced stack size
+      if (stackSize != null) {
+        const teamCtsCheck = {};
+        lu.forEach(p => { if (!rp(p, 'P')) teamCtsCheck[p.team] = (teamCtsCheck[p.team] || 0) + 1; });
+        const maxTeamCount = Math.max(0, ...Object.values(teamCtsCheck));
+        if (maxTeamCount < stackSize) { continue; } // discard and retry
+      }
+
       // Fix 4: Check maxOverlap via the player index — O(players) instead of O(lineups²)
       const luNames = new Set(lu.filter(Boolean).map(p => p.name));
       let tooSimilar = false;
@@ -1215,6 +1341,58 @@ async function buildPortfolio(pool, opts = {}, onProgress = null) {
     // Yield to browser each attempt to prevent "Page Unresponsive"
     if (onProgress) onProgress(attempts, maxAttempts, lineups.length);
     await new Promise(r => setTimeout(r, 0));
+  }
+
+  // ── Sim-ROI filter pass ──────────────────────────────────────────────────
+  // When simFilter is enabled, we generated targetLineups > numLineups.
+  // Score each lineup with a lightweight simulation, keep the top numLineups
+  // by sim ROI, then recompute exposure from the trimmed set.
+  if (simFilter && lineups.length > numLineups) {
+    if (onProgress) onProgress(maxAttempts, maxAttempts, lineups.length);
+    await new Promise(r => setTimeout(r, 0));
+
+    const simResults = simulatePortfolio(lineups, pool, simFilterSims, contestType, null, null, payoutType);
+    // simResults is sorted by simROI desc. Apply band filter if bounds are set.
+    // Band candidates = lineups whose simROI falls within [simROIMin, simROIMax].
+    // If fewer than numLineups qualify, fill the gap with the closest out-of-band
+    // lineups (by absolute distance to the nearest bound) rather than leaving slots empty.
+    let kept;
+    const hasBand = simROIMin != null || simROIMax != null;
+    if (hasBand) {
+      const inBand = simResults.filter(r =>
+        (simROIMin == null || r.simROI >= simROIMin) &&
+        (simROIMax == null || r.simROI <= simROIMax)
+      );
+      if (inBand.length >= numLineups) {
+        // More than enough — take the top numLineups within the band (closest to upper bound = best ROI)
+        kept = inBand.slice(0, numLineups).map(r => r.lu);
+      } else {
+        // Not enough in-band — fill remainder with nearest out-of-band lineups
+        const inBandSet = new Set(inBand.map(r => r.lu));
+        const outOfBand = simResults
+          .filter(r => !inBandSet.has(r.lu))
+          .sort((a, b) => {
+            // Distance = how far outside the band the lineup is
+            const distA = simROIMin != null && a.simROI < simROIMin ? simROIMin - a.simROI
+                        : simROIMax != null && a.simROI > simROIMax ? a.simROI - simROIMax : 0;
+            const distB = simROIMin != null && b.simROI < simROIMin ? simROIMin - b.simROI
+                        : simROIMax != null && b.simROI > simROIMax ? b.simROI - simROIMax : 0;
+            return distA - distB;
+          });
+        kept = [...inBand, ...outOfBand].slice(0, numLineups).map(r => r.lu);
+      }
+    } else {
+      kept = simResults.slice(0, numLineups).map(r => r.lu);
+    }
+
+    // Recompute exposureCounts from the trimmed lineup set
+    const newCounts = {};
+    kept.forEach(lu => { lu.forEach(p => { newCounts[p.name] = (newCounts[p.name] || 0) + 1; }); });
+    for (const k of Object.keys(exposureCounts)) exposureCounts[k] = newCounts[k] || 0;
+
+    // Replace lineups in place
+    lineups.length = 0;
+    kept.forEach(lu => lineups.push(lu));
   }
 
   // Calculate portfolio stats
@@ -1284,7 +1462,7 @@ function generateSingleLineup(pool, excludeNames, context, iterations, allowBvP 
 
 // lockedTeam: if set, this team's stack must be used for this lineup.
 // fullPool: the unfiltered pool used for virtual stack synthesis (may differ from pool after exclusions).
-function generateGppLineup(pool, excludeNames, context, stacks3, stacks5, usedStackIds, iterations, contestSize, lockedTeam, fullPool, allowBvP = false, forceInclude = new Set(), prefer5Man = null, bannedStackTeams = new Set(), forcedStackTeams = new Set(), stackSize = null) {
+function generateGppLineup(pool, excludeNames, context, stacks3, stacks5, usedStackIds, iterations, contestSize, lockedTeam, fullPool, allowBvP = false, forceInclude = new Set(), prefer5Man = null, bannedStackTeams = new Set(), forcedStackTeams = new Set(), stackSize = null, teamStackCounts = {}, payoutType = 'top20') {
   const requiredSlots = new Array(ROSTER_SIZE).fill(null);
   let usedStackTeam = null;
 
@@ -1294,8 +1472,16 @@ function generateGppLineup(pool, excludeNames, context, stacks3, stacks5, usedSt
   const minImpliedTotal = context?.minImpliedTotal || 0;
   const stackImplied = team => vegasData[team]?.impliedTotal || 4.5;
   const sortByValue = (a, b) => {
-    const scoreA = a.proj * (stackImplied(a.team) / 4.5) - (a.own || 0) * 0.3;
-    const scoreB = b.proj * (stackImplied(b.team) / 4.5) - (b.own || 0) * 0.3;
+    // Penalise teams already heavily stacked in the portfolio to spread stack exposure.
+    const repeatPenaltyA = (teamStackCounts[a.team] || 0) * 1.5;
+    const repeatPenaltyB = (teamStackCounts[b.team] || 0) * 1.5;
+    // Adjacency bonus for user-uploaded stacks: prefer stacks whose players sit
+    // adjacent in the batting order. Virtual stacks are already order-optimised
+    // during buildVirtualStack so they don't need a second pass here.
+    const adjBonusA = a.isVirtual ? 0 : computeStackAdjacencyFromPool(a.players, pool) * 2.0;
+    const adjBonusB = b.isVirtual ? 0 : computeStackAdjacencyFromPool(b.players, pool) * 2.0;
+    const scoreA = a.proj * (stackImplied(a.team) / 4.5) - (a.own || 0) * 0.3 - repeatPenaltyA + adjBonusA;
+    const scoreB = b.proj * (stackImplied(b.team) / 4.5) - (b.own || 0) * 0.3 - repeatPenaltyB + adjBonusB;
     return scoreB - scoreA;
   };
   // Multi-factor game-environment gate for stack selection.
@@ -1341,9 +1527,18 @@ function generateGppLineup(pool, excludeNames, context, stacks3, stacks5, usedSt
     // Filter out stacks for teams that have hit their exposure max or are below min implied total
     const avail5 = stacks5.filter(s => s.proj > 0 && !usedStackIds.has(s.id) && !bannedStackTeams.has(s.team) && passesEnvironment(s.team)).sort(sortByValue);
     const avail3 = stacks3.filter(s => s.proj > 0 && !usedStackIds.has(s.id) && !bannedStackTeams.has(s.team) && passesEnvironment(s.team)).sort(sortByValue);
-    // Primary pool gets the first 7 slots in candidate list; secondary fills the rest
-    const primary = prefer5Man === false ? avail3 : avail5;
-    const secondary = prefer5Man === false ? avail5 : avail3;
+
+    // When a specific stack size is forced, only use the matching pool — no cross-size fallback.
+    // stackSize=4 candidates are passed in as stacks3 (autoStacks4), so avail3 holds them.
+    let primary, secondary;
+    if (stackSize === 5) { primary = avail5; secondary = []; }
+    else if (stackSize === 3) { primary = avail3; secondary = []; }
+    else if (stackSize === 4) { primary = avail3; secondary = []; }
+    else {
+      // Mix mode: primary/secondary driven by prefer5Man flag
+      primary = prefer5Man === false ? avail3 : avail5;
+      secondary = prefer5Man === false ? avail5 : avail3;
+    }
     const allAvail = [...primary, ...secondary];
 
     // If any teams need to hit their min, force one of them as the target
@@ -1358,7 +1553,7 @@ function generateGppLineup(pool, excludeNames, context, stacks3, stacks5, usedSt
       }
       return [...forTeam, ...others];
     }
-    const top = [...primary.slice(0, 7), ...secondary.slice(0, 5)];
+    const top = [...primary.slice(0, 10), ...secondary.slice(0, 8)];
     for (let i = top.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [top[i], top[j]] = [top[j], top[i]];
@@ -1368,11 +1563,20 @@ function generateGppLineup(pool, excludeNames, context, stacks3, stacks5, usedSt
 
   const candidates = (stacks5.length > 0 || stacks3.length > 0) ? buildCandidates() : [];
 
+  // Minimum resolved players required before attempting placement.
+  // For forced stack sizes: require all players (5-man needs 5, 4-man needs 4).
+  // Mix mode with prefer5Man: require the full stack count for 5-man stacks.
+  // Mix mode fallback: require at least 3 so a partially-degraded stack can still be used.
+  const minResolved = stackSize === 5 ? stack => stack.players.length
+                    : stackSize === 4 ? stack => Math.max(4, stack.players.length)
+                    : prefer5Man === true ? stack => stack.players.length
+                    : stack => Math.min(3, stack.players.length);
+
   for (const stack of candidates) {
     const stackPlayers = stack.players
       .map(name => pool.find(p => p.name.toLowerCase() === name.toLowerCase() && !excludeNames.has(p.name)))
       .filter(Boolean);
-    if (stackPlayers.length < Math.min(3, stack.players.length)) continue;
+    if (stackPlayers.length < minResolved(stack)) continue;
 
     const tempSlots = new Array(ROSTER_SIZE).fill(null);
     if (tryPlaceStack(stackPlayers, tempSlots, pool)) {
@@ -1393,7 +1597,7 @@ function generateGppLineup(pool, excludeNames, context, stacks3, stacks5, usedSt
       const stackPlayers = virtual.players
         .map(name => pool.find(p => p.name.toLowerCase() === name.toLowerCase() && !excludeNames.has(p.name)))
         .filter(Boolean);
-      if (stackPlayers.length >= 2) {
+      if (stackPlayers.length >= (stackSize || 3)) {
         const tempSlots = new Array(ROSTER_SIZE).fill(null);
         if (tryPlaceStack(stackPlayers, tempSlots, pool)) {
           for (let i = 0; i < ROSTER_SIZE; i++) { if (tempSlots[i]) requiredSlots[i] = tempSlots[i]; }
@@ -1403,8 +1607,43 @@ function generateGppLineup(pool, excludeNames, context, stacks3, stacks5, usedSt
     }
   }
 
+  // If a specific stack size was forced but still no stack placed (no stacks file or all degraded),
+  // auto-synthesize from the pool. Tries teams in descending projected-score order.
+  if (!usedStackTeam && stackSize != null) {
+    const srcPool = fullPool || pool;
+    const batters = srcPool.filter(p => !rp(p, 'P') && p.salary > 0 && (p.median > 0 || p.avgPpg > 0) && !bannedStackTeams.has(p.team) && passesEnvironment(p.team));
+    const teamScore = {};
+    batters.forEach(p => { teamScore[p.team] = (teamScore[p.team] || 0) + (p.median || p.avgPpg || 0); });
+    const teams = Object.keys(teamScore).sort((a, b) => teamScore[b] - teamScore[a]);
+    for (const team of teams) {
+      const virtual = buildVirtualStack(team, srcPool, excludeNames, stackSize);
+      if (!virtual) continue;
+      const stackPlayers = virtual.players
+        .map(name => pool.find(p => p.name.toLowerCase() === name.toLowerCase() && !excludeNames.has(p.name)))
+        .filter(Boolean);
+      if (stackPlayers.length < stackSize) continue;
+      const tempSlots = new Array(ROSTER_SIZE).fill(null);
+      if (tryPlaceStack(stackPlayers, tempSlots, pool)) {
+        for (let i = 0; i < ROSTER_SIZE; i++) { if (tempSlots[i]) requiredSlots[i] = tempSlots[i]; }
+        usedStackTeam = team;
+        break;
+      }
+    }
+  }
+
   const scoreFn = p => scoreGpp(p, { ...context, pool, contestSize });
-  const stackBonusFn = lu => gppStackBonus(lu, usedStackTeam);
+  const stackBonusFn = lu => gppStackBonus(lu, usedStackTeam, payoutType);
+
+  // When a specific stackSize is forced, reject lineups that failed to place a stack.
+  // This causes the portfolio builder to discard and retry, rather than accepting a
+  // lineup with only a natural 2-3 player cluster.
+  if (stackSize != null && !usedStackTeam) return null;
+
+  // In mix mode targeting 5-man, also reject if the placed stack has fewer than 5.
+  if (prefer5Man === true && !stackSize) {
+    const placed = requiredSlots.filter(p => p && !rp(p, 'P') && p.team === usedStackTeam).length;
+    if (!usedStackTeam || placed < 5) return null;
+  }
 
   return optimizeLineup(pool, scoreFn, { excludeNames, requiredSlots, iterations, stackBonusFn, allowBvP, forceInclude, contestType: 'gpp' });
 }
@@ -1428,13 +1667,6 @@ function analyzeLineup(lineup) {
   });
   const stacks = Object.entries(teamCounts).filter(([, c]) => c >= 3);
 
-  // Bring-back detection
-  const stackTeams = stacks.map(([t]) => t);
-  const bringBacks = players.filter(p =>
-    !rp(p, 'P') && !stackTeams.includes(p.team) &&
-    players.some(sp => stackTeams.includes(sp.team) && sp.opp === p.team)
-  );
-
   // Correlation score
   const corrMatrix = buildCorrelationMatrix(players);
   const corrScore = calcCorrelationScore(corrMatrix);
@@ -1447,7 +1679,6 @@ function analyzeLineup(lineup) {
   return {
     salary, medianPts, ceilingPts, floorPts, totalOwn,
     stacks: stacks.map(([t, c]) => ({ team: t, count: c })),
-    bringBacks: bringBacks.map(p => ({ name: p.name, team: p.team })),
     correlationScore: corrScore,
     avgBattingOrder: avgOrder,
     salaryEfficiency: (medianPts / salary * 1000).toFixed(2),
@@ -1460,10 +1691,10 @@ function analyzeLineup(lineup) {
 // ── Calibration System ──────────────────────────────────────────────────────
 
 // Stored calibration factors — applied to player projections before optimization
-let _calibration = { pitcherScale: 1.0, batterScale: 1.0 };
+let _calibration = { pitcherScale: 1.0, batterScale: 1.0, positionScales: {} };
 
 function setCalibration(cal) {
-  _calibration = { pitcherScale: 1.0, batterScale: 1.0, ...(cal || {}) };
+  _calibration = { pitcherScale: 1.0, batterScale: 1.0, positionScales: {}, ...(cal || {}) };
 }
 
 function getCalibration() {
@@ -1471,12 +1702,22 @@ function getCalibration() {
 }
 
 // Returns a new pool array with projections scaled by calibration factors.
-// If both scales are 1.0 returns the original array unchanged (no allocation).
+// positionScales (e.g. { SP: 0.91, OF: 0.59 }) take priority over the blanket
+// pitcherScale/batterScale fallbacks. If everything is 1.0 returns the original
+// array unchanged (no allocation).
 function calibratePool(pool) {
-  const { pitcherScale = 1.0, batterScale = 1.0 } = _calibration;
-  if (pitcherScale === 1.0 && batterScale === 1.0) return pool;
+  const { pitcherScale = 1.0, batterScale = 1.0, positionScales = {} } = _calibration;
+  const hasPositionScales = Object.keys(positionScales).length > 0;
+  if (pitcherScale === 1.0 && batterScale === 1.0 && !hasPositionScales) return pool;
   return pool.map(p => {
-    const scale = rp(p, 'P') ? pitcherScale : batterScale;
+    const isPitcher = rp(p, 'SP') || rp(p, 'RP');
+    const primaryPos = (p.rosterPos || p.dkPos || '').split('/')[0].trim();
+    let scale;
+    if (hasPositionScales && positionScales[primaryPos] !== undefined) {
+      scale = positionScales[primaryPos];
+    } else {
+      scale = isPitcher ? pitcherScale : batterScale;
+    }
     if (scale === 1.0) return p;
     return {
       ...p,
@@ -1674,6 +1915,63 @@ function sprintSpeedBoost(player, sprintSpeedData) {
   return 1.0 + boost;
 }
 
+// ── Defense vs Position (DvP) Adjustment ────────────────────────────────────
+// dvpData = { teamAbbr: { pos: { avgAllowed, rank, totalTeams } } }
+// rank: 1 = most DK pts allowed to that position (easiest matchup), totalTeams = up to 30.
+// Applied to batters only — pitcher DvP is not meaningful with this data structure.
+function dvpMultiplier(player, dvpData) {
+  if (!dvpData || rp(player, 'P')) return 1.0;
+  const dvpPos = player.dkPos ? player.dkPos.split('/')[0].trim() : null;
+  if (!dvpPos || !player.opp) return 1.0;
+  const entry = dvpData[player.opp]?.[dvpPos];
+  if (!entry || !entry.rank || !entry.totalTeams || entry.totalTeams < 2) return 1.0;
+  // pct: 0.0 = easiest (rank 1, allows most pts), 1.0 = toughest
+  const pct = (entry.rank - 1) / (entry.totalTeams - 1);
+  // ±6% max: best matchup → +6%, worst → -6%, avg → 0%
+  return 1.0 + (0.5 - pct) * 0.12;
+}
+
+// ── Platoon Split Adjustment ─────────────────────────────────────────────────
+// batterHand: 'L' | 'R' | 'S' (switch) — from ROO projection file
+// pitcherHand: 'L' | 'R' — from the opposing pitcher's ROO hand column
+//
+// Empirical platoon splits (2020–2024 FanGraphs wOBA differentials):
+//   L vs L: ~-30 pts wOBA vs same hand baseline → ≈ -7% DFS pts
+//   R vs R: ~-20 pts wOBA → ≈ -5% DFS pts
+//   L vs R: ~+15 pts wOBA → ≈ +5% DFS pts
+//   R vs L: ~+20 pts wOBA → ≈ +6% DFS pts
+//   Switch:  always bats from advantaged side → ≈ +4% on average
+//
+// Values deliberately conservative — projection CSVs may already partially capture
+// platoon, so we apply only the residual edge not reflected in the median/ceiling.
+function platoonMultiplier(batterHand, pitcherHand) {
+  if (!batterHand || !pitcherHand) return 1.0;
+  const bh = batterHand.toUpperCase().charAt(0);
+  const ph = pitcherHand.toUpperCase().charAt(0);
+  if (bh === 'S') return 1.04;  // switch — always from advantaged side
+  if (bh === 'L' && ph === 'L') return 0.93; // same-hand disadvantage (larger for L/L)
+  if (bh === 'R' && ph === 'R') return 0.95; // same-hand disadvantage (smaller for R/R)
+  if (bh === 'L' && ph === 'R') return 1.05; // platoon advantage
+  if (bh === 'R' && ph === 'L') return 1.06; // platoon advantage (larger for R vs L)
+  return 1.0;
+}
+
+// ── Unconfirmed Lineup Penalty ───────────────────────────────────────────────
+// Reduces the optimizer score for players not yet confirmed in the batting order.
+// Only activates when context.hasConfirmedData = true (confirmed lineups have been
+// fetched for this slate). Without that flag, returns 1.0 so unloaded states are
+// not penalised.
+//
+// Penalty magnitude:
+//   Batters: -12% — a scratched batter scores 0, making the lineup dead weight.
+//   Pitchers: -10% — probable pitchers are often known before batting orders post,
+//             but non-confirmed SPs occasionally change to bullpen games.
+function unconfirmedMultiplier(player, context) {
+  if (!context?.hasConfirmedData) return 1.0;
+  if (player.isConfirmed) return 1.0;
+  return rp(player, 'P') ? 0.90 : 0.88;
+}
+
 // ── Portfolio Overlap & Diversity ──────────────────────────────────────────
 
 function calcPortfolioOverlap(lineups) {
@@ -1752,12 +2050,14 @@ function buildFieldLineup(pool) {
   let stackTeam = teams[teams.length - 1];
   for (const t of teams) { r -= teamOwn[t]; if (r <= 0) { stackTeam = t; break; } }
 
-  // Attempt to fill 3 batter slots from the stack team first
+  // Variable stack size: 50% 3-man, 30% 4-man, 20% 5-man — mirrors real GPP field distribution
+  const stackRoll = Math.random();
+  const targetStackSize = stackRoll < 0.50 ? 3 : stackRoll < 0.80 ? 4 : 5;
+
   const stackBatters = batters.filter(p => p.team === stackTeam);
   let stackFilled = 0;
-  // Shuffle stack team batters by ownership so we don't always pick the same ones
   const shuffledStack = stackBatters.slice().sort(() => Math.random() - 0.5 + (Math.random() > 0.5 ? 0.2 : -0.2));
-  for (let i = 2; i < ROSTER_SIZE && stackFilled < 3; i++) {
+  for (let i = 2; i < ROSTER_SIZE && stackFilled < targetStackSize; i++) {
     const slot = DK_SLOTS[i];
     const eligible = shuffledStack.filter(p => !usedNames.has(p.name) && slot.eligible(p));
     if (!eligible.length) continue;
@@ -1785,6 +2085,25 @@ function buildFieldLineup(pool) {
   return lu.every(Boolean) ? lu : null;
 }
 
+// Sample a full lineup score with intra-lineup correlation using Cholesky decomposition.
+// Reuses the same asymmetric distribution as samplePlayerScore but with correlated z-scores.
+function sampleCorrelatedLineup(players, L) {
+  const n = players.length;
+  const z = [];
+  for (let i = 0; i < n; i++) z.push(randNorm());
+  const correlated = [];
+  for (let i = 0; i < n; i++) {
+    let val = 0;
+    for (let j = 0; j <= i; j++) val += L[i][j] * z[j];
+    correlated.push(val);
+  }
+  let total = 0;
+  for (let i = 0; i < n; i++) {
+    total += samplePlayerScore(players[i], correlated[i] * 0.5);
+  }
+  return total;
+}
+
 // Run per-lineup Monte Carlo across the full portfolio.
 // Returns array of per-lineup stats sorted by simROI descending.
 // fieldLineups: number of synthetic opponent lineups to simulate (field size proxy).
@@ -1795,50 +2114,63 @@ function simulatePortfolio(lineups, pool, numSims = 2000, contestType = 'gpp', m
 
   // Payout config: cashPct = fraction of field that cashes, payoutMultipliers for EV
   const payoutConfig = {
-    top20:   { cashPct: 0.20, cashMult: 2.0,  winMult: 10, winPct: 0.005 },
-    top10:   { cashPct: 0.10, cashMult: 3.0,  winMult: 15, winPct: 0.002 },
-    winner:  { cashPct: 0.01, cashMult: 80.0, winMult: 80, winPct: 0.005 },
+    top20:   { cashPct: 0.20, cashMult: 2.5,  winMult: 15,  winPct: 0.005 },
+    top10:   { cashPct: 0.10, cashMult: 4.0,  winMult: 20,  winPct: 0.002 },
+    winner:  { cashPct: 0.01, cashMult: 80.0, winMult: 80,  winPct: 0.005 },
     double:  { cashPct: 0.50, cashMult: 1.9,  winMult: 1.9, winPct: 0.50 },
-    custom:  { cashPct: 0.20, cashMult: 2.0,  winMult: 10, winPct: 0.005 },
+    custom:  { cashPct: 0.20, cashMult: 2.5,  winMult: 15,  winPct: 0.005 },
   };
   const pc = (isCash ? { cashPct: 0.50, cashMult: 1.9, winMult: 1.9, winPct: 0.50 }
                      : (payoutConfig[payoutType] || payoutConfig.top20));
+
+  // Pre-build field score distribution once (shared across all lineups for consistency).
+  // Field lineups use correlated sampling to model realistic GPP variance.
+  const fieldScores = [];
+  for (let s = 0; s < numSims; s++) {
+    const fieldLu = buildFieldLineup(pool);
+    if (!fieldLu) { fieldScores.push(0); continue; }
+    const fieldPlayers = fieldLu.filter(Boolean);
+    const fieldCorr = buildCorrelationMatrix(fieldPlayers);
+    const fieldL = cholesky(fieldCorr);
+    fieldScores.push(sampleCorrelatedLineup(fieldPlayers, fieldL));
+  }
+  fieldScores.sort((a, b) => a - b);
+
+  const cashCutoffIdx = Math.floor(fieldScores.length * (1 - pc.cashPct));
+  const winCutoffIdx = Math.floor(fieldScores.length * (1 - pc.winPct));
+  const cashLine = manualCashLine != null ? manualCashLine : (fieldScores[cashCutoffIdx] || 0);
+  const winLine = manualWinLine != null ? manualWinLine : (fieldScores[winCutoffIdx] || 0);
 
   const results = lineups.map(lu => {
     if (!lu || !lu.every(Boolean)) return null;
     const luSim = simulateLineup(lu, numSims);
     if (!luSim) return null;
 
-    // Build field score distribution by running numSims field lineups
-    // (re-use pool sampling, not full lineup build — fast approximation)
-    const fieldScores = [];
-    for (let s = 0; s < numSims; s++) {
-      const fieldLu = buildFieldLineup(pool);
-      if (!fieldLu) { fieldScores.push(0); continue; }
-      let total = 0;
-      fieldLu.forEach(p => { if (p) total += samplePlayerScore(p, 0); });
-      fieldScores.push(total);
-    }
-    fieldScores.sort((a, b) => a - b);
+    const players = lu.filter(Boolean);
+    const corrMatrix = buildCorrelationMatrix(players);
+    const L = cholesky(corrMatrix);
 
-    // Cash/win lines: use manual overrides if provided, otherwise derive from field distribution
-    const cashCutoffIdx = Math.floor(fieldScores.length * (1 - pc.cashPct));
-    const winCutoffIdx = Math.floor(fieldScores.length * (1 - pc.winPct));
-    const cashLine = manualCashLine != null ? manualCashLine : (fieldScores[cashCutoffIdx] || 0);
-    const winLine = manualWinLine != null ? manualWinLine : (fieldScores[winCutoffIdx] || 0);
+    // Ownership leverage: low-ownership lineups have less field duplication,
+    // so when they hit they face fewer ties at the top. Scale win payout up
+    // for low-own builds, down for chalk. Neutral at ~15% avg ownership.
+    const avgOwn = players.reduce((s, p) => s + (p.own || 0), 0) / players.length;
+    // Cap at 1.35 (was 2.0) — a 35% max win-payout boost for low-ownership lineups.
+    // The old 2.0 cap let low-own lineups simulate as 2× better than their actual score
+    // distribution warranted, inflating sim ROI purely from the leverage calculation.
+    const ownLeverage = Math.max(0.75, Math.min(1.35, 1.0 + (15 - avgOwn) * 0.025));
 
     let cashCount = 0, winCount = 0;
     for (let s = 0; s < numSims; s++) {
-      const ourScore = lu.reduce((sum, p) => sum + samplePlayerScore(p, 0), 0);
+      const ourScore = sampleCorrelatedLineup(players, L);
       if (ourScore >= cashLine) cashCount++;
       if (ourScore >= winLine) winCount++;
     }
     const cashRate = cashCount / numSims;
     const winRate = winCount / numSims;
 
-    // Sim ROI using payout config: EV = (cash_rate × cash_mult + win_rate × win_mult) / 2 - 1
-    // Divide by 2 to avoid double-counting cash bracket (cash includes win bracket)
-    const simROI = (cashRate * pc.cashMult * 0.85 + winRate * pc.winMult * 0.15) - 1;
+    // Sim ROI: straightforward EV calc — cashMult/winMult already incorporate
+    // typical DK rake and payout structure so no extra weights needed.
+    const simROI = (cashRate * pc.cashMult + winRate * pc.winMult * ownLeverage) - 1;
 
     return {
       lu,
@@ -1850,7 +2182,8 @@ function simulatePortfolio(lineups, pool, numSims = 2000, contestType = 'gpp', m
       winRate: parseFloat((winRate * 100).toFixed(2)),
       cashLine: parseFloat(cashLine.toFixed(1)),
       winLine: parseFloat(winLine.toFixed(1)),
-      simROI: parseFloat((simROI * 100).toFixed(1))
+      simROI: parseFloat((simROI * 100).toFixed(1)),
+      ownLeverage: parseFloat(ownLeverage.toFixed(2))
     };
   }).filter(Boolean);
 
@@ -1888,6 +2221,8 @@ return {
   vegasAdjustment, vegasPitcherAdjustment,
   teamScoringAdjustment,
   statcastCeilingBoost, pitcherStuffBoost, bullpenAdjustment, catcherFramingAdjustment, sprintSpeedBoost, calcPortfolioOverlap, computePortfolioDiversity, umpireMultiplier,
+  dvpMultiplier, platoonMultiplier, unconfirmedMultiplier,
+  computeStackAdjacency, computeStackAdjacencyFromPool,
 
   // Projection blending
   blendProjections,

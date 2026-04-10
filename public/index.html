@@ -433,6 +433,32 @@
   </div>
   <div id="port-warnings" style="display:none;margin-bottom:10px"></div>
 
+  <!-- Sim ROI Filter -->
+  <div style="margin-bottom:10px;padding:8px 10px;border:0.5px solid var(--brd-s);border-radius:var(--r);background:var(--bp)">
+    <div style="display:flex;align-items:center;gap:10px">
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;flex:0 0 auto">
+        <input type="checkbox" id="port-sim-filter" style="width:14px;height:14px" onchange="toggleSimFilter();saveSession()">
+        <span style="font-size:12px;font-weight:500">Sim ROI Filter</span>
+      </label>
+      <span style="font-size:11px;color:var(--tt);flex:1">Generate extra lineups, keep top N by sim ROI</span>
+    </div>
+    <div id="sim-filter-options" style="display:none;flex-direction:column;gap:6px;margin-top:8px">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <label style="font-size:11px;color:var(--tt);white-space:nowrap">Overflow %</label>
+        <input type="number" id="port-sim-filter-pct" value="50" min="10" max="200" step="10" title="% of extra lineups to generate beyond the target count (e.g. 50 = generate 150%, keep best 100% by sim ROI)." style="width:60px;font-size:12px;padding:3px 6px;border:0.5px solid var(--brd-s);border-radius:4px;background:var(--bp);color:var(--tp)" onchange="saveSession()">
+        <label style="font-size:11px;color:var(--tt);white-space:nowrap">Sims</label>
+        <input type="number" id="port-sim-filter-sims" value="1500" min="100" max="5000" step="100" title="Simulations per lineup for the filter pass. More = more accurate ranking but slower." style="width:65px;font-size:12px;padding:3px 6px;border:0.5px solid var(--brd-s);border-radius:4px;background:var(--bp);color:var(--tp)" onchange="saveSession()">
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <label style="font-size:11px;color:var(--tt);white-space:nowrap">ROI Band</label>
+        <input type="number" id="port-sim-roi-min" placeholder="min %" step="1" title="Keep only lineups with sim ROI ≥ this value (e.g. -15 = -15%). Leave blank for no lower bound." style="width:65px;font-size:12px;padding:3px 6px;border:0.5px solid var(--brd-s);border-radius:4px;background:var(--bp);color:var(--tp)" onchange="saveSession()">
+        <span style="font-size:11px;color:var(--tt)">to</span>
+        <input type="number" id="port-sim-roi-max" placeholder="max %" step="1" title="Keep only lineups with sim ROI ≤ this value (e.g. 0 = 0%). Leave blank for no upper bound." style="width:65px;font-size:12px;padding:3px 6px;border:0.5px solid var(--brd-s);border-radius:4px;background:var(--bp);color:var(--tp)" onchange="saveSession()">
+        <span style="font-size:11px;color:var(--tt)">% sim ROI — leave blank to keep top N</span>
+      </div>
+    </div>
+  </div>
+
   <button class="btn-g" id="gen-portfolio-btn" onclick="generatePortfolio()" style="width:100%;margin-bottom:12px">Generate Portfolio</button>
 
   <!-- Late Swap -->

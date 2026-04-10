@@ -1,284 +1,60 @@
 {
   "data": {
-    "alejandro kirk": {
-      "name": "Alejandro Kirk",
-      "framingRuns": 16.630482933736744,
-      "framingRunsPerGame": 0.2739460655045469,
-      "shadowStrikePct": 0.47104128157732594,
-      "pitches": 8499
+    "agustn ramrez": {
+      "name": "Agustín Ramírez",
+      "framingRuns": 0.5196072976019839,
+      "framingRunsPerGame": 0.013943841607107101,
+      "shadowStrikePct": 0.44136566056407717,
+      "pitches": 5217
     },
     "bo naylor": {
       "name": "Bo Naylor",
-      "framingRuns": -2.7334849312724154,
-      "framingRunsPerGame": -0.045498500817755104,
+      "framingRuns": -2.7334849312724123,
+      "framingRunsPerGame": -0.04549850081775505,
       "shadowStrikePct": 0.4201430274135876,
       "pitches": 8411
     },
-    "dillon dingler": {
-      "name": "Dillon Dingler",
-      "framingRuns": 6.668246527101856,
-      "framingRunsPerGame": 0.1094051932256252,
-      "shadowStrikePct": 0.4460624071322437,
-      "pitches": 8533
-    },
-    "keibert ruiz": {
-      "name": "Keibert Ruiz",
-      "framingRuns": -8.70023642177239,
-      "framingRunsPerGame": -0.24646562101338215,
-      "shadowStrikePct": 0.38232373386295926,
-      "pitches": 4942
-    },
-    "travis darnaud": {
-      "name": "Travis d'Arnaud",
-      "framingRuns": -3.3763383979285364,
-      "framingRunsPerGame": -0.11656901990382122,
-      "shadowStrikePct": 0.3990208078335373,
-      "pitches": 4055
-    },
-    "gabriel moreno": {
-      "name": "Gabriel Moreno",
-      "framingRuns": 6.390166646898931,
-      "framingRunsPerGame": 0.16567098714182413,
-      "shadowStrikePct": 0.4449737970462125,
-      "pitches": 5400
-    },
-    "luis torrens": {
-      "name": "Luis Torrens",
-      "framingRuns": 3.8198979728679796,
-      "framingRunsPerGame": 0.09568540279146845,
-      "shadowStrikePct": 0.4226190476190476,
-      "pitches": 5589
-    },
-    "cal raleigh": {
-      "name": "Cal Raleigh",
-      "framingRuns": 7.025735412960608,
-      "framingRunsPerGame": 0.11181118083602194,
-      "shadowStrikePct": 0.43660740308947826,
-      "pitches": 8797
-    },
-    "christian vzquez": {
-      "name": "Christian Vázquez",
-      "framingRuns": -2.8393762351345972,
-      "framingRunsPerGame": -0.09401908063359594,
-      "shadowStrikePct": 0.41081081081081083,
-      "pitches": 4228
-    },
-    "martn maldonado": {
-      "name": "Martín Maldonado",
-      "framingRuns": -0.3337673482398462,
-      "framingRunsPerGame": -0.012760084312828638,
-      "shadowStrikePct": 0.41239316239316237,
-      "pitches": 3662
-    },
-    "henry davis": {
-      "name": "Henry Davis",
-      "framingRuns": -1.734362497366715,
-      "framingRunsPerGame": -0.04479076731808525,
-      "shadowStrikePct": 0.4092153284671533,
-      "pitches": 5421
-    },
-    "elias daz": {
-      "name": "Elias Díaz",
-      "framingRuns": 1.2753282065052527,
-      "framingRunsPerGame": 0.03184908114711655,
-      "shadowStrikePct": 0.41271989174560214,
-      "pitches": 5606
-    },
-    "james mccann": {
-      "name": "James McCann",
-      "framingRuns": -1.797162661608692,
-      "framingRunsPerGame": -0.09866775397067327,
-      "shadowStrikePct": 0.4148430066603235,
-      "pitches": 2550
-    },
-    "matt thaiss": {
-      "name": "Matt Thaiss",
-      "framingRuns": -3.588944951039689,
-      "framingRunsPerGame": -0.1472171969368756,
-      "shadowStrikePct": 0.3837920489296636,
-      "pitches": 3413
-    },
-    "freddy fermin": {
-      "name": "Freddy Fermin",
-      "framingRuns": -0.5678886432720147,
-      "framingRunsPerGame": -0.011734968274255653,
-      "shadowStrikePct": 0.43587842846553004,
-      "pitches": 6775
-    },
-    "jose trevino": {
-      "name": "Jose Trevino",
-      "framingRuns": 1.5347263578593857,
-      "framingRunsPerGame": 0.03427914647420453,
-      "shadowStrikePct": 0.4187192118226601,
-      "pitches": 6268
-    },
     "hunter goodman": {
       "name": "Hunter Goodman",
-      "framingRuns": 1.502226143785074,
-      "framingRunsPerGame": 0.02843971063284792,
+      "framingRuns": 1.5022261437850712,
+      "framingRunsPerGame": 0.028439710632847868,
       "shadowStrikePct": 0.43481300244669696,
       "pitches": 7395
     },
-    "francisco alvarez": {
-      "name": "Francisco Alvarez",
-      "framingRuns": -4.816233452801195,
-      "framingRunsPerGame": -0.1271492897213214,
-      "shadowStrikePct": 0.4090019569471624,
-      "pitches": 5303
-    },
-    "kyle teel": {
-      "name": "Kyle Teel",
-      "framingRuns": -0.3593642791485551,
-      "framingRunsPerGame": -0.010918185564409228,
-      "shadowStrikePct": 0.40011068068622024,
-      "pitches": 4608
-    },
-    "ryan jeffers": {
-      "name": "Ryan Jeffers",
-      "framingRuns": -1.0686449258680089,
-      "framingRunsPerGame": -0.02555693365587995,
-      "shadowStrikePct": 0.4182282793867121,
-      "pitches": 5854
-    },
-    "dalton rushing": {
-      "name": "Dalton Rushing",
-      "framingRuns": -3.063128930786692,
-      "framingRunsPerGame": -0.161217312146668,
-      "shadowStrikePct": 0.3972055888223553,
-      "pitches": 2660
-    },
-    "sean murphy": {
-      "name": "Sean Murphy",
-      "framingRuns": 1.6310436181190637,
-      "framingRunsPerGame": 0.040415240094985656,
-      "shadowStrikePct": 0.4333627537511033,
-      "pitches": 5650
-    },
-    "salvador perez": {
-      "name": "Salvador Perez",
-      "framingRuns": -6.597048348442636,
-      "framingRunsPerGame": -0.13968341935601467,
-      "shadowStrikePct": 0.39727065959059893,
-      "pitches": 6612
-    },
-    "pedro pags": {
-      "name": "Pedro Pagés",
-      "framingRuns": 4.950101565350893,
-      "framingRunsPerGame": 0.09015405478718942,
-      "shadowStrikePct": 0.4466754443712969,
-      "pitches": 7687
-    },
-    "victor caratini": {
-      "name": "Victor Caratini",
-      "framingRuns": -1.7435296043531079,
-      "framingRunsPerGame": -0.06495320505839146,
-      "shadowStrikePct": 0.40421329822251484,
-      "pitches": 3758
-    },
-    "shea langeliers": {
-      "name": "Shea Langeliers",
-      "framingRuns": -2.862356306503384,
-      "framingRunsPerGame": -0.04650457037373492,
-      "shadowStrikePct": 0.4040741866828823,
-      "pitches": 8617
-    },
-    "jacob stallings": {
-      "name": "Jacob Stallings",
-      "framingRuns": -2.1230338241206157,
-      "framingRunsPerGame": -0.1096365678262214,
-      "shadowStrikePct": 0.4213006597549482,
-      "pitches": 2711
-    },
-    "william contreras": {
-      "name": "William Contreras",
-      "framingRuns": 0.9493817914241472,
-      "framingRunsPerGame": 0.013858143134123722,
-      "shadowStrikePct": 0.43696829079659705,
-      "pitches": 9591
-    },
-    "nick fortes": {
-      "name": "Nick Fortes",
-      "framingRuns": 2.3135367334999977,
-      "framingRunsPerGame": 0.06519628476046692,
-      "shadowStrikePct": 0.43904906423874557,
-      "pitches": 4968
-    },
-    "joey bart": {
-      "name": "Joey Bart",
-      "framingRuns": -1.8253113177826772,
-      "framingRunsPerGame": -0.043809975053930195,
-      "shadowStrikePct": 0.4117896522476675,
-      "pitches": 5833
-    },
-    "kyle higashioka": {
-      "name": "Kyle Higashioka",
-      "framingRuns": 3.008353548378776,
-      "framingRunsPerGame": 0.08874199257754503,
-      "shadowStrikePct": 0.4309278350515464,
-      "pitches": 4746
-    },
-    "austin hedges": {
-      "name": "Austin Hedges",
-      "framingRuns": 10.620270639671734,
-      "framingRunsPerGame": 0.3673926092300575,
-      "shadowStrikePct": 0.48589341692789967,
-      "pitches": 4047
-    },
-    "will smith": {
-      "name": "Will Smith",
-      "framingRuns": -9.790228212200486,
-      "framingRunsPerGame": -0.1798493570014523,
-      "shadowStrikePct": 0.39792849983294354,
-      "pitches": 7621
-    },
-    "carlos narvez": {
-      "name": "Carlos Narváez",
-      "framingRuns": 4.9776715681574855,
-      "framingRunsPerGame": 0.08854816004346226,
-      "shadowStrikePct": 0.4295259306395164,
-      "pitches": 7870
-    },
-    "edgar quero": {
-      "name": "Edgar Quero",
-      "framingRuns": -12.926515569632006,
-      "framingRunsPerGame": -0.3639075366475932,
-      "shadowStrikePct": 0.37166324435318276,
-      "pitches": 4973
+    "liam hicks": {
+      "name": "Liam Hicks",
+      "framingRuns": 0.46508170300157287,
+      "framingRunsPerGame": 0.016824661090496178,
+      "shadowStrikePct": 0.4122085048010974,
+      "pitches": 3870
     },
     "carson kelly": {
       "name": "Carson Kelly",
-      "framingRuns": -1.9205180925855343,
-      "framingRunsPerGame": -0.03984477370509407,
+      "framingRuns": -1.920518092585532,
+      "framingRunsPerGame": -0.039844773705094025,
       "shadowStrikePct": 0.4190268700072622,
       "pitches": 6748
     },
-    "logan ohoppe": {
-      "name": "Logan O'Hoppe",
-      "framingRuns": -8.199996653344115,
-      "framingRunsPerGame": -0.1492071135258872,
-      "shadowStrikePct": 0.4,
-      "pitches": 7694
+    "edgar quero": {
+      "name": "Edgar Quero",
+      "framingRuns": -12.926515569632008,
+      "framingRunsPerGame": -0.36390753664759323,
+      "shadowStrikePct": 0.37166324435318276,
+      "pitches": 4973
     },
     "danny jansen": {
       "name": "Danny Jansen",
-      "framingRuns": -8.406429994738966,
-      "framingRunsPerGame": -0.19644470026096733,
+      "framingRuns": -8.406429994738975,
+      "framingRunsPerGame": -0.19644470026096753,
       "shadowStrikePct": 0.39135959339263027,
       "pitches": 5991
     },
-    "riley adams": {
-      "name": "Riley Adams",
-      "framingRuns": -8.692919482683797,
-      "framingRunsPerGame": -0.21486736009458537,
-      "shadowStrikePct": 0.387221269296741,
-      "pitches": 5664
-    },
-    "reese mcguire": {
-      "name": "Reese McGuire",
-      "framingRuns": 3.471797378031534,
-      "framingRunsPerGame": 0.17830213973749626,
-      "shadowStrikePct": 0.4450651769087523,
-      "pitches": 2726
+    "drake baldwin": {
+      "name": "Drake Baldwin",
+      "framingRuns": -1.029218322933933,
+      "framingRunsPerGame": -0.02242305714453013,
+      "shadowStrikePct": 0.41632983023443815,
+      "pitches": 6426
     },
     "mitch garver": {
       "name": "Mitch Garver",
@@ -287,68 +63,54 @@
       "shadowStrikePct": 0.3898886032562125,
       "pitches": 2975
     },
-    "liam hicks": {
-      "name": "Liam Hicks",
-      "framingRuns": 0.46508170300157414,
-      "framingRunsPerGame": 0.016824661090496223,
-      "shadowStrikePct": 0.4122085048010974,
-      "pitches": 3870
+    "freddy fermin": {
+      "name": "Freddy Fermin",
+      "framingRuns": -0.5678886432720138,
+      "framingRunsPerGame": -0.011734968274255636,
+      "shadowStrikePct": 0.43587842846553004,
+      "pitches": 6775
     },
-    "adley rutschman": {
-      "name": "Adley Rutschman",
-      "framingRuns": 2.4251846543280817,
-      "framingRunsPerGame": 0.06856337875725595,
-      "shadowStrikePct": 0.4348750664540138,
-      "pitches": 4952
+    "christian vzquez": {
+      "name": "Christian Vázquez",
+      "framingRuns": -2.8393762351345986,
+      "framingRunsPerGame": -0.09401908063359599,
+      "shadowStrikePct": 0.41081081081081083,
+      "pitches": 4228
     },
-    "jt realmuto": {
-      "name": "J.T. Realmuto",
-      "framingRuns": -8.371238231439198,
-      "framingRunsPerGame": -0.12064786415498124,
-      "shadowStrikePct": 0.4090454772613693,
-      "pitches": 9714
+    "joey bart": {
+      "name": "Joey Bart",
+      "framingRuns": -1.8253113177826765,
+      "framingRunsPerGame": -0.04380997505393018,
+      "shadowStrikePct": 0.4117896522476675,
+      "pitches": 5833
     },
-    "jonah heim": {
-      "name": "Jonah Heim",
-      "framingRuns": -2.049121527605676,
-      "framingRunsPerGame": -0.04315237874019173,
-      "shadowStrikePct": 0.41876854599406527,
-      "pitches": 6648
+    "francisco alvarez": {
+      "name": "Francisco Alvarez",
+      "framingRuns": -4.816233452801193,
+      "framingRunsPerGame": -0.12714928972132136,
+      "shadowStrikePct": 0.4090019569471624,
+      "pitches": 5303
     },
-    "tyler stephenson": {
-      "name": "Tyler Stephenson",
-      "framingRuns": -8.019932845314452,
-      "framingRunsPerGame": -0.22550524168387692,
-      "shadowStrikePct": 0.40343980343980346,
-      "pitches": 4979
+    "kyle higashioka": {
+      "name": "Kyle Higashioka",
+      "framingRuns": 3.008353548378773,
+      "framingRunsPerGame": 0.08874199257754493,
+      "shadowStrikePct": 0.4309278350515464,
+      "pitches": 4746
     },
-    "agustn ramrez": {
-      "name": "Agustín Ramírez",
-      "framingRuns": 0.5196072976019832,
-      "framingRunsPerGame": 0.013943841607107084,
-      "shadowStrikePct": 0.44136566056407717,
-      "pitches": 5217
+    "jacob stallings": {
+      "name": "Jacob Stallings",
+      "framingRuns": -2.123033824120615,
+      "framingRunsPerGame": -0.10963656782622135,
+      "shadowStrikePct": 0.4213006597549482,
+      "pitches": 2711
     },
-    "connor wong": {
-      "name": "Connor Wong",
-      "framingRuns": 0.17022069855301658,
-      "framingRunsPerGame": 0.006188236249655238,
-      "shadowStrikePct": 0.42193548387096774,
-      "pitches": 3851
-    },
-    "ben rortvedt": {
-      "name": "Ben Rortvedt",
-      "framingRuns": 0.5860663979849484,
-      "framingRunsPerGame": 0.029492917224260527,
-      "shadowStrikePct": 0.40504050405040504,
-      "pitches": 2782
-    },
-    "yainer diaz": {
-      "name": "Yainer Diaz",
-      "framingRuns": -3.4537048077753596,
-      "framingRunsPerGame": -0.057989766501385265,
-      "shadowStrikePct": 0.4131020041878552,
-      "pitches": 8338
+    "james mccann": {
+      "name": "James McCann",
+      "framingRuns": -1.797162661608691,
+      "framingRunsPerGame": -0.09866775397067323,
+      "shadowStrikePct": 0.4148430066603235,
+      "pitches": 2550
     },
     "austin wells": {
       "name": "Austin Wells",
@@ -357,49 +119,287 @@
       "shadowStrikePct": 0.44587706146926537,
       "pitches": 8666
     },
-    "patrick bailey": {
-      "name": "Patrick Bailey",
-      "framingRuns": 25.060725428645277,
-      "framingRunsPerGame": 0.39363868058008966,
-      "shadowStrikePct": 0.4764472190692395,
-      "pitches": 8913
-    },
-    "drake baldwin": {
-      "name": "Drake Baldwin",
-      "framingRuns": -1.0292183229339344,
-      "framingRunsPerGame": -0.022423057144530162,
-      "shadowStrikePct": 0.41632983023443815,
-      "pitches": 6426
+    "elias daz": {
+      "name": "Elias Díaz",
+      "framingRuns": 1.2753282065052522,
+      "framingRunsPerGame": 0.031849081147116536,
+      "shadowStrikePct": 0.41271989174560214,
+      "pitches": 5606
     },
     "jose herrera": {
       "name": "Jose Herrera",
-      "framingRuns": -0.4676220338874576,
-      "framingRunsPerGame": -0.015451282686864305,
+      "framingRuns": -0.4676220338874564,
+      "framingRunsPerGame": -0.015451282686864265,
       "shadowStrikePct": 0.4095873786407767,
       "pitches": 4237
     },
-    "yohel pozo": {
-      "name": "Yohel Pozo",
-      "framingRuns": 1.8612031210226994,
-      "framingRunsPerGame": 0.0969376625532656,
-      "shadowStrikePct": 0.43738140417457305,
-      "pitches": 2688
+    "nick fortes": {
+      "name": "Nick Fortes",
+      "framingRuns": 2.3135367334999977,
+      "framingRunsPerGame": 0.06519628476046692,
+      "shadowStrikePct": 0.43904906423874557,
+      "pitches": 4968
+    },
+    "kyle teel": {
+      "name": "Kyle Teel",
+      "framingRuns": -0.35936427914855834,
+      "framingRunsPerGame": -0.010918185564409325,
+      "shadowStrikePct": 0.40011068068622024,
+      "pitches": 4608
+    },
+    "salvador perez": {
+      "name": "Salvador Perez",
+      "framingRuns": -6.597048348442638,
+      "framingRunsPerGame": -0.13968341935601472,
+      "shadowStrikePct": 0.39727065959059893,
+      "pitches": 6612
+    },
+    "yainer diaz": {
+      "name": "Yainer Diaz",
+      "framingRuns": -3.453704807775355,
+      "framingRunsPerGame": -0.05798976650138519,
+      "shadowStrikePct": 0.4131020041878552,
+      "pitches": 8338
     },
     "jake rogers": {
       "name": "Jake Rogers",
-      "framingRuns": 0.9238466768106347,
-      "framingRunsPerGame": 0.04581598822298578,
+      "framingRuns": 0.9238466768106359,
+      "framingRunsPerGame": 0.04581598822298584,
       "shadowStrikePct": 0.4143897996357013,
       "pitches": 2823
     },
+    "riley adams": {
+      "name": "Riley Adams",
+      "framingRuns": -8.692919482683799,
+      "framingRunsPerGame": -0.21486736009458543,
+      "shadowStrikePct": 0.387221269296741,
+      "pitches": 5664
+    },
+    "dillon dingler": {
+      "name": "Dillon Dingler",
+      "framingRuns": 6.668246527101859,
+      "framingRunsPerGame": 0.10940519322562524,
+      "shadowStrikePct": 0.4460624071322437,
+      "pitches": 8533
+    },
+    "jt realmuto": {
+      "name": "J.T. Realmuto",
+      "framingRuns": -8.37123823143921,
+      "framingRunsPerGame": -0.12064786415498142,
+      "shadowStrikePct": 0.4090454772613693,
+      "pitches": 9714
+    },
+    "victor caratini": {
+      "name": "Victor Caratini",
+      "framingRuns": -1.7435296043531086,
+      "framingRunsPerGame": -0.06495320505839149,
+      "shadowStrikePct": 0.40421329822251484,
+      "pitches": 3758
+    },
+    "alejandro kirk": {
+      "name": "Alejandro Kirk",
+      "framingRuns": 16.630482933736744,
+      "framingRunsPerGame": 0.2739460655045469,
+      "shadowStrikePct": 0.47104128157732594,
+      "pitches": 8499
+    },
+    "gabriel moreno": {
+      "name": "Gabriel Moreno",
+      "framingRuns": 6.390166646898932,
+      "framingRunsPerGame": 0.16567098714182418,
+      "shadowStrikePct": 0.4449737970462125,
+      "pitches": 5400
+    },
+    "ben rortvedt": {
+      "name": "Ben Rortvedt",
+      "framingRuns": 0.5860663979849474,
+      "framingRunsPerGame": 0.029492917224260475,
+      "shadowStrikePct": 0.40504050405040504,
+      "pitches": 2782
+    },
+    "jose trevino": {
+      "name": "Jose Trevino",
+      "framingRuns": 1.534726357859384,
+      "framingRunsPerGame": 0.03427914647420449,
+      "shadowStrikePct": 0.4187192118226601,
+      "pitches": 6268
+    },
+    "logan ohoppe": {
+      "name": "Logan O'Hoppe",
+      "framingRuns": -8.199996653344112,
+      "framingRunsPerGame": -0.14920711352588714,
+      "shadowStrikePct": 0.4,
+      "pitches": 7694
+    },
+    "william contreras": {
+      "name": "William Contreras",
+      "framingRuns": 0.9493817914241395,
+      "framingRunsPerGame": 0.01385814313412361,
+      "shadowStrikePct": 0.43696829079659705,
+      "pitches": 9591
+    },
+    "matt thaiss": {
+      "name": "Matt Thaiss",
+      "framingRuns": -3.5889449510396907,
+      "framingRunsPerGame": -0.14721719693687568,
+      "shadowStrikePct": 0.3837920489296636,
+      "pitches": 3413
+    },
+    "dalton rushing": {
+      "name": "Dalton Rushing",
+      "framingRuns": -3.0631289307866907,
+      "framingRunsPerGame": -0.16121731214666793,
+      "shadowStrikePct": 0.3972055888223553,
+      "pitches": 2660
+    },
+    "sean murphy": {
+      "name": "Sean Murphy",
+      "framingRuns": 1.6310436181190646,
+      "framingRunsPerGame": 0.04041524009498568,
+      "shadowStrikePct": 0.4333627537511033,
+      "pitches": 5650
+    },
+    "shea langeliers": {
+      "name": "Shea Langeliers",
+      "framingRuns": -2.862356306503379,
+      "framingRunsPerGame": -0.04650457037373483,
+      "shadowStrikePct": 0.4040741866828823,
+      "pitches": 8617
+    },
     "tyler heineman": {
       "name": "Tyler Heineman",
-      "framingRuns": 4.700195236925989,
-      "framingRunsPerGame": 0.19073256033902564,
+      "framingRuns": 4.700195236925991,
+      "framingRunsPerGame": 0.19073256033902572,
       "shadowStrikePct": 0.47328818660647104,
       "pitches": 3450
+    },
+    "ryan jeffers": {
+      "name": "Ryan Jeffers",
+      "framingRuns": -1.0686449258680095,
+      "framingRunsPerGame": -0.025556933655879965,
+      "shadowStrikePct": 0.4182282793867121,
+      "pitches": 5854
+    },
+    "will smith": {
+      "name": "Will Smith",
+      "framingRuns": -9.79022821220048,
+      "framingRunsPerGame": -0.17984935700145221,
+      "shadowStrikePct": 0.39792849983294354,
+      "pitches": 7621
+    },
+    "patrick bailey": {
+      "name": "Patrick Bailey",
+      "framingRuns": 25.060725428645274,
+      "framingRunsPerGame": 0.3936386805800896,
+      "shadowStrikePct": 0.4764472190692395,
+      "pitches": 8913
+    },
+    "luis torrens": {
+      "name": "Luis Torrens",
+      "framingRuns": 3.8198979728679796,
+      "framingRunsPerGame": 0.09568540279146845,
+      "shadowStrikePct": 0.4226190476190476,
+      "pitches": 5589
+    },
+    "adley rutschman": {
+      "name": "Adley Rutschman",
+      "framingRuns": 2.425184654328084,
+      "framingRunsPerGame": 0.068563378757256,
+      "shadowStrikePct": 0.4348750664540138,
+      "pitches": 4952
+    },
+    "jonah heim": {
+      "name": "Jonah Heim",
+      "framingRuns": -2.0491215276056796,
+      "framingRunsPerGame": -0.04315237874019181,
+      "shadowStrikePct": 0.41876854599406527,
+      "pitches": 6648
+    },
+    "connor wong": {
+      "name": "Connor Wong",
+      "framingRuns": 0.17022069855301636,
+      "framingRunsPerGame": 0.00618823624965523,
+      "shadowStrikePct": 0.42193548387096774,
+      "pitches": 3851
+    },
+    "henry davis": {
+      "name": "Henry Davis",
+      "framingRuns": -1.7343624973667158,
+      "framingRunsPerGame": -0.04479076731808527,
+      "shadowStrikePct": 0.4092153284671533,
+      "pitches": 5421
+    },
+    "reese mcguire": {
+      "name": "Reese McGuire",
+      "framingRuns": 3.4717973780315328,
+      "framingRunsPerGame": 0.17830213973749617,
+      "shadowStrikePct": 0.4450651769087523,
+      "pitches": 2726
+    },
+    "keibert ruiz": {
+      "name": "Keibert Ruiz",
+      "framingRuns": -8.700236421772386,
+      "framingRunsPerGame": -0.24646562101338207,
+      "shadowStrikePct": 0.38232373386295926,
+      "pitches": 4942
+    },
+    "travis darnaud": {
+      "name": "Travis d'Arnaud",
+      "framingRuns": -3.376338397928535,
+      "framingRunsPerGame": -0.11656901990382118,
+      "shadowStrikePct": 0.3990208078335373,
+      "pitches": 4055
+    },
+    "tyler stephenson": {
+      "name": "Tyler Stephenson",
+      "framingRuns": -8.019932845314445,
+      "framingRunsPerGame": -0.22550524168387673,
+      "shadowStrikePct": 0.40343980343980346,
+      "pitches": 4979
+    },
+    "austin hedges": {
+      "name": "Austin Hedges",
+      "framingRuns": 10.62027063967173,
+      "framingRunsPerGame": 0.3673926092300574,
+      "shadowStrikePct": 0.48589341692789967,
+      "pitches": 4047
+    },
+    "martn maldonado": {
+      "name": "Martín Maldonado",
+      "framingRuns": -0.33376734823984494,
+      "framingRunsPerGame": -0.012760084312828587,
+      "shadowStrikePct": 0.41239316239316237,
+      "pitches": 3662
+    },
+    "pedro pags": {
+      "name": "Pedro Pagés",
+      "framingRuns": 4.950101565350895,
+      "framingRunsPerGame": 0.09015405478718945,
+      "shadowStrikePct": 0.4466754443712969,
+      "pitches": 7687
+    },
+    "yohel pozo": {
+      "name": "Yohel Pozo",
+      "framingRuns": 1.8612031210227,
+      "framingRunsPerGame": 0.09693766255326564,
+      "shadowStrikePct": 0.43738140417457305,
+      "pitches": 2688
+    },
+    "carlos narvez": {
+      "name": "Carlos Narváez",
+      "framingRuns": 4.97767156815748,
+      "framingRunsPerGame": 0.08854816004346217,
+      "shadowStrikePct": 0.4295259306395164,
+      "pitches": 7870
+    },
+    "cal raleigh": {
+      "name": "Cal Raleigh",
+      "framingRuns": 7.025735412960606,
+      "framingRunsPerGame": 0.11181118083602191,
+      "shadowStrikePct": 0.43660740308947826,
+      "pitches": 8797
     }
   },
-  "fetchedAt": "2026-04-04T19:18:51.028Z",
+  "fetchedAt": "2026-04-09T15:25:38.432Z",
   "count": 57
 }

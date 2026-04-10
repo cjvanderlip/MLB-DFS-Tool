@@ -3280,7 +3280,7 @@
       "name": "Elias Díaz",
       "sprintSpeed": 25,
       "bolts": 0,
-      "hpTo1b": 4.82
+      "hpTo1b": 4.81
     },
     "jhonny pereda": {
       "name": "Jhonny Pereda",
@@ -3400,7 +3400,7 @@
       "name": "Austin Wynns",
       "sprintSpeed": 24.4,
       "bolts": 0,
-      "hpTo1b": 4.98
+      "hpTo1b": 4.97
     },
     "jose trevino": {
       "name": "Jose Trevino",
@@ -3469,6 +3469,6 @@
       "hpTo1b": 5.14
     }
   },
-  "fetchedAt": "2026-04-04T19:18:49.475Z",
+  "fetchedAt": "2026-04-09T23:03:22.355Z",
   "count": 578
 }

@@ -46,7 +46,12 @@
       "WebFetch(domain:x.com)",
       "WebFetch(domain:dknetwork.draftkings.com)",
       "WebFetch(domain:readdive.com)",
-      "WebFetch(domain:paydirt.ghost.io)"
+      "WebFetch(domain:paydirt.ghost.io)",
+      "Bash(netstat -ano)",
+      "Bash(taskkill /PID 4728 /F)",
+      "Bash(cmd.exe /c \"taskkill /PID 4728 /F\")",
+      "Bash(echo \"exit: $?\")",
+      "Bash(powershell.exe -Command \"Stop-Process -Id 4728 -Force\")"
     ]
   }
 }

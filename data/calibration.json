@@ -1,5 +1,15 @@
 {
-  "pitcherScale": 1,
-  "batterScale": 1,
-  "updatedAt": "2026-04-04T19:20:48.247Z"
+  "pitcherScale": 1.0,
+  "batterScale": 1.0,
+  "positionScales": {
+    "SP": 0.913,
+    "RP": 0.672,
+    "C": 0.726,
+    "1B": 0.897,
+    "2B": 0.648,
+    "3B": 0.529,
+    "SS": 0.531,
+    "OF": 0.592
+  },
+  "updatedAt": "2026-04-10T00:00:00.000Z"
 }

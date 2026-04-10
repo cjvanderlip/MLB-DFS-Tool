@@ -468,6 +468,25 @@ const MLB_API_BASE = 'https://statsapi.mlb.com/api/v1';
 // MLB Stats API team abbreviations that differ from DK
 const MLB_TO_DK_ABBR = { 'AZ': 'ARI', 'WAS': 'WSH', 'ATH': 'OAK', 'SDP': 'SD', 'SFG': 'SF', 'TBR': 'TB', 'KCR': 'KC' };
 
+// Static team ID → abbreviation map (from /api/v1/teams?sportId=1).
+// The schedule API doesn't return abbreviation without `hydrate=team`.
+const MLB_TEAM_ID_TO_ABBR = {
+  108: 'LAA', 109: 'ARI', 110: 'BAL', 111: 'BOS', 112: 'CHC',
+  113: 'CIN', 114: 'CLE', 115: 'COL', 116: 'DET', 117: 'HOU',
+  118: 'KC',  119: 'LAD', 120: 'WSH', 121: 'NYM', 133: 'OAK',
+  134: 'PIT', 135: 'SD',  136: 'SEA', 137: 'SF',  138: 'STL',
+  139: 'TB',  140: 'TEX', 141: 'TOR', 142: 'MIN', 143: 'PHI',
+  144: 'ATL', 145: 'CWS', 146: 'MIA', 147: 'NYY', 158: 'MIL'
+};
+
+// Resolve team abbreviation from game data: prefer ID lookup, fallback to abbreviation field + DK mapping
+function resolveTeamAbbr(teamData) {
+  const id = teamData?.team?.id;
+  if (id && MLB_TEAM_ID_TO_ABBR[id]) return MLB_TEAM_ID_TO_ABBR[id];
+  const abbr = teamData?.team?.abbreviation || '';
+  return MLB_TO_DK_ABBR[abbr] || abbr;
+}
+
 function normalizeName(name) {
   return (name || '')
     .toLowerCase()
@@ -747,13 +766,14 @@ app.get('/api/history/analysis', (req, res) => {
       const projected = p.median || 0;
       if (projected <= 0) return;
       const isPitcher = (p.pos || '').includes('P');
+      const rawPos = (p.pos || '').split('/')[0].trim();
       pairs.push({
         name: p.name, projected, actual,
         error: actual - projected,
         relError: (actual - projected) / projected,
         floor: p.floor || 0, ceiling: p.ceiling || 0,
         own: p.own || 0, order: p.order || 0,
-        pos: isPitcher ? 'P' : 'BAT', team: p.team || ''
+        pos: isPitcher ? 'P' : 'BAT', rawPos, team: p.team || ''
       });
     });
   });
@@ -782,7 +802,7 @@ app.get('/api/history/analysis', (req, res) => {
       bias: parseFloat(bias.toFixed(4)),
       rmse: parseFloat(rmse.toFixed(4)),
       spearman: parseFloat(spearman.toFixed(4)),
-      calibrationFactor: parseFloat((1 / (1 + bias)).toFixed(4))
+      calibrationFactor: parseFloat((1 + bias).toFixed(4))
     };
   }
 
@@ -791,6 +811,14 @@ app.get('/api/history/analysis', (req, res) => {
   const overall = calcStats(pairs);
   const pitcherStats = calcStats(pitchers);
   const batterStats = calcStats(batters);
+
+  // Per-position breakdown for granular calibration
+  const DK_POSITIONS = ['SP', 'RP', 'C', '1B', '2B', '3B', 'SS', 'OF'];
+  const byPosition = {};
+  DK_POSITIONS.forEach(pos => {
+    const arr = pairs.filter(p => p.rawPos === pos);
+    if (arr.length >= 5) byPosition[pos] = calcStats(arr);
+  });
 
   const confidence = pairs.length >= 100 ? 'high' : pairs.length >= 40 ? 'medium' : pairs.length >= 20 ? 'low' : 'insufficient';
 
@@ -844,9 +872,13 @@ app.get('/api/history/analysis', (req, res) => {
     bottomOrder: calcStats(batters.filter(p => p.order >= 5)),
     highOwnership: calcStats(batters.filter(p => p.own > 25)),
     lowOwnership: calcStats(batters.filter(p => p.own > 0 && p.own <= 10)),
+    byPosition,
     suggestion: {
       pitcherCalibration: pitcherStats?.calibrationFactor ?? 1.0,
       batterCalibration: batterStats?.calibrationFactor ?? 1.0,
+      positionScales: Object.fromEntries(
+        Object.entries(byPosition).map(([pos, s]) => [pos, s?.calibrationFactor ?? 1.0])
+      ),
       confidence
     },
     simCalibration,
@@ -857,7 +889,7 @@ app.get('/api/history/analysis', (req, res) => {
 // ── Calibration Storage ──────────────────────────────────────────────────────
 
 const calibrationFile = path.join(dataDir, 'calibration.json');
-const DEFAULT_CALIBRATION = { pitcherScale: 1.0, batterScale: 1.0, updatedAt: null };
+const DEFAULT_CALIBRATION = { pitcherScale: 1.0, batterScale: 1.0, positionScales: {}, updatedAt: null };
 
 app.get('/api/calibration', (req, res) => {
   try {
@@ -1095,8 +1127,8 @@ app.get('/api/lineups/:date', async (req, res) => {
 
     const results = await Promise.all(games.map(async (game) => {
       const gamePk = game.gamePk;
-      const homeAbbr = MLB_TO_DK_ABBR[game.teams?.home?.team?.abbreviation] || game.teams?.home?.team?.abbreviation || '';
-      const awayAbbr = MLB_TO_DK_ABBR[game.teams?.away?.team?.abbreviation] || game.teams?.away?.team?.abbreviation || '';
+      const homeAbbr = resolveTeamAbbr(game.teams?.home);
+      const awayAbbr = resolveTeamAbbr(game.teams?.away);
       const homeProbable = game.teams?.home?.probablePitcher?.fullName || null;
       const awayProbable = game.teams?.away?.probablePitcher?.fullName || null;
       const gameTime = game.gameDate || '';
@@ -1106,24 +1138,19 @@ app.get('/api/lineups/:date', async (req, res) => {
 
       if (status === 'Live' || status === 'Final' || status === 'Preview') {
         try {
-          const liveRes = await apiFetch(`${MLB_API_BASE}/game/${gamePk}/linescore`, { timeout: 8000 });
-          if (liveRes.ok) {
-            if (status !== 'Preview') {
-              const boxRes = await apiFetch(`${MLB_API_BASE}/game/${gamePk}/boxscore`, { timeout: 10000 });
-              if (boxRes.ok) {
-                const box = await boxRes.json();
-                const extractOrder = (teamData) => {
-                  if (!teamData?.battingOrder) return [];
-                  return teamData.battingOrder.map(id => {
-                    const p = teamData.players?.['ID' + id];
-                    return p?.person?.fullName || '';
-                  }).filter(Boolean);
-                };
-                homeOrder = extractOrder(box.teams?.home);
-                awayOrder = extractOrder(box.teams?.away);
-                confirmed = homeOrder.length > 0 || awayOrder.length > 0;
-              }
-            }
+          const boxRes = await apiFetch(`${MLB_API_BASE}/game/${gamePk}/boxscore`, { timeout: 10000 });
+          if (boxRes.ok) {
+            const box = await boxRes.json();
+            const extractOrder = (teamData) => {
+              if (!teamData?.battingOrder) return [];
+              return teamData.battingOrder.map(id => {
+                const p = teamData.players?.['ID' + id];
+                return p?.person?.fullName || '';
+              }).filter(Boolean);
+            };
+            homeOrder = extractOrder(box.teams?.home);
+            awayOrder = extractOrder(box.teams?.away);
+            confirmed = homeOrder.length > 0 || awayOrder.length > 0;
           }
         } catch (e) { /* live data unavailable */ }
       }
@@ -1791,8 +1818,8 @@ app.get('/api/umpires/:date', async (req, res) => {
     const games = schedule.dates?.[0]?.games || [];
 
     const assignments = games.map(game => {
-      const homeAbbr = MLB_TO_DK_ABBR[game.teams?.home?.team?.abbreviation] || game.teams?.home?.team?.abbreviation || '';
-      const awayAbbr = MLB_TO_DK_ABBR[game.teams?.away?.team?.abbreviation] || game.teams?.away?.team?.abbreviation || '';
+      const homeAbbr = resolveTeamAbbr(game.teams?.home);
+      const awayAbbr = resolveTeamAbbr(game.teams?.away);
       const officials = game.officials || [];
       const hp = officials.find(o => (o.officialType || '').toLowerCase().includes('home plate'));
       const hpName = hp?.official?.fullName || null;

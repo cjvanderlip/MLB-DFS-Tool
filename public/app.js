@@ -104,7 +104,11 @@ function getPitcherMatchupBonus(pitcher) {
 
 function getEngineContext() {
   const pool = Engine.calibratePool(STATE.POOL);
-  return { vegasData: STATE.vegasData, parkFactors: STATE.parkFactors, weatherData: STATE.weatherData, stadiums: STATE.stadiumData, teamScoring: STATE.TEAM_SCORING, contestSize: STATE.contestSize, pool, optimalExposure: STATE.optimalExposure, optimalStacks: STATE.optimalStacks, umpireData: STATE.umpireData, blendWeights: STATE.blendWeights, bullpenData: STATE.bullpenData, framingMap: STATE.framingMap, sprintSpeedData: STATE.sprintSpeedData };
+  // hasConfirmedData: true only when confirmed lineups have been fetched this session.
+  // Detected by checking if any player in the pool has been marked confirmed.
+  // Without this flag, unconfirmedMultiplier is a no-op so pre-fetch runs are unaffected.
+  const hasConfirmedData = STATE.POOL.some(p => p.isConfirmed === true);
+  return { vegasData: STATE.vegasData, parkFactors: STATE.parkFactors, weatherData: STATE.weatherData, stadiums: STATE.stadiumData, teamScoring: STATE.TEAM_SCORING, contestSize: STATE.contestSize, pool, optimalExposure: STATE.optimalExposure, optimalStacks: STATE.optimalStacks, umpireData: STATE.umpireData, blendWeights: STATE.blendWeights, bullpenData: STATE.bullpenData, framingMap: STATE.framingMap, sprintSpeedData: STATE.sprintSpeedData, dvpData: STATE.dvpData, hasConfirmedData };
 }
 
 // Returns calibrated pool for optimizer calls — scoring functions score individual
@@ -824,16 +828,13 @@ function renderLineup() {
       const stackBadges = analysis.stacks.map(s =>
         `<span class="pill psu" style="font-size:10px">${esc(s.team)} ${s.count}-stack</span>`
       ).join(' ');
-      const bbBadges = analysis.bringBacks.map(b =>
-        `<span class="pill pi" style="font-size:10px">BB: ${esc(b.name)}</span>`
-      ).join(' ');
       analysisEl.style.display = 'block';
       analysisEl.innerHTML = `<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;font-size:11px">
         <span>Corr: <strong style="color:${corrColor}">${analysis.correlationScore.toFixed(2)}</strong></span>
         <span>Ceil: <strong>${analysis.ceilingPts.toFixed(1)}</strong></span>
         <span>Floor: <strong>${analysis.floorPts.toFixed(1)}</strong></span>
         <span>Val: <strong>${analysis.salaryEfficiency}</strong>x</span>
-        ${stackBadges}${bbBadges ? ' ' + bbBadges : '<span style="color:var(--tt)">no bring-back</span>'}
+        ${stackBadges}
       </div>`;
     }
   } else if (analysisEl) {
@@ -935,7 +936,7 @@ function displayThreeLineups() {
   const types = [
     { name: 'CASH', lineup: STATE.generatedLineups[0], strategy: 'High Floor / Batting Order / Pitcher Matchups' },
     { name: 'SINGLE ENTRY', lineup: STATE.generatedLineups[1], strategy: 'Balanced Upside / Salary Value / Optimal Median' },
-    { name: 'GPP', lineup: STATE.generatedLineups[2], strategy: 'Ceiling Chase / Stacking / Low Own / Bring-backs' }
+    { name: 'GPP', lineup: STATE.generatedLineups[2], strategy: 'Ceiling Chase / Stacking / Low Own' }
   ];
   const html = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px">${types.map(type => {
     const lu = type.lineup;
@@ -946,7 +947,7 @@ function displayThreeLineups() {
     const avgOwn = filled.reduce((s, p) => s + (p.own || 0), 0);
     const analysis = Engine.analyzeLineup(lu);
     const stackInfo = analysis ? analysis.stacks.map(s => s.team + ' x' + s.count).join(', ') : '';
-    const bbInfo = analysis ? analysis.bringBacks.map(b => b.team).join(', ') : '';
+
     return `<div style="border:0.5px solid var(--brd-t);border-radius:var(--rl);padding:12px;background:var(--bp)">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;padding-bottom:8px;border-bottom:0.5px solid var(--brd-s)">
         <div style="flex:1"><div style="font-size:13px;font-weight:500;color:var(--tp)">${type.name}</div><div style="font-size:10px;color:var(--ts)">${type.strategy}</div></div>
@@ -961,7 +962,7 @@ function displayThreeLineups() {
         <div>Ceiling: <strong>${ceilScore.toFixed(1)}</strong></div>
         <div>Own: <strong>${avgOwn.toFixed(1)}%</strong></div>
       </div>
-      ${stackInfo ? `<div style="margin-top:6px;padding:4px 8px;background:var(--bi);border-radius:4px;font-size:10px;color:var(--ti)">Stack: ${stackInfo}${bbInfo ? ' / Bring-back: ' + bbInfo : ''}</div>` : ''}
+      ${stackInfo ? `<div style="margin-top:6px;padding:4px 8px;background:var(--bi);border-radius:4px;font-size:10px;color:var(--ti)">Stack: ${stackInfo}</div>` : ''}
       ${analysis ? `<div style="margin-top:4px;font-size:10px;color:var(--tt)">Corr: ${analysis.correlationScore.toFixed(3)} / Eff: ${analysis.salaryEfficiency} pts/$k</div>` : ''}
     </div>`;
   }).join('')}</div>`;
@@ -1493,6 +1494,12 @@ function toggleStackMix() {
   if (row) row.style.display = val === 'mix' ? '' : 'none';
 }
 
+function toggleSimFilter() {
+  const on = document.getElementById('port-sim-filter')?.checked;
+  const opts = document.getElementById('sim-filter-options');
+  if (opts) opts.style.display = on ? 'flex' : 'none';  // flex-direction:column set in HTML
+}
+
 function validatePortfolioSettings() {
   const warningsEl = document.getElementById('port-warnings');
   const warnings = [];
@@ -1552,6 +1559,14 @@ function generatePortfolio() {
   const stackPct5 = stackSize == null && stackPct5Raw !== '' && stackPct5Raw != null ? parseInt(stackPct5Raw) : null;
   const lockedTeams = getCheckedTeams('port-lock-teams');
   const bannedTeams = getCheckedTeams('port-ban-teams');
+  const simFilter = document.getElementById('port-sim-filter')?.checked || false;
+  const simFilterPct = parseInt(document.getElementById('port-sim-filter-pct')?.value) || 50;
+  const simFilterSims = parseInt(document.getElementById('port-sim-filter-sims')?.value) || 500;
+  const simROIMinRaw = document.getElementById('port-sim-roi-min')?.value;
+  const simROIMaxRaw = document.getElementById('port-sim-roi-max')?.value;
+  const simROIMin = simFilter && simROIMinRaw !== '' && simROIMinRaw != null ? parseFloat(simROIMinRaw) : null;
+  const simROIMax = simFilter && simROIMaxRaw !== '' && simROIMaxRaw != null ? parseFloat(simROIMaxRaw) : null;
+  const payoutType = document.getElementById('port-payout-type')?.value || 'top20';
   // Convert playerExposureOverrides from % to 0-1 ratios for engine
   const playerOverrides = {};
   Object.entries(STATE.playerExposureOverrides).forEach(([name, ov]) => {
@@ -1596,9 +1611,11 @@ function generatePortfolio() {
         playerOverrides, teamExposureOverrides: teamOverrides, stackPct5, stackSize,
         stacks3: STATE.STACKS3, stacks5: STATE.STACKS5,
         lockedTeams, bannedTeams,
-        context: ctx, iterations: OPTIMIZER_ITERATIONS
+        context: ctx, iterations: OPTIMIZER_ITERATIONS,
+        simFilter, simFilterPct, simFilterSims, payoutType, simROIMin, simROIMax,
       }, (done, total, built) => {
-        btn.textContent = `Generating... ${done}/${total} (${built} valid)`;
+        const phase = simFilter && built >= numLineups ? 'Filtering by Sim ROI…' : `${done}/${total} (${built} built)`;
+        btn.textContent = `Generating... ${phase}`;
       });
       STATE.portfolioLineups = result.lineups;
       STATE.portfolioExposure = result.playerExposure;
@@ -2402,11 +2419,7 @@ function renderAttribution(id) {
   const secondaryStack = stackTeams[1]?.[0] || null;
   const stackTeamSet = new Set(stackTeams.map(([t]) => t));
 
-  // Find bring-back: non-pitcher, not on a stack team, but on a team that opposes a stack team
-  const oppTeams = new Set();
-  lineup.forEach(p => { if (stackTeamSet.has(p.team)) oppTeams.add(p.opp); });
-
-  const roles = { SP: [], 'Primary Stack': [], 'Secondary Stack': [], 'Bring-Back': [], 'Fill/Pivot': [] };
+  const roles = { SP: [], 'Primary Stack': [], 'Secondary Stack': [], 'Fill/Pivot': [] };
 
   lineup.forEach(p => {
     const actual = h.playerActuals[p.name];
@@ -2418,8 +2431,6 @@ function renderAttribution(id) {
       roles['Primary Stack'].push(entry);
     } else if (p.team === secondaryStack) {
       roles['Secondary Stack'].push(entry);
-    } else if (oppTeams.has(p.team) && !stackTeamSet.has(p.team)) {
-      roles['Bring-Back'].push(entry);
     } else {
       roles['Fill/Pivot'].push(entry);
     }
@@ -2567,12 +2578,27 @@ function renderModelAnalysis(data) {
 
     <div class="sec-label" style="margin-top:4px">Bias by Position</div>
     <div style="background:var(--bs);border-radius:var(--r);padding:12px;margin-bottom:10px">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px;margin-bottom:8px">
         <div><strong>Pitchers</strong> (${p?.count ?? 0} samples)<br>${biasLabel(p?.bias)}</div>
         <div><strong>Batters</strong> (${b?.count ?? 0} samples)<br>${biasLabel(b?.bias)}</div>
         ${data.topOrder?.count ? `<div><strong>Top of Order (1-3)</strong> (${data.topOrder.count})<br>${biasLabel(data.topOrder.bias)}</div>` : ''}
         ${data.highOwnership?.count ? `<div><strong>High Ownership (>25%)</strong> (${data.highOwnership.count})<br>${biasLabel(data.highOwnership.bias)}</div>` : ''}
       </div>
+      ${data.byPosition && Object.keys(data.byPosition).length > 0 ? `
+      <div style="border-top:0.5px solid var(--brd-s);padding-top:8px;margin-top:4px">
+        <div style="font-size:10px;text-transform:uppercase;color:var(--tt);margin-bottom:6px;letter-spacing:0.05em">Per-Position Bias & Suggested Scale</div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;font-size:11px">
+          ${Object.entries(data.byPosition).map(([pos, s]) => {
+            const bColor = Math.abs(s.bias) < 0.05 ? 'var(--tsu)' : Math.abs(s.bias) < 0.15 ? 'var(--tw)' : 'var(--td)';
+            const biasSign = s.bias > 0 ? '+' : '';
+            return `<div style="background:var(--bp);border-radius:4px;padding:5px 7px">
+              <div style="font-weight:600;color:var(--tp)">${pos} <span style="font-weight:400;color:var(--tt)">(${s.count})</span></div>
+              <div style="color:${bColor}">${biasSign}${(s.bias*100).toFixed(1)}%</div>
+              <div style="color:var(--tt)">scale: <strong>${s.calibrationFactor?.toFixed(3)}</strong></div>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>` : ''}
     </div>
 
     <div class="sec-label">Calibration Factors</div>
@@ -2584,7 +2610,10 @@ function renderModelAnalysis(data) {
     </div>
 
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-      <button class="btn-g" onclick="applyCalibration(${data.suggestion.pitcherCalibration ?? 1}, ${data.suggestion.batterCalibration ?? 1})">Apply Calibration</button>
+      ${data.byPosition && Object.keys(data.byPosition).length >= 4
+        ? `<button class="btn-g" onclick="applyCalibration(1.0, 1.0, ${JSON.stringify(data.suggestion.positionScales)})">Apply Position Scales</button>`
+        : `<button class="btn-g" onclick="applyCalibration(${data.suggestion.pitcherCalibration ?? 1}, ${data.suggestion.batterCalibration ?? 1})">Apply Calibration</button>`}
+      <button class="btn" onclick="applyCalibration(${data.suggestion.pitcherCalibration ?? 1}, ${data.suggestion.batterCalibration ?? 1})">Apply Blanket Scales</button>
       <button class="btn" onclick="resetCalibration()">Reset to Default</button>
       <span id="cal-status" style="font-size:11px;color:var(--ts)"></span>
     </div>
@@ -2696,8 +2725,8 @@ function runContestFlashback() {
       const isCash = (h.contest || '').toUpperCase() === 'CASH';
       const contestType = isCash ? 'cash' : 'gpp';
 
-      // Run 500 sim portfolio (single lineup)
-      const simResults = Engine.simulatePortfolio([fullLineup], pool, 500, contestType);
+      // Run 2000 sim portfolio (single lineup) — 500 had ±2.2% SE on cash rate, unreliable for ranking
+      const simResults = Engine.simulatePortfolio([fullLineup], pool, 2000, contestType);
       if (!simResults.length) return null;
       const sr = simResults[0];
 
@@ -2763,13 +2792,13 @@ function runContestFlashback() {
   }, 30);
 }
 
-async function applyCalibration(pitcherScale, batterScale) {
+async function applyCalibration(pitcherScale, batterScale, positionScales = {}) {
   try {
     await fetch('/api/calibration', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pitcherScale, batterScale })
+      body: JSON.stringify({ pitcherScale, batterScale, positionScales })
     });
-    Engine.setCalibration({ pitcherScale, batterScale });
+    Engine.setCalibration({ pitcherScale, batterScale, positionScales });
     const st = document.getElementById('cal-status');
     if (st) { st.textContent = 'Calibration applied — optimizer will use adjusted projections.'; st.style.color = 'var(--tsu)'; }
     renderActiveCalibration();
@@ -2780,9 +2809,9 @@ async function resetCalibration() {
   try {
     await fetch('/api/calibration', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pitcherScale: 1.0, batterScale: 1.0 })
+      body: JSON.stringify({ pitcherScale: 1.0, batterScale: 1.0, positionScales: {} })
     });
-    Engine.setCalibration({ pitcherScale: 1.0, batterScale: 1.0 });
+    Engine.setCalibration({ pitcherScale: 1.0, batterScale: 1.0, positionScales: {} });
     const st = document.getElementById('cal-status');
     if (st) { st.textContent = 'Calibration reset to default (no adjustment).'; st.style.color = 'var(--ts)'; }
     renderActiveCalibration();
@@ -2793,8 +2822,16 @@ function renderActiveCalibration() {
   const cal = Engine.getCalibration();
   const el = document.getElementById('active-calibration');
   if (!el) return;
-  if (cal.pitcherScale === 1.0 && cal.batterScale === 1.0) {
+  const posScales = cal.positionScales || {};
+  const hasPosCales = Object.keys(posScales).length > 0;
+  const hasBlankScales = cal.pitcherScale !== 1.0 || cal.batterScale !== 1.0;
+  if (!hasPosCales && !hasBlankScales) {
     el.textContent = 'No calibration active — using raw projections.';
+    el.style.color = 'var(--tt)';
+  } else if (hasPosCales) {
+    const parts = Object.entries(posScales).map(([pos, s]) => `${pos}×${s.toFixed(2)}`).join(', ');
+    el.textContent = `Active calibration (position-specific): ${parts}`;
+    el.style.color = 'var(--ti)';
   } else {
     el.textContent = `Active calibration: pitchers ×${cal.pitcherScale?.toFixed(3)}, batters ×${cal.batterScale?.toFixed(3)}`;
     el.style.color = 'var(--ti)';
@@ -3634,6 +3671,11 @@ function saveSession() {
         cashLine: document.getElementById('port-cash-line')?.value,
         winLine: document.getElementById('port-win-line')?.value,
         payoutType: document.getElementById('port-payout-type')?.value,
+        simFilter: document.getElementById('port-sim-filter')?.checked || false,
+        simFilterPct: document.getElementById('port-sim-filter-pct')?.value,
+        simFilterSims: document.getElementById('port-sim-filter-sims')?.value,
+        simROIMin: document.getElementById('port-sim-roi-min')?.value,
+        simROIMax: document.getElementById('port-sim-roi-max')?.value,
       },
       playerExposureOverrides: STATE.playerExposureOverrides,
       teamExposureOverrides: STATE.teamExposureOverrides
@@ -3682,6 +3724,11 @@ function restoreSession() {
     if (pc.cashLine) { const el = document.getElementById('port-cash-line'); if (el) el.value = pc.cashLine; }
     if (pc.winLine) { const el = document.getElementById('port-win-line'); if (el) el.value = pc.winLine; }
     if (pc.payoutType) { const el = document.getElementById('port-payout-type'); if (el) el.value = pc.payoutType; }
+    if (pc.simFilter != null) { const el = document.getElementById('port-sim-filter'); if (el) { el.checked = pc.simFilter; toggleSimFilter(); } }
+    if (pc.simFilterPct != null) { const el = document.getElementById('port-sim-filter-pct'); if (el) el.value = pc.simFilterPct; }
+    if (pc.simFilterSims != null) { const el = document.getElementById('port-sim-filter-sims'); if (el) el.value = pc.simFilterSims; }
+    if (pc.simROIMin != null) { const el = document.getElementById('port-sim-roi-min'); if (el) el.value = pc.simROIMin; }
+    if (pc.simROIMax != null) { const el = document.getElementById('port-sim-roi-max'); if (el) el.value = pc.simROIMax; }
 
     // Restore player exposure overrides
     if (session.playerExposureOverrides) {
