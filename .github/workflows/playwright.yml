@@ -22,9 +22,7 @@ jobs:
         with:
           node-version: 20
           cache: npm
-          cache-dependency-path: |
-            package-lock.json
-            **/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Normalize npm version
         run: npm install -g npm@10
