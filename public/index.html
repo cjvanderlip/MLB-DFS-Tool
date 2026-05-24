@@ -15,6 +15,7 @@
     MLB DFS Tool <span class="ver">v2.0</span>
   </div>
   <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+    <span id="showdown-badge" style="display:none;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;background:rgba(59,130,246,.2);color:#60a5fa;border:1px solid rgba(59,130,246,.4);letter-spacing:.5px">SHOWDOWN</span>
     <span id="mode-indicator" style="display:none"></span>
     <span id="slate-badge" class="pill pg">No files loaded</span>
   </div>
@@ -29,13 +30,15 @@
   <div class="tab" onclick="showTab('portfolio')">Portfolio</div>
   <div class="tab" onclick="showTab('simulator')">Simulator</div>
   <div class="tab" onclick="showTab('backtest')">Backtest</div>
+  <div class="tab" onclick="showTab('slate')">Slate Summary</div>
+  <div class="tab" onclick="showTab('plays')">Best Plays</div>
 </div>
 
 <!-- ═══ UPLOAD ═══ -->
 <div id="panel-upload" class="panel active">
   <div class="ib blue" id="upload-tip">
     Upload your files below. The tool auto-detects each type by its headers.<br>
-    <strong>Two modes:</strong> <em>DK Salaries + ROO</em> for merged view, or <em>ROO + Stacks</em> for projection-only mode.
+    <strong>Classic:</strong> DK Salaries + ROO + Stacks (optional) &nbsp;|&nbsp; <strong>Showdown:</strong> DK Showdown Salaries + ROO + Optimal Lineups (optional) — detected automatically by the DK file.
   </div>
   <div id="upload-warnings" style="display:none"></div>
   <div class="file-list">
@@ -52,6 +55,7 @@
     <div style="font-size:11px;font-weight:600;color:var(--ts);margin-bottom:6px">Projection Source Quality (from historical actuals)</div>
     <div id="source-quality-rows"></div>
   </div>
+  <div id="roo-health-banner" style="display:none;margin-top:6px;padding:7px 10px;border-radius:var(--r);border:0.5px solid var(--brd-s)"></div>
   <div class="drop" id="dropzone" onclick="document.getElementById('file-input').click()" ondragover="handleDrag(event,true)" ondragleave="handleDrag(event,false)" ondrop="handleDrop(event)">
     <input type="file" id="file-input" accept=".csv" multiple onchange="handleFiles(this.files)">
     <div style="width:36px;height:36px;margin:0 auto 10px;opacity:.4;border:2px solid var(--ts);border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:18px">+</div>
@@ -139,10 +143,12 @@
     <div class="sec-label" style="margin-bottom:8px">Live Data Enrichment</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
       <button class="btn-dk" id="fetch-lineups-btn" onclick="loadConfirmedLineups()">Fetch Confirmed Lineups</button>
+      <button class="btn" id="fetch-hands-btn" onclick="loadPitcherHands()" title="Fetch pitcher handedness (L/R) from MLB roster data to enable platoon split adjustments">Fetch Pitcher Hands</button>
       <button class="btn" id="fetch-statcast-btn" onclick="loadStatcast()">Fetch Statcast</button>
       <button class="btn" id="fetch-form-btn" onclick="loadRecentForm()">Fetch 14-Day Form</button>
       <button class="btn" id="fetch-injuries-btn" onclick="loadInjuries()">Fetch Injuries</button>
       <button class="btn" id="scratch-monitor-btn" onclick="toggleScratchMonitor()" title="Poll confirmed lineups every 10 min and alert if a rostered player is scratched">Monitor Scratches</button>
+      <button class="btn" id="check-postponed-btn" onclick="checkPostponements()" title="Check MLB schedule for postponed or cancelled games affecting your player pool">Check Postponements</button>
     </div>
     <div id="lineups-status"></div>
     <div id="scratch-monitor-status"></div>
@@ -233,7 +239,10 @@
   <div id="lineup-content" style="display:none">
     <div class="two-col">
       <div>
-        <div class="sec-label">Current lineup -- DraftKings MLB</div>
+        <div class="sec-label">Current lineup -- <span id="lineup-mode-label">DraftKings MLB</span></div>
+        <div id="showdown-lineup-tip" style="display:none;margin-bottom:8px;padding:6px 10px;background:rgba(59,130,246,.1);border:0.5px solid rgba(59,130,246,.3);border-radius:var(--r);font-size:11px;color:#93c5fd">
+          <strong>Showdown mode:</strong> Pick 1 Captain (1.5× pts) + 5 FLEX from any position. Same player cannot fill both slots.
+        </div>
         <div class="sal-sum">
           <span>Salary: <strong id="sal-used">$0</strong> / $50,000</span>
           <span id="sal-remain" style="color:var(--tsu)">$50,000 left</span>
@@ -264,7 +273,7 @@
         </div>
         <div style="margin-top:12px;padding-top:12px;border-top:0.5px solid var(--brd-t)">
           <div class="sec-label">Generate 3 Contest Lineups</div>
-          <button class="btn-g" onclick="generateThreeLineups()" style="width:100%">Generate Cash + Single + GPP</button>
+          <button class="btn-g" onclick="generateThreeLineups()" id="gen-three-btn" style="width:100%">Generate Cash + Single + GPP</button>
           <div id="three-lineups-display" style="display:none;margin-top:12px"></div>
         </div>
         <div id="export-out" style="display:none"></div>
@@ -296,8 +305,11 @@
 
 <!-- ═══ PORTFOLIO BUILDER ═══ -->
 <div id="panel-portfolio" class="panel">
-  <div class="ib blue">
+  <div class="ib blue" id="port-desc-classic">
     Generate multiple lineups with exposure limits for multi-entry contests. Lock teams to guarantee stacks, ban teams to exclude them, and set separate exposure caps for pitchers and batters.
+  </div>
+  <div class="ib blue" id="port-desc-showdown" style="display:none">
+    Showdown portfolio: 1 Captain (1.5× pts) + 5 FLEX. Set player exposure caps and overlap limits. Projections come from your ROO + DK salaries — no stacks needed.
   </div>
   <div class="config-grid">
     <div class="config-item">
@@ -311,7 +323,7 @@
         <span id="exp-label" style="font-size:11px;color:var(--ts);flex-shrink:0;width:32px;text-align:right">60%</span>
       </div>
     </div>
-    <div class="config-item">
+    <div class="config-item port-classic-only">
       <label>Max Pitcher Exposure %</label>
       <div style="display:flex;align-items:center;gap:6px;min-width:0">
         <input type="range" id="port-max-pitcher" value="60" min="10" max="100" step="5" oninput="document.getElementById('pitcher-exp-label').textContent=this.value+'%';validatePortfolioSettings();saveSession()" style="flex:1;min-width:0">
@@ -320,7 +332,7 @@
     </div>
     <div class="config-item">
       <label>Contest Type</label>
-      <select id="port-contest-type" onchange="saveSession()">
+      <select id="port-contest-type" onchange="onContestTypeChange();saveSession()">
         <option value="gpp">GPP</option>
         <option value="cash">Cash</option>
         <option value="single">Single Entry</option>
@@ -334,31 +346,35 @@
       <label>Max Lineup Overlap <span style="font-weight:400;text-transform:none;letter-spacing:0">(0=off)</span></label>
       <input type="number" id="port-max-overlap" value="6" min="0" max="10" title="Max players shared between any two lineups. 0 = disabled. GPP recommended: 5–6." onchange="saveSession()">
     </div>
-    <div class="config-item">
+    <div class="config-item port-classic-only">
+      <label>Max Game Exposure <span style="font-weight:400;text-transform:none;letter-spacing:0">(%)</span></label>
+      <input type="number" id="port-max-game-exposure" value="65" min="10" max="100" step="5" title="Maximum % of lineups whose primary stack comes from the same game. Prevents portfolio concentration in a single 2-team matchup. Default: 65%." onchange="saveSession()">
+    </div>
+    <div class="config-item port-classic-only">
       <label>Min Implied Total <span style="font-weight:400;text-transform:none;letter-spacing:0">(0=off)</span></label>
       <input type="number" id="port-min-implied" value="0" min="0" max="7" step="0.5" title="Only stack teams whose Vegas implied run total meets this threshold. 0 = no filter. Recommended: 3.5–4.0." onchange="saveSession()">
     </div>
-    <div class="config-item">
+    <div class="config-item port-classic-only">
       <label>Min Game O/U <span style="font-weight:400;text-transform:none;letter-spacing:0">(0=off)</span></label>
       <input type="number" id="port-min-game-total" value="0" min="0" max="15" step="0.5" title="Only stack games with over/under ≥ this. 0 = no filter. Recommended: 8.0+" onchange="saveSession()">
     </div>
-    <div class="config-item">
+    <div class="config-item port-classic-only">
       <label>Max Opp SP K/9 <span style="font-weight:400;text-transform:none;letter-spacing:0">(0=off)</span></label>
       <input type="number" id="port-max-opp-k9" value="0" min="0" max="15" step="0.5" title="Skip stacking against SPs with K/9 above this. 0 = no filter. Recommended: 10." onchange="saveSession()">
     </div>
-    <div class="config-item" style="justify-content:center">
+    <div class="config-item port-classic-only" style="justify-content:center">
       <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
         <input type="checkbox" id="port-block-neg-weather" style="width:14px;height:14px" onchange="saveSession()">
         Skip Rain-Risk Stacks <span style="font-weight:400;text-transform:none;letter-spacing:0">(≥50% precip)</span>
       </label>
     </div>
-    <div class="config-item" style="justify-content:center">
+    <div class="config-item port-classic-only" style="justify-content:center">
       <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
         <input type="checkbox" id="port-allow-bvp" style="width:14px;height:14px">
         Allow Batter vs Pitcher <span style="font-weight:400;text-transform:none;letter-spacing:0">(off = DK-safe)</span>
       </label>
     </div>
-    <div class="config-item">
+    <div class="config-item port-classic-only">
       <label>Stack Size</label>
       <select id="port-stack-size" title="Force all GPP lineups to use a specific stack size, or Mix to split 3-man + 5-man by percentage." onchange="toggleStackMix(); saveSession()">
         <option value="mix">Mix (3 + 5-man)</option>
@@ -367,27 +383,84 @@
         <option value="5">5-man only</option>
       </select>
     </div>
-    <div class="config-item" id="stack-mix-row">
+    <div class="config-item port-classic-only" id="stack-mix-row">
       <label>5-Man Stack % <span style="font-weight:400;text-transform:none;letter-spacing:0">(of GPP lineups)</span></label>
       <input type="number" id="port-stack-pct5" value="50" min="0" max="100" step="5" placeholder="50" title="% of lineups targeting a 5-man stack. Remainder will target 3-man." onchange="saveSession()">
     </div>
     <div class="config-item">
+      <label>Min Salary ($) <span style="font-weight:400;text-transform:none;letter-spacing:0">optional</span></label>
+      <input type="number" id="port-min-salary" min="0" max="50000" step="100" placeholder="e.g. 49000" title="Reject lineups below this total salary. Leave blank for no floor. Recommended: 49000–49500 for GPP." onchange="saveSession()">
+    </div>
+    <div class="config-item">
       <label>Cash Line (pts) <span style="font-weight:400;text-transform:none;letter-spacing:0">optional</span></label>
-      <input type="number" id="port-cash-line" min="0" step="0.5" placeholder="auto" title="Score needed to cash. Used in Sim ROI. Leave blank to derive from field simulation." onchange="saveSession()">
+      <div style="display:flex;gap:4px;align-items:center">
+        <input type="number" id="port-cash-line" min="0" step="0.5" placeholder="auto" title="Score needed to cash. Used in Sim ROI. Leave blank to derive from field simulation." onchange="saveSession()" style="flex:1">
+        <button class="btn" style="font-size:10px;padding:2px 6px;white-space:nowrap" onclick="applyHistoryCashLine()" title="Set from your historical contest results">↑ History</button>
+      </div>
     </div>
     <div class="config-item">
       <label>Win Line (pts) <span style="font-weight:400;text-transform:none;letter-spacing:0">optional</span></label>
-      <input type="number" id="port-win-line" min="0" step="0.5" placeholder="auto" title="Score needed to win / top payout. Used in Sim ROI. Leave blank to derive from field simulation." onchange="saveSession()">
+      <div style="display:flex;gap:4px;align-items:center">
+        <input type="number" id="port-win-line" min="0" step="0.5" placeholder="auto" title="Score needed to win / top payout. Used in Sim ROI. Leave blank to derive from field simulation." onchange="saveSession()" style="flex:1">
+        <button class="btn" style="font-size:10px;padding:2px 6px;white-space:nowrap" onclick="applyHistoryWinLine()" title="Set from your historical contest results">↑ History</button>
+      </div>
     </div>
     <div class="config-item">
       <label>Payout Structure</label>
-      <select id="port-payout-type" onchange="saveSession()">
-        <option value="top20">GPP — Top 20% cash 2×</option>
-        <option value="top10">GPP — Top 10% cash 3×</option>
+      <select id="port-payout-type" onchange="onPayoutTypeChange();saveSession()" title="Match your actual contest structure. For the most accurate simROI, use Custom and enter your real contest's cash% and payout multipliers.">
+        <option value="top20">GPP — Top 20% cash 2× (generic large-field)</option>
+        <option value="top10">GPP — Top 10% cash 3× (top-heavy GPP)</option>
         <option value="winner">Winner-Take-All</option>
         <option value="double">50/50 (double-up)</option>
-        <option value="custom">Custom (set lines above)</option>
+        <option value="custom">★ Custom (recommended — use real contest numbers)</option>
       </select>
+    </div>
+    <!-- Custom payout fields — shown only when "Custom" is selected -->
+    <div id="custom-payout-row" class="config-item" style="display:none;grid-column:1/-1">
+      <label>Custom Payout</label>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:11px;color:var(--tt)">
+        <span>Cash top</span>
+        <input type="number" id="custom-cash-pct" value="20" min="1" max="99" step="1" title="% of field that cashes (e.g. 20 = top 20%)" style="width:52px;font-size:12px;padding:3px 6px;border:0.5px solid var(--brd-s);border-radius:4px;background:var(--bp);color:var(--tp)" onchange="saveSession()">
+        <span>% at</span>
+        <input type="number" id="custom-cash-mult" value="2.5" min="1" max="100" step="0.1" title="Payout multiplier for cashing (e.g. 2.5 = 2.5× entry fee)" style="width:52px;font-size:12px;padding:3px 6px;border:0.5px solid var(--brd-s);border-radius:4px;background:var(--bp);color:var(--tp)" onchange="saveSession()">
+        <span>×. Win top</span>
+        <input type="number" id="custom-win-pct" value="0.5" min="0.01" max="50" step="0.01" title="% of field that wins the top prize (e.g. 0.5 = top 0.5%)" style="width:58px;font-size:12px;padding:3px 6px;border:0.5px solid var(--brd-s);border-radius:4px;background:var(--bp);color:var(--tp)" onchange="saveSession()">
+        <span>% at</span>
+        <input type="number" id="custom-win-mult" value="15" min="1" max="10000" step="1" title="Top-prize payout multiplier (e.g. 15 = 15× entry fee)" style="width:60px;font-size:12px;padding:3px 6px;border:0.5px solid var(--brd-s);border-radius:4px;background:var(--bp);color:var(--tp)" onchange="saveSession()">
+        <span>×</span>
+      </div>
+    </div>
+    <!-- Bring-Back controls (GPP classic only) -->
+    <div class="config-item port-classic-only" style="justify-content:center">
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+        <input type="checkbox" id="port-bb-enabled" checked style="width:14px;height:14px" onchange="toggleBringBackOptions();saveSession()">
+        Enable Bring-Back <span style="font-weight:400;text-transform:none;letter-spacing:0">(opp batter after stack)</span>
+      </label>
+    </div>
+    <div class="config-item port-classic-only" id="bb-options-row">
+      <label>Bring-Back: Min Opp Implied</label>
+      <input type="number" id="port-bb-min-implied" value="4.0" min="0" max="7" step="0.5" title="Minimum opponent implied total before placing a bring-back batter. 0 = always bring back regardless of opp projection." onchange="saveSession()">
+    </div>
+    <div class="config-item port-classic-only" id="bb-target-row">
+      <label>Bring-Back Count</label>
+      <select id="port-bb-target" onchange="saveSession()">
+        <option value="auto">Auto (1 or 2 by O/U)</option>
+        <option value="1">Always 1</option>
+        <option value="2">Always 2</option>
+        <option value="0">None (disable)</option>
+      </select>
+    </div>
+    <!-- Ownership controls -->
+    <div class="config-item port-classic-only">
+      <label>Ownership Penalty (λ) <span style="font-weight:400;text-transform:none;letter-spacing:0">(0=off)</span></label>
+      <div style="display:flex;align-items:center;gap:6px;min-width:0">
+        <input type="range" id="port-own-lambda" value="4" min="0" max="20" step="1" oninput="document.getElementById('own-lambda-label').textContent=(this.value/100).toFixed(2);saveSession()" style="flex:1;min-width:0" title="Penalizes total lineup ownership during optimizer scoring. Higher = more contrarian. 0.04 is a reasonable default for GPP.">
+        <span id="own-lambda-label" style="font-size:11px;color:var(--ts);flex-shrink:0;width:34px;text-align:right">0.04</span>
+      </div>
+    </div>
+    <div class="config-item port-classic-only">
+      <label>Max Avg Lineup Own % <span style="font-weight:400;text-transform:none;letter-spacing:0">(0=off)</span></label>
+      <input type="number" id="port-max-avg-own" value="0" min="0" max="50" step="1" title="Reject any lineup whose average player ownership exceeds this %. 0 = no filter. Recommended: 20–25 for contrarian GPP." onchange="saveSession()">
     </div>
   </div>
 
@@ -405,7 +478,7 @@
   </details>
 
   <!-- Team Exposure Overrides -->
-  <details style="margin-bottom:12px">
+  <details class="port-classic-only" style="margin-bottom:12px">
     <summary style="font-size:12px;font-weight:500;color:var(--ts);text-transform:uppercase;letter-spacing:.04em;cursor:pointer;user-select:none;padding:6px 0">Team Stack Exposure Overrides <span style="font-size:10px;font-weight:400;text-transform:none;letter-spacing:0;color:var(--tt)">(per-team min / max % of lineups with that stack)</span></summary>
     <div style="margin-top:8px">
       <div style="font-size:11px;color:var(--tt);margin-bottom:8px">Cap a team's stack exposure below the field average (leverage play) or guarantee a minimum number of lineups feature that stack.</div>
@@ -416,8 +489,9 @@
     </div>
   </details>
 
-  <!-- Team Lock / Ban -->
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+  <!-- Team Lock / Ban (classic only) -->
+  <div id="port-lockban-section" style="margin-bottom:12px">
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
     <div>
       <div style="font-size:11px;color:var(--tt);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px">Lock Teams <span style="font-size:10px;font-weight:400;text-transform:none;letter-spacing:0">(stacks rotated across lineups)</span></div>
       <div id="port-lock-teams" style="display:flex;flex-wrap:wrap;gap:4px;min-height:28px;padding:6px 8px;border:0.5px solid var(--brd-s);border-radius:var(--r);background:var(--bp)">
@@ -430,6 +504,7 @@
         <span style="font-size:11px;color:var(--tt)">Load players first</span>
       </div>
     </div>
+  </div>
   </div>
   <div id="port-warnings" style="display:none;margin-bottom:10px"></div>
 
@@ -459,7 +534,19 @@
     </div>
   </div>
 
-  <button class="btn-g" id="gen-portfolio-btn" onclick="generatePortfolio()" style="width:100%;margin-bottom:12px">Generate Portfolio</button>
+  <!-- Historical Score Benchmarks -->
+  <div style="margin-bottom:10px">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+      <button class="btn" style="font-size:11px" onclick="loadHistoryBenchmarks()">Load Historical Benchmarks</button>
+      <span style="font-size:11px;color:var(--tt)">Score targets from your DK contest history</span>
+    </div>
+    <div id="history-benchmarks" style="display:none;background:var(--bs);border-radius:var(--r);padding:10px 12px;font-size:11px"></div>
+  </div>
+
+  <div style="display:flex;gap:8px;margin-bottom:12px">
+    <button class="btn-g" id="gen-portfolio-btn" onclick="generatePortfolio()" style="flex:1">Generate Portfolio</button>
+    <button class="btn" id="slate-defaults-btn" onclick="applySlateDefaults()" title="Auto-fill recommended settings based on the current slate size (game count)" style="font-size:11px;white-space:nowrap;padding:0 10px">Slate Defaults</button>
+  </div>
 
   <!-- Late Swap -->
   <details id="late-swap-section" style="margin-bottom:12px">
@@ -485,7 +572,7 @@
   <div class="config-grid" style="margin-bottom:10px">
     <div class="config-item">
       <label>Simulations</label>
-      <select id="sim-count">
+      <select id="sim-count" onchange="saveSession()">
         <option value="5000">5,000 (fast)</option>
         <option value="10000" selected>10,000 (standard)</option>
         <option value="25000">25,000 (detailed)</option>
@@ -496,7 +583,7 @@
       <label>Correlation Strength</label>
       <div style="display:flex;align-items:center;gap:6px;min-width:0">
         <input type="range" id="sim-corr-scale" min="0.2" max="2.0" step="0.1" value="1.0" style="flex:1;min-width:0"
-          oninput="document.getElementById('corr-scale-label').textContent=parseFloat(this.value).toFixed(1)+'×';Engine.setCorrScale(parseFloat(this.value))"
+          oninput="document.getElementById('corr-scale-label').textContent=parseFloat(this.value).toFixed(1)+'×';Engine.setCorrScale(parseFloat(this.value));saveSession()"
           title="Scales all player correlations. >1 = more correlated (tighter stacks), <1 = less correlated (more variance)">
         <span id="corr-scale-label" style="font-size:11px;color:var(--ts);flex-shrink:0;width:32px;text-align:right">1.0×</span>
       </div>
@@ -505,7 +592,7 @@
       <label>Score Diversity</label>
       <div style="display:flex;align-items:center;gap:6px;min-width:0">
         <input type="range" id="sim-diversity" min="0.5" max="2.5" step="0.1" value="1.0" style="flex:1;min-width:0"
-          oninput="document.getElementById('diversity-label').textContent=parseFloat(this.value).toFixed(1)+'×';Engine.setSimDiversity(parseFloat(this.value))"
+          oninput="document.getElementById('diversity-label').textContent=parseFloat(this.value).toFixed(1)+'×';Engine.setSimDiversity(parseFloat(this.value));saveSession()"
           title="Widens player score distributions. >1 = higher variance/upside, <1 = tighter outcomes">
         <span id="diversity-label" style="font-size:11px;color:var(--ts);flex-shrink:0;width:32px;text-align:right">1.0×</span>
       </div>
@@ -534,6 +621,33 @@
       <span style="font-size:11px;color:var(--tt)">Fetches real DK scores from MLB boxscores and auto-populates matching saved lineups</span>
     </div>
     <div id="actuals-status"></div>
+  </div>
+
+  <!-- DK Results Import -->
+  <div style="margin-bottom:16px;padding:12px 14px;background:var(--bs);border-radius:var(--rl)">
+    <div class="sec-label" style="margin-bottom:8px">Import DraftKings Contest Results</div>
+    <div style="font-size:11px;color:var(--tt);margin-bottom:8px">
+      Two CSV formats supported:<br>
+      <strong>Contest Results export</strong> (per-contest page → Export) — has a Lineup column; matches by player names (most accurate).<br>
+      <strong>My Contests export</strong> (Account → My Contests → Past → Export) — matches by date + score; scroll down to the History section for that import.
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <input type="file" id="dk-results-file" accept=".csv" style="font-size:12px;color:var(--ts)" onchange="importDKResults(this)">
+      <button class="btn" onclick="fetchAllContestDetails()" title="Fetch winning scores and field size from DraftKings public API for all saved entries that have a Contest ID">Fetch DK Details</button>
+    </div>
+    <div id="dk-import-status" style="margin-top:6px"></div>
+  </div>
+
+  <!-- Import Actual Ownership -->
+  <div style="margin-bottom:16px;padding:12px 14px;background:var(--bs);border-radius:var(--rl)">
+    <div class="sec-label" style="margin-bottom:8px">Import Actual Ownership %</div>
+    <div style="font-size:11px;color:var(--tt);margin-bottom:8px">Paste ownership data from DK contest page. One player per line: "PlayerName,12.5" or "PlayerName 12.5%". Populates ownership calibration analysis.</div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px">
+      <input type="date" id="own-import-date" style="font-size:12px;padding:4px 8px;background:var(--bi);border:1px solid var(--brd);border-radius:4px;color:var(--tp)">
+      <button class="btn-dk" onclick="importOwnershipCSV()">Import Ownership</button>
+    </div>
+    <textarea id="own-import-csv" rows="5" style="width:100%;box-sizing:border-box;font-size:11px;font-family:monospace;background:var(--bi);border:1px solid var(--brd);border-radius:4px;color:var(--tp);padding:6px 8px;resize:vertical" placeholder="Logan Webb,32.5&#10;Framber Valdez,28.1&#10;Yordan Alvarez 18.4%&#10;..."></textarea>
+    <div id="own-import-status" style="margin-top:6px;font-size:12px"></div>
   </div>
 
   <!-- Contest Flashback -->
@@ -571,9 +685,100 @@
   <div id="backtest-history"></div>
 </div>
 
+<!-- ═══ SLATE SUMMARY ═══ -->
+<div id="panel-slate" class="panel">
+  <div class="ib blue">
+    Slate-level DFS theory analysis. Uses Vegas lines, park factors, weather, ownership, and projections to surface game environment rankings, optimal stack targets, pitcher matchup quality, and ownership leverage — all grounded in GPP and cash theory.
+  </div>
+
+  <div style="display:flex;justify-content:flex-end;margin-bottom:12px">
+    <button class="btn" onclick="renderSlateSummary()">Refresh Analysis</button>
+  </div>
+
+  <div id="slate-empty" class="empty" style="display:none">Upload player data to generate slate analysis.</div>
+
+  <div id="slate-content" style="display:none">
+
+    <!-- Overview metric cards -->
+    <div id="slate-metrics" class="mc-row"></div>
+
+    <!-- DFS Theory Signals -->
+    <div style="margin-bottom:16px">
+      <div class="sec-label" style="margin-bottom:8px">DFS Theory Signals</div>
+      <div style="font-size:11px;color:var(--tt);margin-bottom:8px">Auto-generated insights applying GPP theory: leverage, stacking, game environment, and ownership concentration.</div>
+      <div id="slate-signals">
+        <div style="font-size:12px;color:var(--tt)">Load Vegas lines and ownership to generate theory signals.</div>
+      </div>
+    </div>
+
+    <!-- Game Environment Rankings -->
+    <div style="margin-bottom:16px;padding:12px 14px;background:var(--bs);border-radius:var(--rl)">
+      <div class="sec-label" style="margin-bottom:4px">Game Environment Rankings</div>
+      <div style="font-size:11px;color:var(--tt);margin-bottom:8px">Ranked by composite score: O/U × park factor × weather hitting multiplier. Higher = better stacking environment.</div>
+      <div id="slate-game-table"><div style="font-size:12px;color:var(--tt)">Load player data to see game rankings.</div></div>
+    </div>
+
+    <!-- Stack Target Rankings -->
+    <div style="margin-bottom:16px;padding:12px 14px;background:var(--bs);border-radius:var(--rl)">
+      <div class="sec-label" style="margin-bottom:4px">Stack Target Rankings</div>
+      <div style="font-size:11px;color:var(--tt);margin-bottom:8px">Teams ranked for 4–5 man GPP stacks. Score weights: implied total (50%), park factor (20%), projected ceiling (20%), weather (10%).</div>
+      <div id="slate-stack-table"><div style="font-size:12px;color:var(--tt)">Load player projections to see stack targets.</div></div>
+    </div>
+
+    <!-- Pitcher Landscape -->
+    <div style="margin-bottom:16px;padding:12px 14px;background:var(--bs);border-radius:var(--rl)">
+      <div class="sec-label" style="margin-bottom:4px">Pitcher Landscape</div>
+      <div style="font-size:11px;color:var(--tt);margin-bottom:8px">SPs ranked by composite score (median × 0.5 + matchup quality + salary value). <strong>CHALK</strong> = &gt;25% own risk, <strong>PIVOT</strong> = contrarian leverage &lt;12% own.</div>
+      <div id="slate-pitcher-table"><div style="font-size:12px;color:var(--tt)">Load pitcher projections to see landscape.</div></div>
+    </div>
+
+    <!-- Ownership Intelligence -->
+    <div style="margin-bottom:16px;padding:12px 14px;background:var(--bs);border-radius:var(--rl)">
+      <div class="sec-label" style="margin-bottom:4px">Ownership Intelligence</div>
+      <div style="font-size:11px;color:var(--tt);margin-bottom:8px"><strong>CHALK</strong> = field favorites (&gt;25% own). <strong>LEVERAGE</strong> = low-owned plays with high ceiling (ceiling ÷ own% = leverage ratio — higher is better for GPP differentiation).</div>
+      <div id="slate-ownership-table"><div style="font-size:12px;color:var(--tt)">Load ownership projections to see leverage analysis.</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ BEST PLAYS ═══ -->
+<div id="panel-plays" class="panel">
+  <div class="ib blue">
+    Surfaces the exact plays that win money for each contest type — grounded in DFS research.
+    Single Entry = floor + value + safe stacks. GPP = contrarian stacks + leverage + boom plays.
+    Load player projections, Vegas lines, and ownership data for the best results.
+  </div>
+  <div style="display:flex;justify-content:flex-end;margin-bottom:12px">
+    <button class="btn" onclick="renderBestPlays()">Refresh Analysis</button>
+  </div>
+  <div id="plays-empty" class="empty">Upload player projections to surface best plays.</div>
+  <div id="plays-content" style="display:none"></div>
+</div>
+
 </div>
 
 <div id="toast-container"></div>
+
+<!-- Projection Override Modal -->
+<div id="proj-override-backdrop" style="display:none;position:fixed;inset:0;z-index:998;background:rgba(0,0,0,.45)" onclick="closeOverrideModal()"></div>
+<div id="proj-override-modal" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:999;background:var(--bs);border:0.5px solid var(--brd);border-radius:var(--rl);padding:18px 20px;min-width:280px;box-shadow:0 8px 32px rgba(0,0,0,.5)">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+    <div style="font-weight:600;font-size:13px;color:var(--tp)" id="po-name"></div>
+    <button onclick="closeOverrideModal()" style="background:none;border:none;color:var(--tt);font-size:16px;cursor:pointer;padding:0 2px">✕</button>
+  </div>
+  <div style="font-size:11px;color:var(--tt);margin-bottom:10px">Override projection values for this slate only. Leave blank to keep calibrated value.</div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
+    <div><label style="font-size:10px;color:var(--tt);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:3px">Median</label><input id="po-median" type="number" step="0.1" min="0" placeholder="—" style="width:100%;font-size:12px;padding:5px 7px;border-radius:var(--r);border:0.5px solid var(--brd-s);background:var(--bp);color:var(--tp)"></div>
+    <div><label style="font-size:10px;color:var(--tt);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:3px">Ceiling</label><input id="po-ceiling" type="number" step="0.1" min="0" placeholder="—" style="width:100%;font-size:12px;padding:5px 7px;border-radius:var(--r);border:0.5px solid var(--brd-s);background:var(--bp);color:var(--tp)"></div>
+    <div><label style="font-size:10px;color:var(--tt);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:3px">Floor</label><input id="po-floor" type="number" step="0.1" min="0" placeholder="—" style="width:100%;font-size:12px;padding:5px 7px;border-radius:var(--r);border:0.5px solid var(--brd-s);background:var(--bp);color:var(--tp)"></div>
+    <div><label style="font-size:10px;color:var(--tt);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:3px">Own %</label><input id="po-own" type="number" step="0.1" min="0" max="100" placeholder="—" style="width:100%;font-size:12px;padding:5px 7px;border-radius:var(--r);border:0.5px solid var(--brd-s);background:var(--bp);color:var(--tp)"></div>
+  </div>
+  <div style="display:flex;gap:8px">
+    <button class="btn-g" onclick="applyOverrideModal()" style="flex:1">Apply Override</button>
+    <button class="btn" onclick="clearOverrideModal()" style="flex:1">Clear Override</button>
+  </div>
+  <div id="po-status" style="font-size:11px;margin-top:8px;color:var(--tsu)"></div>
+</div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="engine.js"></script>
 <script src="app.js"></script>

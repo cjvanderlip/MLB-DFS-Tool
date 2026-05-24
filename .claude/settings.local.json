@@ -51,7 +51,36 @@
       "Bash(taskkill /PID 4728 /F)",
       "Bash(cmd.exe /c \"taskkill /PID 4728 /F\")",
       "Bash(echo \"exit: $?\")",
-      "Bash(powershell.exe -Command \"Stop-Process -Id 4728 -Force\")"
+      "Bash(powershell.exe -Command \"Stop-Process -Id 4728 -Force\")",
+      "Bash(node -e ':*)",
+      "Bash(curl -s \"http://localhost:3000/api/lineups/2026-04-12\")",
+      "Bash(head -n 400 \"c:\\\\\\\\Users\\\\\\\\cjevi\\\\\\\\MLB DFS Tool\\\\\\\\public\\\\\\\\index.html\")",
+      "Bash(node -e \"const src = require\\('fs'\\).readFileSync\\('c:/Users/cjevi/MLB DFS Tool/public/app.js','utf8'\\); new Function\\(src\\); console.log\\('OK'\\)\")",
+      "Bash(node --check \"c:/Users/cjevi/MLB DFS Tool/server.js\")",
+      "Bash(node -e ' *)",
+      "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\cjevi\\\\MLB DFS Tool\" -Recurse -Force)",
+      "Bash(Select-Object -Property FullName, PSIsContainer)",
+      "Bash(Sort-Object FullName)",
+      "Bash(Format-Table -AutoSize)",
+      "Bash(node server.js)",
+      "PowerShell(Start-Process -FilePath \"node\" -ArgumentList \"server.js\" -WorkingDirectory \"c:\\\\Users\\\\cjevi\\\\MLB DFS Tool\" -WindowStyle Hidden; Start-Sleep -Seconds 3; \\(Invoke-WebRequest -Uri \"http://localhost:3000\" -UseBasicParsing -TimeoutSec 5\\).StatusCode)",
+      "Bash(npx playwright *)",
+      "Bash(Start-Process -FilePath \"node\" -ArgumentList \"server.js\" -WorkingDirectory \"c:\\\\Users\\\\cjevi\\\\MLB DFS Tool\" -WindowStyle Hidden)",
+      "Bash(Start-Sleep -Seconds 3)",
+      "Bash(Invoke-WebRequest -Uri \"http://localhost:3000\" -UseBasicParsing -ErrorAction SilentlyContinue)",
+      "Bash(Select-Object StatusCode)",
+      "Bash(awk '/^function generateGppLineup/,/^function [a-z]/ {print NR\": \"$0}' public/engine.js)",
+      "Read(//c/Users/cjevi/.claude/projects/c--Users-cjevi-MLB-DFS-Tool/memory/**)",
+      "Bash(node -e \"const fs=require\\('fs'\\); const t=fs.readFileSync\\('public/app.js','utf8'\\); console.log\\(JSON.stringify\\(t.slice\\(t.indexOf\\('// History list'\\),t.indexOf\\('// History list'\\)+200\\)\\)\\)\")",
+      "Bash(node patch_backtest.js)",
+      "Bash(curl -s -X POST http://localhost:3000/api/contests/import-csv -H \"Content-Type: application/json\" -d \"{\\\\\"csv\\\\\":\\\\\"Contest Title,Sport,Contest_Key,Entry_Key,Points,Place,Entries_In_Contest,Winnings_Non_Ticket,Start_Date_EST\\\\nMLB 50K Tourney,MLB,12345678,ABCDEF,142.5,38,5231,0,4/15/2026 7:05:00 PM\\\\\"}\")",
+      "Bash(powershell -Command \"Get-Process -Name node -ErrorAction SilentlyContinue | Stop-Process -Force\")",
+      "Bash(curl -s -X POST http://localhost:3000/api/contests/import-csv -H \"Content-Type: application/json\" -d \"{\\\\\"csv\\\\\":\\\\\"Contest Title,Sport,Contest_Key,Entry_Key,Points,Place,Entries_In_Contest,Winnings_Non_Ticket,Start_Date_EST\\\\nMLB 50K Tourney,MLB,12345678,ABCDEF,142.5,38/5231,5231,0,4/15/2026 7:05:00 PM\\\\\"}\")",
+      "Bash(curl -s http://localhost:3000/api/contests/99999999)",
+      "Bash(node --check \"c:\\\\Users\\\\cjevi\\\\MLB DFS Tool\\\\public\\\\app.js\")"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\cjevi\\MLB DFS Tool\\data"
     ]
   }
 }

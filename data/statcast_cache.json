@@ -1,5 +1,3774 @@
 {
-  "data": {},
-  "fetchedAt": "2026-04-09T15:25:37.550Z",
-  "count": 0
+  "data": {
+    "tyler soderstrom": {
+      "barrelRate": 11.6,
+      "hardHitRate": 43.9,
+      "exitVelo": 90,
+      "launchAngle": 14.2,
+      "xwOBA": 0.313,
+      "xSLG": 0.411
+    },
+    "dillon dingler": {
+      "barrelRate": 13.7,
+      "hardHitRate": 49.6,
+      "exitVelo": 90.4,
+      "launchAngle": 14.2,
+      "xwOBA": 0.395,
+      "xSLG": 0.554
+    },
+    "andrew benintendi": {
+      "barrelRate": 11,
+      "hardHitRate": 48.5,
+      "exitVelo": 88.7,
+      "launchAngle": 19.3,
+      "xwOBA": 0.315,
+      "xSLG": 0.424
+    },
+    "joey ortiz": {
+      "barrelRate": 3.5,
+      "hardHitRate": 34.1,
+      "exitVelo": 86.5,
+      "launchAngle": 8.6,
+      "xwOBA": 0.291,
+      "xSLG": 0.29
+    },
+    "dylan crews": {
+      "barrelRate": 0,
+      "hardHitRate": 0,
+      "exitVelo": 85.1,
+      "launchAngle": 12.4,
+      "xwOBA": 0.229,
+      "xSLG": 0.244
+    },
+    "wyatt langford": {
+      "barrelRate": 4.9,
+      "hardHitRate": 37.7,
+      "exitVelo": 90.8,
+      "launchAngle": 13.2,
+      "xwOBA": 0.282,
+      "xSLG": 0.356
+    },
+    "chase meidroth": {
+      "barrelRate": 4.7,
+      "hardHitRate": 38,
+      "exitVelo": 87.5,
+      "launchAngle": 8.2,
+      "xwOBA": 0.295,
+      "xSLG": 0.33
+    },
+    "jose azocar": {
+      "barrelRate": 0,
+      "hardHitRate": 25,
+      "exitVelo": 86.8,
+      "launchAngle": 5.6,
+      "xwOBA": 0.3,
+      "xSLG": 0.344
+    },
+    "javier sanoja": {
+      "barrelRate": 2.3,
+      "hardHitRate": 33,
+      "exitVelo": 87.8,
+      "launchAngle": 11.9,
+      "xwOBA": 0.26,
+      "xSLG": 0.289
+    },
+    "connor joe": {
+      "barrelRate": 9.1,
+      "hardHitRate": 45.5,
+      "exitVelo": 92.1,
+      "launchAngle": 17.5,
+      "xwOBA": 0.369,
+      "xSLG": 0.435
+    },
+    "yohendrick pinango": {
+      "barrelRate": 4.3,
+      "hardHitRate": 40.4,
+      "exitVelo": 89.7,
+      "launchAngle": 4.8,
+      "xwOBA": 0.319,
+      "xSLG": 0.393
+    },
+    "colson montgomery": {
+      "barrelRate": 14.9,
+      "hardHitRate": 42.1,
+      "exitVelo": 90,
+      "launchAngle": 22.4,
+      "xwOBA": 0.326,
+      "xSLG": 0.443
+    },
+    "david hamilton": {
+      "barrelRate": 2.3,
+      "hardHitRate": 25,
+      "exitVelo": 85,
+      "launchAngle": 12.1,
+      "xwOBA": 0.276,
+      "xSLG": 0.282
+    },
+    "gleyber torres": {
+      "barrelRate": 6.3,
+      "hardHitRate": 26,
+      "exitVelo": 83,
+      "launchAngle": 4.9,
+      "xwOBA": 0.347,
+      "xSLG": 0.368
+    },
+    "henry davis": {
+      "barrelRate": 9,
+      "hardHitRate": 37.2,
+      "exitVelo": 90.4,
+      "launchAngle": 17.7,
+      "xwOBA": 0.287,
+      "xSLG": 0.327
+    },
+    "sam haggerty": {
+      "barrelRate": 0,
+      "hardHitRate": 4.8,
+      "exitVelo": 85.8,
+      "launchAngle": 14.6,
+      "xwOBA": 0.184,
+      "xSLG": 0.192
+    },
+    "miguel andujar": {
+      "barrelRate": 5.4,
+      "hardHitRate": 41.1,
+      "exitVelo": 89.4,
+      "launchAngle": 8.1,
+      "xwOBA": 0.299,
+      "xSLG": 0.397
+    },
+    "elias diaz": {
+      "barrelRate": 17.6,
+      "hardHitRate": 41.2,
+      "exitVelo": 88.4,
+      "launchAngle": 15,
+      "xwOBA": 0.298,
+      "xSLG": 0.416
+    },
+    "blake dunn": {
+      "barrelRate": 9.5,
+      "hardHitRate": 36.4,
+      "exitVelo": 91.2,
+      "launchAngle": 13.4,
+      "xwOBA": 0.312,
+      "xSLG": 0.387
+    },
+    "ronny mauricio": {
+      "barrelRate": 10,
+      "hardHitRate": 35,
+      "exitVelo": 89.7,
+      "launchAngle": 4.9,
+      "xwOBA": 0.224,
+      "xSLG": 0.33
+    },
+    "andy ibanez": {
+      "barrelRate": 0,
+      "hardHitRate": 18.2,
+      "exitVelo": 86.3,
+      "launchAngle": 13.6,
+      "xwOBA": 0.164,
+      "xSLG": 0.205
+    },
+    "jordan beck": {
+      "barrelRate": 3.3,
+      "hardHitRate": 26.2,
+      "exitVelo": 85.3,
+      "launchAngle": 14.2,
+      "xwOBA": 0.26,
+      "xSLG": 0.319
+    },
+    "lane thomas": {
+      "barrelRate": 3.1,
+      "hardHitRate": 35.4,
+      "exitVelo": 85.3,
+      "launchAngle": 25.9,
+      "xwOBA": 0.31,
+      "xSLG": 0.3
+    },
+    "jacob young": {
+      "barrelRate": 5.2,
+      "hardHitRate": 34.1,
+      "exitVelo": 88.4,
+      "launchAngle": 10.7,
+      "xwOBA": 0.313,
+      "xSLG": 0.395
+    },
+    "bo bichette": {
+      "barrelRate": 7.1,
+      "hardHitRate": 45.6,
+      "exitVelo": 91.1,
+      "launchAngle": 7.4,
+      "xwOBA": 0.331,
+      "xSLG": 0.426
+    },
+    "luis robert": {
+      "barrelRate": 2.9,
+      "hardHitRate": 42.6,
+      "exitVelo": 90.2,
+      "launchAngle": 14.7,
+      "xwOBA": 0.324,
+      "xSLG": 0.377
+    },
+    "thomas saggese": {
+      "barrelRate": 6.7,
+      "hardHitRate": 37.8,
+      "exitVelo": 88.7,
+      "launchAngle": 11.4,
+      "xwOBA": 0.258,
+      "xSLG": 0.331
+    },
+    "michael massey": {
+      "barrelRate": 9.5,
+      "hardHitRate": 45.9,
+      "exitVelo": 91.3,
+      "launchAngle": 17.4,
+      "xwOBA": 0.273,
+      "xSLG": 0.398
+    },
+    "fernando tatis": {
+      "barrelRate": 11,
+      "hardHitRate": 54.4,
+      "exitVelo": 91.2,
+      "launchAngle": 0.9,
+      "xwOBA": 0.337,
+      "xSLG": 0.388
+    },
+    "masyn winn": {
+      "barrelRate": 3.2,
+      "hardHitRate": 29.4,
+      "exitVelo": 86.8,
+      "launchAngle": 13.5,
+      "xwOBA": 0.302,
+      "xSLG": 0.327
+    },
+    "ernie clement": {
+      "barrelRate": 2.3,
+      "hardHitRate": 26.4,
+      "exitVelo": 86.1,
+      "launchAngle": 15.8,
+      "xwOBA": 0.287,
+      "xSLG": 0.364
+    },
+    "jake fraley": {
+      "barrelRate": 8.8,
+      "hardHitRate": 21.1,
+      "exitVelo": 83.9,
+      "launchAngle": 22.8,
+      "xwOBA": 0.276,
+      "xSLG": 0.345
+    },
+    "patrick bailey": {
+      "barrelRate": 6.8,
+      "hardHitRate": 37.3,
+      "exitVelo": 90.1,
+      "launchAngle": 13.1,
+      "xwOBA": 0.283,
+      "xSLG": 0.368
+    },
+    "james outman": {
+      "barrelRate": 0,
+      "hardHitRate": 26.5,
+      "exitVelo": 84.7,
+      "launchAngle": 19.4,
+      "xwOBA": 0.201,
+      "xSLG": 0.228
+    },
+    "austin martin": {
+      "barrelRate": 2,
+      "hardHitRate": 31.4,
+      "exitVelo": 86.2,
+      "launchAngle": 12,
+      "xwOBA": 0.345,
+      "xSLG": 0.353
+    },
+    "corbin carroll": {
+      "barrelRate": 14.2,
+      "hardHitRate": 47.5,
+      "exitVelo": 91,
+      "launchAngle": 13.1,
+      "xwOBA": 0.378,
+      "xSLG": 0.503
+    },
+    "ben rice": {
+      "barrelRate": 18.8,
+      "hardHitRate": 54.7,
+      "exitVelo": 92.9,
+      "launchAngle": 12.9,
+      "xwOBA": 0.409,
+      "xSLG": 0.572
+    },
+    "luis arraez": {
+      "barrelRate": 0,
+      "hardHitRate": 21.2,
+      "exitVelo": 87,
+      "launchAngle": 14.8,
+      "xwOBA": 0.308,
+      "xSLG": 0.367
+    },
+    "george springer": {
+      "barrelRate": 7.5,
+      "hardHitRate": 36.6,
+      "exitVelo": 86.9,
+      "launchAngle": 15.9,
+      "xwOBA": 0.279,
+      "xSLG": 0.344
+    },
+    "josh naylor": {
+      "barrelRate": 6.4,
+      "hardHitRate": 41.4,
+      "exitVelo": 87.7,
+      "launchAngle": 15.3,
+      "xwOBA": 0.341,
+      "xSLG": 0.431
+    },
+    "kyle manzardo": {
+      "barrelRate": 13.8,
+      "hardHitRate": 42.5,
+      "exitVelo": 89.5,
+      "launchAngle": 17,
+      "xwOBA": 0.326,
+      "xSLG": 0.427
+    },
+    "kody clemens": {
+      "barrelRate": 13.6,
+      "hardHitRate": 43.2,
+      "exitVelo": 92.5,
+      "launchAngle": 17.1,
+      "xwOBA": 0.326,
+      "xSLG": 0.412
+    },
+    "jake cronenworth": {
+      "barrelRate": 5.5,
+      "hardHitRate": 32.4,
+      "exitVelo": 87.4,
+      "launchAngle": 7.1,
+      "xwOBA": 0.305,
+      "xSLG": 0.325
+    },
+    "ronald acuna": {
+      "barrelRate": 12.1,
+      "hardHitRate": 42.1,
+      "exitVelo": 89.7,
+      "launchAngle": 17.3,
+      "xwOBA": 0.375,
+      "xSLG": 0.476
+    },
+    "aaron judge": {
+      "barrelRate": 22.9,
+      "hardHitRate": 54.2,
+      "exitVelo": 93.5,
+      "launchAngle": 14.8,
+      "xwOBA": 0.416,
+      "xSLG": 0.6
+    },
+    "matt olson": {
+      "barrelRate": 15.9,
+      "hardHitRate": 51.7,
+      "exitVelo": 93.8,
+      "launchAngle": 17.6,
+      "xwOBA": 0.383,
+      "xSLG": 0.559
+    },
+    "zach cole": {
+      "barrelRate": 20,
+      "hardHitRate": 48,
+      "exitVelo": 92.8,
+      "launchAngle": 17.4,
+      "xwOBA": 0.312,
+      "xSLG": 0.495
+    },
+    "leody taveras": {
+      "barrelRate": 4.7,
+      "hardHitRate": 30.6,
+      "exitVelo": 87,
+      "launchAngle": 15.8,
+      "xwOBA": 0.318,
+      "xSLG": 0.359
+    },
+    "nick sogard": {
+      "barrelRate": 0,
+      "hardHitRate": 27.3,
+      "exitVelo": 82.4,
+      "launchAngle": -0.9,
+      "xwOBA": 0.335,
+      "xSLG": 0.348
+    },
+    "nick allen": {
+      "barrelRate": 0,
+      "hardHitRate": 35.7,
+      "exitVelo": 87.9,
+      "launchAngle": 10.8,
+      "xwOBA": 0.281,
+      "xSLG": 0.297
+    },
+    "nico hoerner": {
+      "barrelRate": 1.7,
+      "hardHitRate": 25.7,
+      "exitVelo": 85.3,
+      "launchAngle": 13.4,
+      "xwOBA": 0.339,
+      "xSLG": 0.382
+    },
+    "marcus semien": {
+      "barrelRate": 7.7,
+      "hardHitRate": 32.4,
+      "exitVelo": 85.9,
+      "launchAngle": 18.8,
+      "xwOBA": 0.304,
+      "xSLG": 0.398
+    },
+    "otto kemp": {
+      "barrelRate": 0,
+      "hardHitRate": 13.3,
+      "exitVelo": 81.5,
+      "launchAngle": 27,
+      "xwOBA": 0.206,
+      "xSLG": 0.221
+    },
+    "caleb durbin": {
+      "barrelRate": 0.8,
+      "hardHitRate": 28.6,
+      "exitVelo": 84.8,
+      "launchAngle": 6.9,
+      "xwOBA": 0.259,
+      "xSLG": 0.273
+    },
+    "joe mack": {
+      "barrelRate": 3.7,
+      "hardHitRate": 37,
+      "exitVelo": 89,
+      "launchAngle": 7.3,
+      "xwOBA": 0.207,
+      "xSLG": 0.23
+    },
+    "victor scott": {
+      "barrelRate": 1.1,
+      "hardHitRate": 27.7,
+      "exitVelo": 87.7,
+      "launchAngle": 6.2,
+      "xwOBA": 0.251,
+      "xSLG": 0.29
+    },
+    "nathaniel lowe": {
+      "barrelRate": 14.1,
+      "hardHitRate": 46.7,
+      "exitVelo": 90.1,
+      "launchAngle": 13.1,
+      "xwOBA": 0.371,
+      "xSLG": 0.51
+    },
+    "austin wynns": {
+      "barrelRate": 6.7,
+      "hardHitRate": 26.7,
+      "exitVelo": 85.4,
+      "launchAngle": 23.5,
+      "xwOBA": 0.285,
+      "xSLG": 0.365
+    },
+    "edmundo sosa": {
+      "barrelRate": 4.9,
+      "hardHitRate": 37.7,
+      "exitVelo": 87.3,
+      "launchAngle": 5.8,
+      "xwOBA": 0.339,
+      "xSLG": 0.443
+    },
+    "tj friedl": {
+      "barrelRate": 2.9,
+      "hardHitRate": 29.1,
+      "exitVelo": 87.9,
+      "launchAngle": 17.4,
+      "xwOBA": 0.252,
+      "xSLG": 0.268
+    },
+    "trea turner": {
+      "barrelRate": 5.1,
+      "hardHitRate": 40.4,
+      "exitVelo": 90.2,
+      "launchAngle": 11.6,
+      "xwOBA": 0.288,
+      "xSLG": 0.349
+    },
+    "sungmun song": {
+      "barrelRate": 14.3,
+      "hardHitRate": 35.7,
+      "exitVelo": 87.9,
+      "launchAngle": 2.3,
+      "xwOBA": 0.324,
+      "xSLG": 0.398
+    },
+    "tommy pham": {
+      "barrelRate": 0,
+      "hardHitRate": 33.3,
+      "exitVelo": 91.7,
+      "launchAngle": 10.5,
+      "xwOBA": 0.137,
+      "xSLG": 0.117
+    },
+    "ryan jeffers": {
+      "barrelRate": 15.8,
+      "hardHitRate": 43.6,
+      "exitVelo": 91.2,
+      "launchAngle": 21,
+      "xwOBA": 0.39,
+      "xSLG": 0.498
+    },
+    "jake mccarthy": {
+      "barrelRate": 6.7,
+      "hardHitRate": 20,
+      "exitVelo": 83.6,
+      "launchAngle": 13.3,
+      "xwOBA": 0.329,
+      "xSLG": 0.421
+    },
+    "javier baez": {
+      "barrelRate": 3.2,
+      "hardHitRate": 28.6,
+      "exitVelo": 84.7,
+      "launchAngle": 10.2,
+      "xwOBA": 0.294,
+      "xSLG": 0.361
+    },
+    "christian koss": {
+      "barrelRate": 0,
+      "hardHitRate": 16.7,
+      "exitVelo": 83.5,
+      "launchAngle": 19.1,
+      "xwOBA": 0.158,
+      "xSLG": 0.144
+    },
+    "daniel schneemann": {
+      "barrelRate": 7.7,
+      "hardHitRate": 36.7,
+      "exitVelo": 88.4,
+      "launchAngle": 13.2,
+      "xwOBA": 0.323,
+      "xSLG": 0.404
+    },
+    "freddie freeman": {
+      "barrelRate": 11.9,
+      "hardHitRate": 47.7,
+      "exitVelo": 92,
+      "launchAngle": 11,
+      "xwOBA": 0.379,
+      "xSLG": 0.517
+    },
+    "jose caballero": {
+      "barrelRate": 3.8,
+      "hardHitRate": 29.2,
+      "exitVelo": 83.4,
+      "launchAngle": 9.4,
+      "xwOBA": 0.281,
+      "xSLG": 0.336
+    },
+    "sandy leon": {
+      "barrelRate": 0,
+      "hardHitRate": 10,
+      "exitVelo": 83.7,
+      "launchAngle": 25.4,
+      "xwOBA": 0.126,
+      "xSLG": 0.167
+    },
+    "shea langeliers": {
+      "barrelRate": 15.5,
+      "hardHitRate": 47.2,
+      "exitVelo": 92.3,
+      "launchAngle": 20.4,
+      "xwOBA": 0.408,
+      "xSLG": 0.58
+    },
+    "brendan donovan": {
+      "barrelRate": 4.4,
+      "hardHitRate": 32.9,
+      "exitVelo": 85.9,
+      "launchAngle": 14.8,
+      "xwOBA": 0.345,
+      "xSLG": 0.384
+    },
+    "chase delauter": {
+      "barrelRate": 6.7,
+      "hardHitRate": 41.1,
+      "exitVelo": 90,
+      "launchAngle": 14.5,
+      "xwOBA": 0.355,
+      "xSLG": 0.424
+    },
+    "matt vierling": {
+      "barrelRate": 5.9,
+      "hardHitRate": 36.9,
+      "exitVelo": 87.5,
+      "launchAngle": 15.3,
+      "xwOBA": 0.319,
+      "xSLG": 0.393
+    },
+    "coby mayo": {
+      "barrelRate": 8.2,
+      "hardHitRate": 44.7,
+      "exitVelo": 90.9,
+      "launchAngle": 19.4,
+      "xwOBA": 0.292,
+      "xSLG": 0.365
+    },
+    "jj bleday": {
+      "barrelRate": 14.1,
+      "hardHitRate": 53.1,
+      "exitVelo": 91.9,
+      "launchAngle": 21.8,
+      "xwOBA": 0.429,
+      "xSLG": 0.579
+    },
+    "colt keith": {
+      "barrelRate": 4.7,
+      "hardHitRate": 40.2,
+      "exitVelo": 89.3,
+      "launchAngle": 14.3,
+      "xwOBA": 0.304,
+      "xSLG": 0.387
+    },
+    "leo rivas": {
+      "barrelRate": 1.5,
+      "hardHitRate": 13.6,
+      "exitVelo": 86.2,
+      "launchAngle": 20.2,
+      "xwOBA": 0.239,
+      "xSLG": 0.214
+    },
+    "tristan peters": {
+      "barrelRate": 5.6,
+      "hardHitRate": 25.6,
+      "exitVelo": 87.9,
+      "launchAngle": 17.9,
+      "xwOBA": 0.285,
+      "xSLG": 0.34
+    },
+    "mauricio dubon": {
+      "barrelRate": 5.5,
+      "hardHitRate": 28.8,
+      "exitVelo": 86.8,
+      "launchAngle": 15.9,
+      "xwOBA": 0.302,
+      "xSLG": 0.376
+    },
+    "haoyu lee": {
+      "barrelRate": 12.2,
+      "hardHitRate": 34.1,
+      "exitVelo": 89.1,
+      "launchAngle": 20.4,
+      "xwOBA": 0.282,
+      "xSLG": 0.396
+    },
+    "vinnie pasquantino": {
+      "barrelRate": 8.7,
+      "hardHitRate": 36.2,
+      "exitVelo": 88.9,
+      "launchAngle": 20.5,
+      "xwOBA": 0.301,
+      "xSLG": 0.374
+    },
+    "dansby swanson": {
+      "barrelRate": 8.9,
+      "hardHitRate": 45.2,
+      "exitVelo": 90.3,
+      "launchAngle": 13.5,
+      "xwOBA": 0.319,
+      "xSLG": 0.4
+    },
+    "kyle karros": {
+      "barrelRate": 4.9,
+      "hardHitRate": 37.9,
+      "exitVelo": 88.9,
+      "launchAngle": 11.1,
+      "xwOBA": 0.32,
+      "xSLG": 0.344
+    },
+    "jake meyers": {
+      "barrelRate": 11.8,
+      "hardHitRate": 32.4,
+      "exitVelo": 86.8,
+      "launchAngle": 11.8,
+      "xwOBA": 0.321,
+      "xSLG": 0.426
+    },
+    "salvador perez": {
+      "barrelRate": 8.9,
+      "hardHitRate": 40.4,
+      "exitVelo": 88.6,
+      "launchAngle": 17.2,
+      "xwOBA": 0.289,
+      "xSLG": 0.396
+    },
+    "braxton fulford": {
+      "barrelRate": 0,
+      "hardHitRate": 42.9,
+      "exitVelo": 92,
+      "launchAngle": 27.4,
+      "xwOBA": 0.181,
+      "xSLG": 0.179
+    },
+    "endy rodriguez": {
+      "barrelRate": 11.1,
+      "hardHitRate": 33.3,
+      "exitVelo": 89.3,
+      "launchAngle": 25.4,
+      "xwOBA": 0.403,
+      "xSLG": 0.474
+    },
+    "hayden senger": {
+      "barrelRate": 0,
+      "hardHitRate": 12.5,
+      "exitVelo": 81.9,
+      "launchAngle": -11.3,
+      "xwOBA": 0.18,
+      "xSLG": 0.25
+    },
+    "brandon valenzuela": {
+      "barrelRate": 8.6,
+      "hardHitRate": 41.4,
+      "exitVelo": 89.6,
+      "launchAngle": 15.7,
+      "xwOBA": 0.327,
+      "xSLG": 0.418
+    },
+    "vladimir guerrero": {
+      "barrelRate": 7.5,
+      "hardHitRate": 43.1,
+      "exitVelo": 90.5,
+      "launchAngle": 8.7,
+      "xwOBA": 0.36,
+      "xSLG": 0.427
+    },
+    "alek thomas": {
+      "barrelRate": 8.6,
+      "hardHitRate": 43.1,
+      "exitVelo": 89.9,
+      "launchAngle": 11.7,
+      "xwOBA": 0.292,
+      "xSLG": 0.397
+    },
+    "hunter feduccia": {
+      "barrelRate": 2.7,
+      "hardHitRate": 27.8,
+      "exitVelo": 88.6,
+      "launchAngle": 16.3,
+      "xwOBA": 0.301,
+      "xSLG": 0.33
+    },
+    "steven kwan": {
+      "barrelRate": 0.6,
+      "hardHitRate": 9.8,
+      "exitVelo": 82.5,
+      "launchAngle": 15.2,
+      "xwOBA": 0.295,
+      "xSLG": 0.282
+    },
+    "ryan vilade": {
+      "barrelRate": 3.8,
+      "hardHitRate": 38.5,
+      "exitVelo": 90,
+      "launchAngle": 21.5,
+      "xwOBA": 0.321,
+      "xSLG": 0.387
+    },
+    "reese mcguire": {
+      "barrelRate": 0,
+      "hardHitRate": 9.5,
+      "exitVelo": 74.3,
+      "launchAngle": 18.8,
+      "xwOBA": 0.243,
+      "xSLG": 0.215
+    },
+    "xander bogaerts": {
+      "barrelRate": 7.1,
+      "hardHitRate": 37.1,
+      "exitVelo": 88.1,
+      "launchAngle": 8.8,
+      "xwOBA": 0.328,
+      "xSLG": 0.413
+    },
+    "bryce eldridge": {
+      "barrelRate": 4.5,
+      "hardHitRate": 59.1,
+      "exitVelo": 93,
+      "launchAngle": 18.5,
+      "xwOBA": 0.289,
+      "xSLG": 0.361
+    },
+    "sam antonacci": {
+      "barrelRate": 9,
+      "hardHitRate": 37.8,
+      "exitVelo": 89,
+      "launchAngle": 11.3,
+      "xwOBA": 0.397,
+      "xSLG": 0.481
+    },
+    "billy cook": {
+      "barrelRate": 0,
+      "hardHitRate": 15.4,
+      "exitVelo": 84.5,
+      "launchAngle": 13.6,
+      "xwOBA": 0.139,
+      "xSLG": 0.172
+    },
+    "yohel pozo": {
+      "barrelRate": 0,
+      "hardHitRate": 26.9,
+      "exitVelo": 86.9,
+      "launchAngle": 12,
+      "xwOBA": 0.265,
+      "xSLG": 0.329
+    },
+    "pedro pages": {
+      "barrelRate": 6.2,
+      "hardHitRate": 34.6,
+      "exitVelo": 86.3,
+      "launchAngle": 11.8,
+      "xwOBA": 0.269,
+      "xSLG": 0.351
+    },
+    "ceddanne rafaela": {
+      "barrelRate": 7.8,
+      "hardHitRate": 37.3,
+      "exitVelo": 86.9,
+      "launchAngle": 9.2,
+      "xwOBA": 0.302,
+      "xSLG": 0.36
+    },
+    "luisangel acuna": {
+      "barrelRate": 2.7,
+      "hardHitRate": 37.8,
+      "exitVelo": 89.1,
+      "launchAngle": 2.5,
+      "xwOBA": 0.268,
+      "xSLG": 0.304
+    },
+    "brice matthews": {
+      "barrelRate": 7.7,
+      "hardHitRate": 37.2,
+      "exitVelo": 88.1,
+      "launchAngle": 11,
+      "xwOBA": 0.263,
+      "xSLG": 0.345
+    },
+    "jackson chourio": {
+      "barrelRate": 17.8,
+      "hardHitRate": 51.1,
+      "exitVelo": 93.2,
+      "launchAngle": 13.4,
+      "xwOBA": 0.323,
+      "xSLG": 0.488
+    },
+    "chandler simpson": {
+      "barrelRate": 0,
+      "hardHitRate": 15.5,
+      "exitVelo": 83.9,
+      "launchAngle": 2.1,
+      "xwOBA": 0.26,
+      "xSLG": 0.289
+    },
+    "jose fernandez": {
+      "barrelRate": 4.2,
+      "hardHitRate": 42.7,
+      "exitVelo": 88.7,
+      "launchAngle": 12.5,
+      "xwOBA": 0.298,
+      "xSLG": 0.381
+    },
+    "santiago espinal": {
+      "barrelRate": 2.9,
+      "hardHitRate": 35.3,
+      "exitVelo": 85.8,
+      "launchAngle": 11.4,
+      "xwOBA": 0.263,
+      "xSLG": 0.361
+    },
+    "carson kelly": {
+      "barrelRate": 8.5,
+      "hardHitRate": 41.5,
+      "exitVelo": 90,
+      "launchAngle": 13.5,
+      "xwOBA": 0.327,
+      "xSLG": 0.396
+    },
+    "adrian del castillo": {
+      "barrelRate": 7.8,
+      "hardHitRate": 38.5,
+      "exitVelo": 88.4,
+      "launchAngle": 15.9,
+      "xwOBA": 0.247,
+      "xSLG": 0.316
+    },
+    "juan soto": {
+      "barrelRate": 19.8,
+      "hardHitRate": 50.5,
+      "exitVelo": 93,
+      "launchAngle": 15.7,
+      "xwOBA": 0.409,
+      "xSLG": 0.618
+    },
+    "eloy jimenez": {
+      "barrelRate": 4,
+      "hardHitRate": 44,
+      "exitVelo": 89.2,
+      "launchAngle": 5.6,
+      "xwOBA": 0.257,
+      "xSLG": 0.289
+    },
+    "dominic smith": {
+      "barrelRate": 10.1,
+      "hardHitRate": 42.7,
+      "exitVelo": 89.9,
+      "launchAngle": 16.6,
+      "xwOBA": 0.378,
+      "xSLG": 0.521
+    },
+    "marcelo mayer": {
+      "barrelRate": 7.8,
+      "hardHitRate": 39.4,
+      "exitVelo": 87.1,
+      "launchAngle": 9.7,
+      "xwOBA": 0.269,
+      "xSLG": 0.31
+    },
+    "darell hernaiz": {
+      "barrelRate": 1.4,
+      "hardHitRate": 21.4,
+      "exitVelo": 84.2,
+      "launchAngle": 17.3,
+      "xwOBA": 0.267,
+      "xSLG": 0.269
+    },
+    "daniel johnson": {
+      "barrelRate": 0,
+      "hardHitRate": 45.5,
+      "exitVelo": 92.7,
+      "launchAngle": 21.8,
+      "xwOBA": 0.342,
+      "xSLG": 0.32
+    },
+    "jose altuve": {
+      "barrelRate": 6.3,
+      "hardHitRate": 36.9,
+      "exitVelo": 86.3,
+      "launchAngle": 8.3,
+      "xwOBA": 0.314,
+      "xSLG": 0.374
+    },
+    "greg jones": {
+      "barrelRate": 0,
+      "hardHitRate": 30.8,
+      "exitVelo": 85.7,
+      "launchAngle": -1.8,
+      "xwOBA": 0.175,
+      "xSLG": 0.217
+    },
+    "christian yelich": {
+      "barrelRate": 7.8,
+      "hardHitRate": 35.3,
+      "exitVelo": 88.8,
+      "launchAngle": 1.2,
+      "xwOBA": 0.281,
+      "xSLG": 0.394
+    },
+    "juan brito": {
+      "barrelRate": 2.9,
+      "hardHitRate": 32.4,
+      "exitVelo": 84.3,
+      "launchAngle": 14.2,
+      "xwOBA": 0.257,
+      "xSLG": 0.287
+    },
+    "kyle isbel": {
+      "barrelRate": 4.2,
+      "hardHitRate": 31.6,
+      "exitVelo": 87.4,
+      "launchAngle": 13,
+      "xwOBA": 0.285,
+      "xSLG": 0.345
+    },
+    "jose tena": {
+      "barrelRate": 11.1,
+      "hardHitRate": 55.6,
+      "exitVelo": 93.2,
+      "launchAngle": 13.3,
+      "xwOBA": 0.321,
+      "xSLG": 0.422
+    },
+    "luis torrens": {
+      "barrelRate": 0,
+      "hardHitRate": 43.1,
+      "exitVelo": 88.8,
+      "launchAngle": 6.1,
+      "xwOBA": 0.257,
+      "xSLG": 0.295
+    },
+    "kyle stowers": {
+      "barrelRate": 7,
+      "hardHitRate": 52.1,
+      "exitVelo": 90.2,
+      "launchAngle": 15,
+      "xwOBA": 0.329,
+      "xSLG": 0.397
+    },
+    "pj higgins": {
+      "barrelRate": 0,
+      "hardHitRate": 0,
+      "exitVelo": 78.8,
+      "launchAngle": 23.7,
+      "xwOBA": 0.323,
+      "xSLG": 0.373
+    },
+    "shay whitcomb": {
+      "barrelRate": 12.5,
+      "hardHitRate": 25,
+      "exitVelo": 87.6,
+      "launchAngle": 41.4,
+      "xwOBA": 0.212,
+      "xSLG": 0.301
+    },
+    "jonathan aranda": {
+      "barrelRate": 10.2,
+      "hardHitRate": 42.5,
+      "exitVelo": 89.6,
+      "launchAngle": 14.3,
+      "xwOBA": 0.365,
+      "xSLG": 0.451
+    },
+    "jonny deluca": {
+      "barrelRate": 3.3,
+      "hardHitRate": 29.7,
+      "exitVelo": 85.3,
+      "launchAngle": 12.8,
+      "xwOBA": 0.28,
+      "xSLG": 0.354
+    },
+    "randal grichuk": {
+      "barrelRate": 19.5,
+      "hardHitRate": 48.8,
+      "exitVelo": 91.8,
+      "launchAngle": 17.5,
+      "xwOBA": 0.4,
+      "xSLG": 0.623
+    },
+    "cam smith": {
+      "barrelRate": 13.8,
+      "hardHitRate": 43.6,
+      "exitVelo": 88.7,
+      "launchAngle": 12.4,
+      "xwOBA": 0.333,
+      "xSLG": 0.428
+    },
+    "austin hedges": {
+      "barrelRate": 0,
+      "hardHitRate": 34,
+      "exitVelo": 87.1,
+      "launchAngle": 5.8,
+      "xwOBA": 0.267,
+      "xSLG": 0.277
+    },
+    "josh smith": {
+      "barrelRate": 5.5,
+      "hardHitRate": 35.6,
+      "exitVelo": 87.9,
+      "launchAngle": 17.8,
+      "xwOBA": 0.301,
+      "xSLG": 0.33
+    },
+    "sal frelick": {
+      "barrelRate": 3,
+      "hardHitRate": 26.7,
+      "exitVelo": 85,
+      "launchAngle": 9,
+      "xwOBA": 0.283,
+      "xSLG": 0.323
+    },
+    "logan ohoppe": {
+      "barrelRate": 9.9,
+      "hardHitRate": 39.4,
+      "exitVelo": 86.7,
+      "launchAngle": 16.9,
+      "xwOBA": 0.282,
+      "xSLG": 0.313
+    },
+    "michael busch": {
+      "barrelRate": 11.5,
+      "hardHitRate": 42.3,
+      "exitVelo": 88.2,
+      "launchAngle": 14.8,
+      "xwOBA": 0.345,
+      "xSLG": 0.415
+    },
+    "austin slater": {
+      "barrelRate": 3.4,
+      "hardHitRate": 13.8,
+      "exitVelo": 85.7,
+      "launchAngle": 11.9,
+      "xwOBA": 0.234,
+      "xSLG": 0.246
+    },
+    "justin foscue": {
+      "barrelRate": 16,
+      "hardHitRate": 60,
+      "exitVelo": 93.6,
+      "launchAngle": 13.3,
+      "xwOBA": 0.424,
+      "xSLG": 0.634
+    },
+    "elly de la cruz": {
+      "barrelRate": 14.9,
+      "hardHitRate": 51.4,
+      "exitVelo": 94,
+      "launchAngle": 12.9,
+      "xwOBA": 0.367,
+      "xSLG": 0.501
+    },
+    "giancarlo stanton": {
+      "barrelRate": 18,
+      "hardHitRate": 44.3,
+      "exitVelo": 94.1,
+      "launchAngle": 21.5,
+      "xwOBA": 0.326,
+      "xSLG": 0.466
+    },
+    "brenton doyle": {
+      "barrelRate": 5.9,
+      "hardHitRate": 35.2,
+      "exitVelo": 87.8,
+      "launchAngle": 6.7,
+      "xwOBA": 0.248,
+      "xSLG": 0.275
+    },
+    "jo adell": {
+      "barrelRate": 7.5,
+      "hardHitRate": 46.6,
+      "exitVelo": 91.4,
+      "launchAngle": 19.3,
+      "xwOBA": 0.327,
+      "xSLG": 0.437
+    },
+    "austin wells": {
+      "barrelRate": 6.3,
+      "hardHitRate": 46.3,
+      "exitVelo": 90.3,
+      "launchAngle": 15.7,
+      "xwOBA": 0.299,
+      "xSLG": 0.349
+    },
+    "bobby witt": {
+      "barrelRate": 12.6,
+      "hardHitRate": 54,
+      "exitVelo": 93.7,
+      "launchAngle": 15.8,
+      "xwOBA": 0.392,
+      "xSLG": 0.525
+    },
+    "dustin harris": {
+      "barrelRate": 0,
+      "hardHitRate": 15.8,
+      "exitVelo": 83.7,
+      "launchAngle": 15.8,
+      "xwOBA": 0.335,
+      "xSLG": 0.356
+    },
+    "aj ewing": {
+      "barrelRate": 10,
+      "hardHitRate": 40,
+      "exitVelo": 87.3,
+      "launchAngle": 16.7,
+      "xwOBA": 0.4,
+      "xSLG": 0.474
+    },
+    "trent grisham": {
+      "barrelRate": 14.8,
+      "hardHitRate": 48.4,
+      "exitVelo": 91.4,
+      "launchAngle": 17.3,
+      "xwOBA": 0.338,
+      "xSLG": 0.423
+    },
+    "ben williamson": {
+      "barrelRate": 1.1,
+      "hardHitRate": 39.3,
+      "exitVelo": 89.4,
+      "launchAngle": 5,
+      "xwOBA": 0.311,
+      "xSLG": 0.348
+    },
+    "kevin mcgonigle": {
+      "barrelRate": 9.7,
+      "hardHitRate": 37,
+      "exitVelo": 88.5,
+      "launchAngle": 21.5,
+      "xwOBA": 0.375,
+      "xSLG": 0.468
+    },
+    "casey schmitt": {
+      "barrelRate": 14.6,
+      "hardHitRate": 47.6,
+      "exitVelo": 90.1,
+      "launchAngle": 20.4,
+      "xwOBA": 0.364,
+      "xSLG": 0.522
+    },
+    "joc pederson": {
+      "barrelRate": 7.4,
+      "hardHitRate": 50.6,
+      "exitVelo": 92.3,
+      "launchAngle": 16.3,
+      "xwOBA": 0.339,
+      "xSLG": 0.377
+    },
+    "tyler black": {
+      "barrelRate": 0,
+      "hardHitRate": 15,
+      "exitVelo": 83.6,
+      "launchAngle": 12.6,
+      "xwOBA": 0.192,
+      "xSLG": 0.229
+    },
+    "freddy fermin": {
+      "barrelRate": 0,
+      "hardHitRate": 26.9,
+      "exitVelo": 86.2,
+      "launchAngle": 14.4,
+      "xwOBA": 0.245,
+      "xSLG": 0.245
+    },
+    "tyler heineman": {
+      "barrelRate": 0,
+      "hardHitRate": 15.1,
+      "exitVelo": 83.2,
+      "launchAngle": 12.8,
+      "xwOBA": 0.198,
+      "xSLG": 0.216
+    },
+    "seiya suzuki": {
+      "barrelRate": 7.4,
+      "hardHitRate": 42.6,
+      "exitVelo": 88.8,
+      "launchAngle": 18.9,
+      "xwOBA": 0.336,
+      "xSLG": 0.424
+    },
+    "bryan reynolds": {
+      "barrelRate": 7.6,
+      "hardHitRate": 42,
+      "exitVelo": 90.4,
+      "launchAngle": 3.7,
+      "xwOBA": 0.346,
+      "xSLG": 0.407
+    },
+    "jeimer candelario": {
+      "barrelRate": 0,
+      "hardHitRate": 40,
+      "exitVelo": 91.8,
+      "launchAngle": 18.2,
+      "xwOBA": 0.218,
+      "xSLG": 0.213
+    },
+    "johnathan rodriguez": {
+      "barrelRate": 0,
+      "hardHitRate": 50,
+      "exitVelo": 89.1,
+      "launchAngle": 13.8,
+      "xwOBA": 0.331,
+      "xSLG": 0.206
+    },
+    "colton cowser": {
+      "barrelRate": 9.1,
+      "hardHitRate": 32.7,
+      "exitVelo": 86.4,
+      "launchAngle": 7.3,
+      "xwOBA": 0.278,
+      "xSLG": 0.334
+    },
+    "liam hicks": {
+      "barrelRate": 5.6,
+      "hardHitRate": 37.5,
+      "exitVelo": 87.5,
+      "launchAngle": 14.2,
+      "xwOBA": 0.34,
+      "xSLG": 0.421
+    },
+    "alex freeland": {
+      "barrelRate": 8.7,
+      "hardHitRate": 36.2,
+      "exitVelo": 88.7,
+      "launchAngle": 7.1,
+      "xwOBA": 0.292,
+      "xSLG": 0.356
+    },
+    "ryan waldschmidt": {
+      "barrelRate": 14.3,
+      "hardHitRate": 39.3,
+      "exitVelo": 86.3,
+      "launchAngle": 15.2,
+      "xwOBA": 0.34,
+      "xSLG": 0.432
+    },
+    "luke raley": {
+      "barrelRate": 22.4,
+      "hardHitRate": 55.3,
+      "exitVelo": 93,
+      "launchAngle": 14.4,
+      "xwOBA": 0.393,
+      "xSLG": 0.582
+    },
+    "kyle farmer": {
+      "barrelRate": 0,
+      "hardHitRate": 27.3,
+      "exitVelo": 81.6,
+      "launchAngle": 7,
+      "xwOBA": 0.247,
+      "xSLG": 0.316
+    },
+    "jared young": {
+      "barrelRate": 16.7,
+      "hardHitRate": 50,
+      "exitVelo": 88.7,
+      "launchAngle": -2.6,
+      "xwOBA": 0.364,
+      "xSLG": 0.39
+    },
+    "brayan rocchio": {
+      "barrelRate": 2.8,
+      "hardHitRate": 32.2,
+      "exitVelo": 85.9,
+      "launchAngle": 10.5,
+      "xwOBA": 0.326,
+      "xSLG": 0.368
+    },
+    "jorge soler": {
+      "barrelRate": 11.8,
+      "hardHitRate": 42.7,
+      "exitVelo": 88.4,
+      "launchAngle": 15.4,
+      "xwOBA": 0.309,
+      "xSLG": 0.396
+    },
+    "addison barger": {
+      "barrelRate": 0,
+      "hardHitRate": 50,
+      "exitVelo": 89,
+      "launchAngle": 16.7,
+      "xwOBA": 0.256,
+      "xSLG": 0.185
+    },
+    "andres chaparro": {
+      "barrelRate": 10,
+      "hardHitRate": 60,
+      "exitVelo": 93.7,
+      "launchAngle": 15.7,
+      "xwOBA": 0.455,
+      "xSLG": 0.627
+    },
+    "maikel garcia": {
+      "barrelRate": 4.9,
+      "hardHitRate": 42.1,
+      "exitVelo": 90.2,
+      "launchAngle": 9,
+      "xwOBA": 0.327,
+      "xSLG": 0.38
+    },
+    "luis campusano": {
+      "barrelRate": 10.8,
+      "hardHitRate": 48.6,
+      "exitVelo": 86.5,
+      "launchAngle": 11.9,
+      "xwOBA": 0.34,
+      "xSLG": 0.449
+    },
+    "jt realmuto": {
+      "barrelRate": 2.3,
+      "hardHitRate": 40.2,
+      "exitVelo": 88.5,
+      "launchAngle": 9.2,
+      "xwOBA": 0.292,
+      "xSLG": 0.339
+    },
+    "otto lopez": {
+      "barrelRate": 8.5,
+      "hardHitRate": 45.2,
+      "exitVelo": 90.7,
+      "launchAngle": 6.4,
+      "xwOBA": 0.333,
+      "xSLG": 0.448
+    },
+    "william contreras": {
+      "barrelRate": 7,
+      "hardHitRate": 44.3,
+      "exitVelo": 90.2,
+      "launchAngle": 10.5,
+      "xwOBA": 0.344,
+      "xSLG": 0.431
+    },
+    "eli white": {
+      "barrelRate": 8.2,
+      "hardHitRate": 32.7,
+      "exitVelo": 86.9,
+      "launchAngle": 4.7,
+      "xwOBA": 0.283,
+      "xSLG": 0.355
+    },
+    "jose ramirez": {
+      "barrelRate": 8.9,
+      "hardHitRate": 42.4,
+      "exitVelo": 90,
+      "launchAngle": 20.8,
+      "xwOBA": 0.376,
+      "xSLG": 0.47
+    },
+    "nasim nunez": {
+      "barrelRate": 0,
+      "hardHitRate": 18.3,
+      "exitVelo": 84.3,
+      "launchAngle": 8.4,
+      "xwOBA": 0.268,
+      "xSLG": 0.246
+    },
+    "daniel susac": {
+      "barrelRate": 6.7,
+      "hardHitRate": 36.7,
+      "exitVelo": 88.9,
+      "launchAngle": 16.7,
+      "xwOBA": 0.367,
+      "xSLG": 0.461
+    },
+    "drew gilbert": {
+      "barrelRate": 2.9,
+      "hardHitRate": 29,
+      "exitVelo": 83.6,
+      "launchAngle": 17.2,
+      "xwOBA": 0.246,
+      "xSLG": 0.29
+    },
+    "pete alonso": {
+      "barrelRate": 13,
+      "hardHitRate": 54.3,
+      "exitVelo": 94.9,
+      "launchAngle": 14.2,
+      "xwOBA": 0.353,
+      "xSLG": 0.487
+    },
+    "carson williams": {
+      "barrelRate": 0,
+      "hardHitRate": 18.8,
+      "exitVelo": 83,
+      "launchAngle": 22.1,
+      "xwOBA": 0.176,
+      "xSLG": 0.186
+    },
+    "angel martinez": {
+      "barrelRate": 9.2,
+      "hardHitRate": 36.2,
+      "exitVelo": 88.2,
+      "launchAngle": 14.6,
+      "xwOBA": 0.316,
+      "xSLG": 0.426
+    },
+    "jorge polanco": {
+      "barrelRate": 4.4,
+      "hardHitRate": 33.3,
+      "exitVelo": 87.3,
+      "launchAngle": 10.9,
+      "xwOBA": 0.27,
+      "xSLG": 0.32
+    },
+    "jp crawford": {
+      "barrelRate": 8.8,
+      "hardHitRate": 37.4,
+      "exitVelo": 88,
+      "launchAngle": 12.8,
+      "xwOBA": 0.367,
+      "xSLG": 0.418
+    },
+    "francisco alvarez": {
+      "barrelRate": 16.5,
+      "hardHitRate": 42.4,
+      "exitVelo": 90.3,
+      "launchAngle": 8.8,
+      "xwOBA": 0.343,
+      "xSLG": 0.464
+    },
+    "keibert ruiz": {
+      "barrelRate": 7.2,
+      "hardHitRate": 41,
+      "exitVelo": 89.8,
+      "launchAngle": 16.7,
+      "xwOBA": 0.264,
+      "xSLG": 0.37
+    },
+    "garrett stubbs": {
+      "barrelRate": 0,
+      "hardHitRate": 42.9,
+      "exitVelo": 90.8,
+      "launchAngle": 10,
+      "xwOBA": 0.287,
+      "xSLG": 0.279
+    },
+    "brent rooker": {
+      "barrelRate": 15.1,
+      "hardHitRate": 42.5,
+      "exitVelo": 89.8,
+      "launchAngle": 18.4,
+      "xwOBA": 0.322,
+      "xSLG": 0.439
+    },
+    "alex bregman": {
+      "barrelRate": 6.3,
+      "hardHitRate": 44,
+      "exitVelo": 89.1,
+      "launchAngle": 13.6,
+      "xwOBA": 0.323,
+      "xSLG": 0.398
+    },
+    "mickey gasper": {
+      "barrelRate": 7.7,
+      "hardHitRate": 53.8,
+      "exitVelo": 91.8,
+      "launchAngle": 16.4,
+      "xwOBA": 0.309,
+      "xSLG": 0.416
+    },
+    "konnor griffin": {
+      "barrelRate": 8.6,
+      "hardHitRate": 34.2,
+      "exitVelo": 87.8,
+      "launchAngle": 4.8,
+      "xwOBA": 0.316,
+      "xSLG": 0.41
+    },
+    "geraldo perdomo": {
+      "barrelRate": 2.9,
+      "hardHitRate": 33.8,
+      "exitVelo": 87.3,
+      "launchAngle": 12.2,
+      "xwOBA": 0.328,
+      "xSLG": 0.333
+    },
+    "amed rosario": {
+      "barrelRate": 10.9,
+      "hardHitRate": 39.1,
+      "exitVelo": 90.9,
+      "launchAngle": 13,
+      "xwOBA": 0.326,
+      "xSLG": 0.472
+    },
+    "james mccann": {
+      "barrelRate": 6.8,
+      "hardHitRate": 45.5,
+      "exitVelo": 90.6,
+      "launchAngle": 5.4,
+      "xwOBA": 0.208,
+      "xSLG": 0.282
+    },
+    "jeff mcneil": {
+      "barrelRate": 1.5,
+      "hardHitRate": 34.4,
+      "exitVelo": 86.4,
+      "launchAngle": 11.8,
+      "xwOBA": 0.32,
+      "xSLG": 0.37
+    },
+    "michael conforto": {
+      "barrelRate": 14,
+      "hardHitRate": 58.1,
+      "exitVelo": 95.5,
+      "launchAngle": 19,
+      "xwOBA": 0.42,
+      "xSLG": 0.562
+    },
+    "jarren duran": {
+      "barrelRate": 11.5,
+      "hardHitRate": 41.1,
+      "exitVelo": 90.3,
+      "launchAngle": 14.5,
+      "xwOBA": 0.302,
+      "xSLG": 0.386
+    },
+    "paul goldschmidt": {
+      "barrelRate": 18.6,
+      "hardHitRate": 50.8,
+      "exitVelo": 90.8,
+      "launchAngle": 14.4,
+      "xwOBA": 0.417,
+      "xSLG": 0.578
+    },
+    "carson benge": {
+      "barrelRate": 7,
+      "hardHitRate": 43.4,
+      "exitVelo": 90.2,
+      "launchAngle": 9.7,
+      "xwOBA": 0.324,
+      "xSLG": 0.415
+    },
+    "nathan lukes": {
+      "barrelRate": 0,
+      "hardHitRate": 37,
+      "exitVelo": 86.9,
+      "launchAngle": 15.7,
+      "xwOBA": 0.281,
+      "xSLG": 0.344
+    },
+    "henry bolte": {
+      "barrelRate": 0,
+      "hardHitRate": 45,
+      "exitVelo": 90.4,
+      "launchAngle": 5.5,
+      "xwOBA": 0.243,
+      "xSLG": 0.259
+    },
+    "connor wong": {
+      "barrelRate": 2.3,
+      "hardHitRate": 38.6,
+      "exitVelo": 88,
+      "launchAngle": 12.6,
+      "xwOBA": 0.267,
+      "xSLG": 0.298
+    },
+    "jake bauers": {
+      "barrelRate": 12.5,
+      "hardHitRate": 54,
+      "exitVelo": 93,
+      "launchAngle": 9.2,
+      "xwOBA": 0.357,
+      "xSLG": 0.498
+    },
+    "kyle schwarber": {
+      "barrelRate": 25.9,
+      "hardHitRate": 50.9,
+      "exitVelo": 93.4,
+      "launchAngle": 23.9,
+      "xwOBA": 0.398,
+      "xSLG": 0.576
+    },
+    "george valera": {
+      "barrelRate": 0,
+      "hardHitRate": 34.5,
+      "exitVelo": 90.2,
+      "launchAngle": 9.6,
+      "xwOBA": 0.199,
+      "xSLG": 0.232
+    },
+    "agustin ramirez": {
+      "barrelRate": 4.7,
+      "hardHitRate": 40.7,
+      "exitVelo": 89.2,
+      "launchAngle": 6.3,
+      "xwOBA": 0.282,
+      "xSLG": 0.312
+    },
+    "gabriel arias": {
+      "barrelRate": 16.7,
+      "hardHitRate": 50,
+      "exitVelo": 94.6,
+      "launchAngle": 4.9,
+      "xwOBA": 0.293,
+      "xSLG": 0.414
+    },
+    "brandon lowe": {
+      "barrelRate": 13.2,
+      "hardHitRate": 47.3,
+      "exitVelo": 89.6,
+      "launchAngle": 16.9,
+      "xwOBA": 0.378,
+      "xSLG": 0.521
+    },
+    "ramon urias": {
+      "barrelRate": 10.9,
+      "hardHitRate": 37,
+      "exitVelo": 89.5,
+      "launchAngle": 17.7,
+      "xwOBA": 0.307,
+      "xSLG": 0.374
+    },
+    "ezequiel duran": {
+      "barrelRate": 7.1,
+      "hardHitRate": 43.4,
+      "exitVelo": 91.5,
+      "launchAngle": 13.7,
+      "xwOBA": 0.324,
+      "xSLG": 0.4
+    },
+    "weston wilson": {
+      "barrelRate": 4.5,
+      "hardHitRate": 34.8,
+      "exitVelo": 86.5,
+      "launchAngle": 24.3,
+      "xwOBA": 0.326,
+      "xSLG": 0.351
+    },
+    "willi castro": {
+      "barrelRate": 5.5,
+      "hardHitRate": 45.1,
+      "exitVelo": 89.3,
+      "launchAngle": 17.2,
+      "xwOBA": 0.277,
+      "xSLG": 0.337
+    },
+    "joey loperfido": {
+      "barrelRate": 5,
+      "hardHitRate": 40,
+      "exitVelo": 90,
+      "launchAngle": 7.6,
+      "xwOBA": 0.279,
+      "xSLG": 0.302
+    },
+    "andrew mccutchen": {
+      "barrelRate": 6.5,
+      "hardHitRate": 30.4,
+      "exitVelo": 87.2,
+      "launchAngle": 22,
+      "xwOBA": 0.249,
+      "xSLG": 0.285
+    },
+    "max muncy": {
+      "barrelRate": 12.3,
+      "hardHitRate": 56.1,
+      "exitVelo": 92.5,
+      "launchAngle": 10.5,
+      "xwOBA": 0.303,
+      "xSLG": 0.391
+    },
+    "jose trevino": {
+      "barrelRate": 0,
+      "hardHitRate": 26.9,
+      "exitVelo": 84.7,
+      "launchAngle": 10.8,
+      "xwOBA": 0.207,
+      "xSLG": 0.246
+    },
+    "tristan gray": {
+      "barrelRate": 10.2,
+      "hardHitRate": 38,
+      "exitVelo": 88.5,
+      "launchAngle": 11.5,
+      "xwOBA": 0.322,
+      "xSLG": 0.404
+    },
+    "dominic canzone": {
+      "barrelRate": 14.1,
+      "hardHitRate": 46.2,
+      "exitVelo": 93,
+      "launchAngle": 16,
+      "xwOBA": 0.355,
+      "xSLG": 0.467
+    },
+    "mark vientos": {
+      "barrelRate": 11,
+      "hardHitRate": 47.5,
+      "exitVelo": 90.8,
+      "launchAngle": 13.6,
+      "xwOBA": 0.343,
+      "xSLG": 0.503
+    },
+    "cj abrams": {
+      "barrelRate": 10.6,
+      "hardHitRate": 41.3,
+      "exitVelo": 89.8,
+      "launchAngle": 16.9,
+      "xwOBA": 0.37,
+      "xSLG": 0.474
+    },
+    "pete crowarmstrong": {
+      "barrelRate": 7.8,
+      "hardHitRate": 45,
+      "exitVelo": 90.7,
+      "launchAngle": 17.4,
+      "xwOBA": 0.305,
+      "xSLG": 0.384
+    },
+    "rob refsnyder": {
+      "barrelRate": 8.5,
+      "hardHitRate": 38.3,
+      "exitVelo": 87.4,
+      "launchAngle": 20.7,
+      "xwOBA": 0.255,
+      "xSLG": 0.301
+    },
+    "edouard julien": {
+      "barrelRate": 8.2,
+      "hardHitRate": 49.4,
+      "exitVelo": 91.2,
+      "launchAngle": 7.7,
+      "xwOBA": 0.327,
+      "xSLG": 0.405
+    },
+    "taylor trammell": {
+      "barrelRate": 5,
+      "hardHitRate": 45,
+      "exitVelo": 91.7,
+      "launchAngle": 3.1,
+      "xwOBA": 0.291,
+      "xSLG": 0.331
+    },
+    "connor norby": {
+      "barrelRate": 8,
+      "hardHitRate": 35,
+      "exitVelo": 87.1,
+      "launchAngle": 17.2,
+      "xwOBA": 0.29,
+      "xSLG": 0.334
+    },
+    "andy pages": {
+      "barrelRate": 7.5,
+      "hardHitRate": 47.3,
+      "exitVelo": 90.1,
+      "launchAngle": 13.3,
+      "xwOBA": 0.347,
+      "xSLG": 0.462
+    },
+    "ildemaro vargas": {
+      "barrelRate": 3.9,
+      "hardHitRate": 33.1,
+      "exitVelo": 87.1,
+      "launchAngle": 11,
+      "xwOBA": 0.332,
+      "xSLG": 0.437
+    },
+    "alejandro osuna": {
+      "barrelRate": 0,
+      "hardHitRate": 31,
+      "exitVelo": 87.5,
+      "launchAngle": 7,
+      "xwOBA": 0.338,
+      "xSLG": 0.303
+    },
+    "jeremiah jackson": {
+      "barrelRate": 8.4,
+      "hardHitRate": 39.5,
+      "exitVelo": 89.1,
+      "launchAngle": 5.9,
+      "xwOBA": 0.296,
+      "xSLG": 0.412
+    },
+    "justin crawford": {
+      "barrelRate": 1.8,
+      "hardHitRate": 37.8,
+      "exitVelo": 87.2,
+      "launchAngle": -0.4,
+      "xwOBA": 0.286,
+      "xSLG": 0.317
+    },
+    "cesar prieto": {
+      "barrelRate": 9.1,
+      "hardHitRate": 54.5,
+      "exitVelo": 90.9,
+      "launchAngle": 5.2,
+      "xwOBA": 0.319,
+      "xSLG": 0.51
+    },
+    "noelvi marte": {
+      "barrelRate": 0,
+      "hardHitRate": 31.6,
+      "exitVelo": 84.9,
+      "launchAngle": -0.8,
+      "xwOBA": 0.16,
+      "xSLG": 0.149
+    },
+    "ozzie albies": {
+      "barrelRate": 4,
+      "hardHitRate": 26.6,
+      "exitVelo": 86.5,
+      "launchAngle": 17.7,
+      "xwOBA": 0.301,
+      "xSLG": 0.375
+    },
+    "jac caglianone": {
+      "barrelRate": 17.3,
+      "hardHitRate": 55.1,
+      "exitVelo": 93.6,
+      "launchAngle": 5.7,
+      "xwOBA": 0.337,
+      "xSLG": 0.46
+    },
+    "yordan alvarez": {
+      "barrelRate": 17.4,
+      "hardHitRate": 52.7,
+      "exitVelo": 94.2,
+      "launchAngle": 18.7,
+      "xwOBA": 0.481,
+      "xSLG": 0.711
+    },
+    "willson contreras": {
+      "barrelRate": 15.5,
+      "hardHitRate": 44.9,
+      "exitVelo": 90.7,
+      "launchAngle": 15.1,
+      "xwOBA": 0.394,
+      "xSLG": 0.528
+    },
+    "jasson dominguez": {
+      "barrelRate": 0,
+      "hardHitRate": 42.3,
+      "exitVelo": 91.9,
+      "launchAngle": 11.4,
+      "xwOBA": 0.335,
+      "xSLG": 0.384
+    },
+    "nolan schanuel": {
+      "barrelRate": 3.3,
+      "hardHitRate": 32,
+      "exitVelo": 87.1,
+      "launchAngle": 10.7,
+      "xwOBA": 0.314,
+      "xSLG": 0.385
+    },
+    "matt chapman": {
+      "barrelRate": 5.3,
+      "hardHitRate": 31.9,
+      "exitVelo": 87,
+      "launchAngle": 9,
+      "xwOBA": 0.256,
+      "xSLG": 0.281
+    },
+    "zach mckinstry": {
+      "barrelRate": 1.4,
+      "hardHitRate": 20,
+      "exitVelo": 83.6,
+      "launchAngle": 12.4,
+      "xwOBA": 0.249,
+      "xSLG": 0.29
+    },
+    "junior caminero": {
+      "barrelRate": 13.4,
+      "hardHitRate": 46.3,
+      "exitVelo": 92.2,
+      "launchAngle": 9.8,
+      "xwOBA": 0.382,
+      "xSLG": 0.517
+    },
+    "eric haase": {
+      "barrelRate": 16.7,
+      "hardHitRate": 22.2,
+      "exitVelo": 83,
+      "launchAngle": 17.3,
+      "xwOBA": 0.363,
+      "xSLG": 0.534
+    },
+    "nick yorke": {
+      "barrelRate": 5,
+      "hardHitRate": 48.3,
+      "exitVelo": 89.3,
+      "launchAngle": 6.7,
+      "xwOBA": 0.306,
+      "xSLG": 0.362
+    },
+    "jorge barrosa": {
+      "barrelRate": 7.1,
+      "hardHitRate": 21.4,
+      "exitVelo": 86.2,
+      "launchAngle": 12.4,
+      "xwOBA": 0.224,
+      "xSLG": 0.251
+    },
+    "jordan lawlar": {
+      "barrelRate": 8.3,
+      "hardHitRate": 41.7,
+      "exitVelo": 90.4,
+      "launchAngle": 23.4,
+      "xwOBA": 0.361,
+      "xSLG": 0.474
+    },
+    "nick kurtz": {
+      "barrelRate": 16.2,
+      "hardHitRate": 58.6,
+      "exitVelo": 94.6,
+      "launchAngle": 13.5,
+      "xwOBA": 0.39,
+      "xSLG": 0.484
+    },
+    "heriberto hernandez": {
+      "barrelRate": 6.1,
+      "hardHitRate": 45.5,
+      "exitVelo": 90.7,
+      "launchAngle": 11.6,
+      "xwOBA": 0.342,
+      "xSLG": 0.407
+    },
+    "alec burleson": {
+      "barrelRate": 11.1,
+      "hardHitRate": 48.1,
+      "exitVelo": 91.4,
+      "launchAngle": 9.5,
+      "xwOBA": 0.391,
+      "xSLG": 0.553
+    },
+    "rafael devers": {
+      "barrelRate": 9.2,
+      "hardHitRate": 47,
+      "exitVelo": 90.7,
+      "launchAngle": 11,
+      "xwOBA": 0.283,
+      "xSLG": 0.391
+    },
+    "danny jansen": {
+      "barrelRate": 4.3,
+      "hardHitRate": 34.8,
+      "exitVelo": 88.2,
+      "launchAngle": 21.7,
+      "xwOBA": 0.253,
+      "xSLG": 0.262
+    },
+    "ian happ": {
+      "barrelRate": 17,
+      "hardHitRate": 44.3,
+      "exitVelo": 90.3,
+      "launchAngle": 15.8,
+      "xwOBA": 0.347,
+      "xSLG": 0.455
+    },
+    "braden shewmake": {
+      "barrelRate": 4.5,
+      "hardHitRate": 33.3,
+      "exitVelo": 89.3,
+      "launchAngle": 14.1,
+      "xwOBA": 0.255,
+      "xSLG": 0.362
+    },
+    "miguel vargas": {
+      "barrelRate": 15.4,
+      "hardHitRate": 44.1,
+      "exitVelo": 89.4,
+      "launchAngle": 19,
+      "xwOBA": 0.398,
+      "xSLG": 0.536
+    },
+    "lawrence butler": {
+      "barrelRate": 6.6,
+      "hardHitRate": 46.2,
+      "exitVelo": 90.4,
+      "launchAngle": 8.1,
+      "xwOBA": 0.297,
+      "xSLG": 0.342
+    },
+    "lourdes gurriel": {
+      "barrelRate": 5.5,
+      "hardHitRate": 34.2,
+      "exitVelo": 87.2,
+      "launchAngle": 11.8,
+      "xwOBA": 0.279,
+      "xSLG": 0.322
+    },
+    "tj rumfield": {
+      "barrelRate": 8.1,
+      "hardHitRate": 36.9,
+      "exitVelo": 85.8,
+      "launchAngle": 11.4,
+      "xwOBA": 0.347,
+      "xSLG": 0.445
+    },
+    "masataka yoshida": {
+      "barrelRate": 1.2,
+      "hardHitRate": 40.7,
+      "exitVelo": 87.9,
+      "launchAngle": 6.8,
+      "xwOBA": 0.294,
+      "xSLG": 0.301
+    },
+    "jorge mateo": {
+      "barrelRate": 10.5,
+      "hardHitRate": 42.1,
+      "exitVelo": 88.4,
+      "launchAngle": 9.4,
+      "xwOBA": 0.31,
+      "xSLG": 0.401
+    },
+    "nick castellanos": {
+      "barrelRate": 8.6,
+      "hardHitRate": 37.1,
+      "exitVelo": 87.7,
+      "launchAngle": 13.9,
+      "xwOBA": 0.284,
+      "xSLG": 0.393
+    },
+    "jake mangum": {
+      "barrelRate": 0,
+      "hardHitRate": 29.2,
+      "exitVelo": 82.9,
+      "launchAngle": 2.1,
+      "xwOBA": 0.282,
+      "xSLG": 0.302
+    },
+    "alex call": {
+      "barrelRate": 0,
+      "hardHitRate": 20,
+      "exitVelo": 85.4,
+      "launchAngle": 14.4,
+      "xwOBA": 0.315,
+      "xSLG": 0.286
+    },
+    "anthony volpe": {
+      "barrelRate": 0,
+      "hardHitRate": 37.5,
+      "exitVelo": 89.1,
+      "launchAngle": 25.7,
+      "xwOBA": 0.297,
+      "xSLG": 0.231
+    },
+    "tim tawa": {
+      "barrelRate": 2.5,
+      "hardHitRate": 33.3,
+      "exitVelo": 87.9,
+      "launchAngle": 10.7,
+      "xwOBA": 0.273,
+      "xSLG": 0.29
+    },
+    "brandon marsh": {
+      "barrelRate": 6.1,
+      "hardHitRate": 47,
+      "exitVelo": 89.7,
+      "launchAngle": 11.2,
+      "xwOBA": 0.325,
+      "xSLG": 0.44
+    },
+    "gary sanchez": {
+      "barrelRate": 10.9,
+      "hardHitRate": 35.9,
+      "exitVelo": 88.3,
+      "launchAngle": 18.1,
+      "xwOBA": 0.362,
+      "xSLG": 0.431
+    },
+    "troy johnston": {
+      "barrelRate": 1.8,
+      "hardHitRate": 37.7,
+      "exitVelo": 88.7,
+      "launchAngle": 12.5,
+      "xwOBA": 0.33,
+      "xSLG": 0.397
+    },
+    "francisco lindor": {
+      "barrelRate": 9.5,
+      "hardHitRate": 43.2,
+      "exitVelo": 90.9,
+      "launchAngle": 14.8,
+      "xwOBA": 0.34,
+      "xSLG": 0.433
+    },
+    "spencer jones": {
+      "barrelRate": 0,
+      "hardHitRate": 75,
+      "exitVelo": 97.2,
+      "launchAngle": 18.1,
+      "xwOBA": 0.259,
+      "xSLG": 0.287
+    },
+    "ketel marte": {
+      "barrelRate": 10.5,
+      "hardHitRate": 47.7,
+      "exitVelo": 91.9,
+      "launchAngle": 9.1,
+      "xwOBA": 0.365,
+      "xSLG": 0.487
+    },
+    "mike yastrzemski": {
+      "barrelRate": 5,
+      "hardHitRate": 38,
+      "exitVelo": 90.2,
+      "launchAngle": 15.6,
+      "xwOBA": 0.28,
+      "xSLG": 0.322
+    },
+    "austin hays": {
+      "barrelRate": 3.3,
+      "hardHitRate": 50,
+      "exitVelo": 87,
+      "launchAngle": -1.3,
+      "xwOBA": 0.283,
+      "xSLG": 0.365
+    },
+    "carlos santana": {
+      "barrelRate": 0,
+      "hardHitRate": 43.8,
+      "exitVelo": 87.8,
+      "launchAngle": 29.5,
+      "xwOBA": 0.187,
+      "xSLG": 0.192
+    },
+    "curtis mead": {
+      "barrelRate": 8.4,
+      "hardHitRate": 43.4,
+      "exitVelo": 88,
+      "launchAngle": 13.1,
+      "xwOBA": 0.367,
+      "xSLG": 0.44
+    },
+    "gage workman": {
+      "barrelRate": 26.7,
+      "hardHitRate": 60,
+      "exitVelo": 96.1,
+      "launchAngle": 10.1,
+      "xwOBA": 0.329,
+      "xSLG": 0.529
+    },
+    "miguel rojas": {
+      "barrelRate": 4.6,
+      "hardHitRate": 32.3,
+      "exitVelo": 86.5,
+      "launchAngle": 10.2,
+      "xwOBA": 0.313,
+      "xSLG": 0.387
+    },
+    "dane myers": {
+      "barrelRate": 10.9,
+      "hardHitRate": 31.3,
+      "exitVelo": 89.9,
+      "launchAngle": 21.2,
+      "xwOBA": 0.362,
+      "xSLG": 0.46
+    },
+    "mitch garver": {
+      "barrelRate": 5.7,
+      "hardHitRate": 57.1,
+      "exitVelo": 91.6,
+      "launchAngle": 16.4,
+      "xwOBA": 0.285,
+      "xSLG": 0.268
+    },
+    "dylan moore": {
+      "barrelRate": 0,
+      "hardHitRate": 33.3,
+      "exitVelo": 91.3,
+      "launchAngle": 41.6,
+      "xwOBA": 0.234,
+      "xSLG": 0.178
+    },
+    "vaughn grissom": {
+      "barrelRate": 5.9,
+      "hardHitRate": 45.9,
+      "exitVelo": 90.9,
+      "launchAngle": 12,
+      "xwOBA": 0.344,
+      "xSLG": 0.422
+    },
+    "yainer diaz": {
+      "barrelRate": 3.4,
+      "hardHitRate": 28.7,
+      "exitVelo": 87.8,
+      "launchAngle": 5.9,
+      "xwOBA": 0.257,
+      "xSLG": 0.323
+    },
+    "travis darnaud": {
+      "barrelRate": 14.3,
+      "hardHitRate": 32.1,
+      "exitVelo": 87.7,
+      "launchAngle": 14.2,
+      "xwOBA": 0.337,
+      "xSLG": 0.436
+    },
+    "carlos cortes": {
+      "barrelRate": 9.2,
+      "hardHitRate": 45,
+      "exitVelo": 91.3,
+      "launchAngle": 6.2,
+      "xwOBA": 0.391,
+      "xSLG": 0.485
+    },
+    "josh lowe": {
+      "barrelRate": 8,
+      "hardHitRate": 34.1,
+      "exitVelo": 88.6,
+      "launchAngle": 18.5,
+      "xwOBA": 0.263,
+      "xSLG": 0.358
+    },
+    "spencer torkelson": {
+      "barrelRate": 13.7,
+      "hardHitRate": 42.7,
+      "exitVelo": 90.5,
+      "launchAngle": 20.1,
+      "xwOBA": 0.32,
+      "xSLG": 0.401
+    },
+    "josh bell": {
+      "barrelRate": 10.8,
+      "hardHitRate": 44.6,
+      "exitVelo": 89.9,
+      "launchAngle": 15.6,
+      "xwOBA": 0.312,
+      "xSLG": 0.419
+    },
+    "adolis garcia": {
+      "barrelRate": 7.5,
+      "hardHitRate": 49.2,
+      "exitVelo": 92.3,
+      "launchAngle": 14.3,
+      "xwOBA": 0.307,
+      "xSLG": 0.37
+    },
+    "drew millas": {
+      "barrelRate": 3.7,
+      "hardHitRate": 21.4,
+      "exitVelo": 82.3,
+      "launchAngle": 8.4,
+      "xwOBA": 0.265,
+      "xSLG": 0.281
+    },
+    "royce lewis": {
+      "barrelRate": 11.8,
+      "hardHitRate": 41.2,
+      "exitVelo": 87.9,
+      "launchAngle": 14.6,
+      "xwOBA": 0.284,
+      "xSLG": 0.318
+    },
+    "brooks lee": {
+      "barrelRate": 4.5,
+      "hardHitRate": 27.6,
+      "exitVelo": 87,
+      "launchAngle": 12.2,
+      "xwOBA": 0.264,
+      "xSLG": 0.323
+    },
+    "cj kayfus": {
+      "barrelRate": 21.4,
+      "hardHitRate": 50,
+      "exitVelo": 92.8,
+      "launchAngle": 24.1,
+      "xwOBA": 0.305,
+      "xSLG": 0.427
+    },
+    "colby thomas": {
+      "barrelRate": 12,
+      "hardHitRate": 36,
+      "exitVelo": 91,
+      "launchAngle": 16.1,
+      "xwOBA": 0.316,
+      "xSLG": 0.447
+    },
+    "ezequiel tovar": {
+      "barrelRate": 6.8,
+      "hardHitRate": 37.3,
+      "exitVelo": 88,
+      "launchAngle": 14.4,
+      "xwOBA": 0.292,
+      "xSLG": 0.373
+    },
+    "sal stewart": {
+      "barrelRate": 17.1,
+      "hardHitRate": 42.1,
+      "exitVelo": 90.9,
+      "launchAngle": 14.2,
+      "xwOBA": 0.389,
+      "xSLG": 0.537
+    },
+    "luke keaschall": {
+      "barrelRate": 3.5,
+      "hardHitRate": 25.9,
+      "exitVelo": 84,
+      "launchAngle": 16.9,
+      "xwOBA": 0.277,
+      "xSLG": 0.312
+    },
+    "moises ballesteros": {
+      "barrelRate": 12.4,
+      "hardHitRate": 49.4,
+      "exitVelo": 90.9,
+      "launchAngle": 11.4,
+      "xwOBA": 0.321,
+      "xSLG": 0.428
+    },
+    "hunter goodman": {
+      "barrelRate": 13.3,
+      "hardHitRate": 47.2,
+      "exitVelo": 91.7,
+      "launchAngle": 20.4,
+      "xwOBA": 0.293,
+      "xSLG": 0.4
+    },
+    "cedric mullins": {
+      "barrelRate": 1.7,
+      "hardHitRate": 29.3,
+      "exitVelo": 87.2,
+      "launchAngle": 29.6,
+      "xwOBA": 0.224,
+      "xSLG": 0.266
+    },
+    "ivan herrera": {
+      "barrelRate": 6.8,
+      "hardHitRate": 42.2,
+      "exitVelo": 89.3,
+      "launchAngle": 7.7,
+      "xwOBA": 0.361,
+      "xSLG": 0.424
+    },
+    "kerry carpenter": {
+      "barrelRate": 11.1,
+      "hardHitRate": 50,
+      "exitVelo": 92,
+      "launchAngle": 20.7,
+      "xwOBA": 0.301,
+      "xSLG": 0.398
+    },
+    "brett sullivan": {
+      "barrelRate": 0,
+      "hardHitRate": 25,
+      "exitVelo": 84.9,
+      "launchAngle": 15.2,
+      "xwOBA": 0.241,
+      "xSLG": 0.267
+    },
+    "daulton varsho": {
+      "barrelRate": 6.7,
+      "hardHitRate": 40.3,
+      "exitVelo": 86.6,
+      "launchAngle": 14.5,
+      "xwOBA": 0.316,
+      "xSLG": 0.387
+    },
+    "michael harris": {
+      "barrelRate": 17.3,
+      "hardHitRate": 56.7,
+      "exitVelo": 93.9,
+      "launchAngle": 10.5,
+      "xwOBA": 0.395,
+      "xSLG": 0.584
+    },
+    "jazz chisholm": {
+      "barrelRate": 5.8,
+      "hardHitRate": 36.4,
+      "exitVelo": 88.6,
+      "launchAngle": 17.3,
+      "xwOBA": 0.275,
+      "xSLG": 0.325
+    },
+    "victor caratini": {
+      "barrelRate": 5.6,
+      "hardHitRate": 37.8,
+      "exitVelo": 88.8,
+      "launchAngle": 10.8,
+      "xwOBA": 0.342,
+      "xSLG": 0.388
+    },
+    "wenceel perez": {
+      "barrelRate": 6.7,
+      "hardHitRate": 36,
+      "exitVelo": 87.1,
+      "launchAngle": 15.1,
+      "xwOBA": 0.263,
+      "xSLG": 0.345
+    },
+    "matt wallner": {
+      "barrelRate": 10.4,
+      "hardHitRate": 40.3,
+      "exitVelo": 88.4,
+      "launchAngle": 8.1,
+      "xwOBA": 0.282,
+      "xSLG": 0.333
+    },
+    "ty france": {
+      "barrelRate": 14.3,
+      "hardHitRate": 48.4,
+      "exitVelo": 90.6,
+      "launchAngle": 9.5,
+      "xwOBA": 0.365,
+      "xSLG": 0.538
+    },
+    "bo naylor": {
+      "barrelRate": 11.1,
+      "hardHitRate": 42.6,
+      "exitVelo": 89.6,
+      "launchAngle": 18.9,
+      "xwOBA": 0.29,
+      "xSLG": 0.399
+    },
+    "rece hinds": {
+      "barrelRate": 0,
+      "hardHitRate": 25,
+      "exitVelo": 87.1,
+      "launchAngle": 26.1,
+      "xwOBA": 0.162,
+      "xSLG": 0.163
+    },
+    "kyle higashioka": {
+      "barrelRate": 9.4,
+      "hardHitRate": 37.7,
+      "exitVelo": 88.3,
+      "launchAngle": 15.1,
+      "xwOBA": 0.271,
+      "xSLG": 0.332
+    },
+    "victor robles": {
+      "barrelRate": 10,
+      "hardHitRate": 20,
+      "exitVelo": 82.6,
+      "launchAngle": 18,
+      "xwOBA": 0.256,
+      "xSLG": 0.366
+    },
+    "isaac collins": {
+      "barrelRate": 9.6,
+      "hardHitRate": 42.6,
+      "exitVelo": 89.3,
+      "launchAngle": 17.8,
+      "xwOBA": 0.305,
+      "xSLG": 0.317
+    },
+    "adley rutschman": {
+      "barrelRate": 9.7,
+      "hardHitRate": 44.7,
+      "exitVelo": 88.9,
+      "launchAngle": 17.1,
+      "xwOBA": 0.352,
+      "xSLG": 0.468
+    },
+    "jake burger": {
+      "barrelRate": 9.8,
+      "hardHitRate": 49.2,
+      "exitVelo": 90.5,
+      "launchAngle": 11.8,
+      "xwOBA": 0.311,
+      "xSLG": 0.424
+    },
+    "riley greene": {
+      "barrelRate": 13,
+      "hardHitRate": 48.8,
+      "exitVelo": 90.7,
+      "launchAngle": 15.1,
+      "xwOBA": 0.381,
+      "xSLG": 0.493
+    },
+    "leo jimenez": {
+      "barrelRate": 8.3,
+      "hardHitRate": 41.7,
+      "exitVelo": 90.6,
+      "launchAngle": 4.5,
+      "xwOBA": 0.373,
+      "xSLG": 0.423
+    },
+    "dylan beavers": {
+      "barrelRate": 5.2,
+      "hardHitRate": 39,
+      "exitVelo": 87.4,
+      "launchAngle": 15.5,
+      "xwOBA": 0.308,
+      "xSLG": 0.365
+    },
+    "cole young": {
+      "barrelRate": 6.8,
+      "hardHitRate": 41.4,
+      "exitVelo": 88.2,
+      "launchAngle": 17.9,
+      "xwOBA": 0.326,
+      "xSLG": 0.399
+    },
+    "nolan arenado": {
+      "barrelRate": 7.3,
+      "hardHitRate": 29.3,
+      "exitVelo": 84.9,
+      "launchAngle": 18.7,
+      "xwOBA": 0.338,
+      "xSLG": 0.421
+    },
+    "jarred kelenic": {
+      "barrelRate": 22.6,
+      "hardHitRate": 51.6,
+      "exitVelo": 95.3,
+      "launchAngle": 13.9,
+      "xwOBA": 0.371,
+      "xSLG": 0.52
+    },
+    "rhys hoskins": {
+      "barrelRate": 10.7,
+      "hardHitRate": 45.3,
+      "exitVelo": 87.7,
+      "launchAngle": 22.6,
+      "xwOBA": 0.31,
+      "xSLG": 0.313
+    },
+    "alec bohm": {
+      "barrelRate": 2.8,
+      "hardHitRate": 41,
+      "exitVelo": 89.8,
+      "launchAngle": 12,
+      "xwOBA": 0.283,
+      "xSLG": 0.33
+    },
+    "ryan mountcastle": {
+      "barrelRate": 0,
+      "hardHitRate": 41.7,
+      "exitVelo": 90,
+      "launchAngle": 8.8,
+      "xwOBA": 0.301,
+      "xSLG": 0.348
+    },
+    "mookie betts": {
+      "barrelRate": 12.7,
+      "hardHitRate": 43.6,
+      "exitVelo": 91.9,
+      "launchAngle": 19.7,
+      "xwOBA": 0.373,
+      "xSLG": 0.514
+    },
+    "gavin sheets": {
+      "barrelRate": 10.7,
+      "hardHitRate": 43.7,
+      "exitVelo": 89.2,
+      "launchAngle": 13.3,
+      "xwOBA": 0.356,
+      "xSLG": 0.477
+    },
+    "james wood": {
+      "barrelRate": 25.8,
+      "hardHitRate": 60.5,
+      "exitVelo": 96.4,
+      "launchAngle": 10.4,
+      "xwOBA": 0.425,
+      "xSLG": 0.613
+    },
+    "nolan gorman": {
+      "barrelRate": 10,
+      "hardHitRate": 47.3,
+      "exitVelo": 89.6,
+      "launchAngle": 20.9,
+      "xwOBA": 0.317,
+      "xSLG": 0.414
+    },
+    "jacob wilson": {
+      "barrelRate": 2.1,
+      "hardHitRate": 30.1,
+      "exitVelo": 84.3,
+      "launchAngle": 7.3,
+      "xwOBA": 0.275,
+      "xSLG": 0.339
+    },
+    "edgar quero": {
+      "barrelRate": 1.4,
+      "hardHitRate": 31,
+      "exitVelo": 89.8,
+      "launchAngle": 7.8,
+      "xwOBA": 0.243,
+      "xSLG": 0.246
+    },
+    "jorbit vivas": {
+      "barrelRate": 2.5,
+      "hardHitRate": 23.5,
+      "exitVelo": 82.5,
+      "launchAngle": 12.8,
+      "xwOBA": 0.287,
+      "xSLG": 0.297
+    },
+    "david fry": {
+      "barrelRate": 6.8,
+      "hardHitRate": 31.8,
+      "exitVelo": 85.2,
+      "launchAngle": 17.2,
+      "xwOBA": 0.266,
+      "xSLG": 0.258
+    },
+    "petey halpin": {
+      "barrelRate": 6.7,
+      "hardHitRate": 20,
+      "exitVelo": 88.3,
+      "launchAngle": 21,
+      "xwOBA": 0.215,
+      "xSLG": 0.264
+    },
+    "bryson stott": {
+      "barrelRate": 6.3,
+      "hardHitRate": 40.5,
+      "exitVelo": 89.8,
+      "launchAngle": 16.3,
+      "xwOBA": 0.297,
+      "xSLG": 0.386
+    },
+    "blake perkins": {
+      "barrelRate": 4.7,
+      "hardHitRate": 32.6,
+      "exitVelo": 84.4,
+      "launchAngle": 14.8,
+      "xwOBA": 0.234,
+      "xSLG": 0.245
+    },
+    "parker meadows": {
+      "barrelRate": 3.8,
+      "hardHitRate": 19.2,
+      "exitVelo": 85.3,
+      "launchAngle": 13.3,
+      "xwOBA": 0.25,
+      "xSLG": 0.277
+    },
+    "willy adames": {
+      "barrelRate": 9.5,
+      "hardHitRate": 40.9,
+      "exitVelo": 88.9,
+      "launchAngle": 21.5,
+      "xwOBA": 0.29,
+      "xSLG": 0.4
+    },
+    "tyrone taylor": {
+      "barrelRate": 6.6,
+      "hardHitRate": 31.6,
+      "exitVelo": 86.5,
+      "launchAngle": 21.6,
+      "xwOBA": 0.25,
+      "xSLG": 0.354
+    },
+    "felix reyes": {
+      "barrelRate": 6.9,
+      "hardHitRate": 27.6,
+      "exitVelo": 89.2,
+      "launchAngle": 6.4,
+      "xwOBA": 0.233,
+      "xSLG": 0.314
+    },
+    "zack gelof": {
+      "barrelRate": 10.1,
+      "hardHitRate": 45.6,
+      "exitVelo": 90.9,
+      "launchAngle": 17.2,
+      "xwOBA": 0.323,
+      "xSLG": 0.455
+    },
+    "luis garcia": {
+      "barrelRate": 6.5,
+      "hardHitRate": 47.2,
+      "exitVelo": 92.7,
+      "launchAngle": 13.5,
+      "xwOBA": 0.318,
+      "xSLG": 0.426
+    },
+    "kazuma okamoto": {
+      "barrelRate": 14.4,
+      "hardHitRate": 53.4,
+      "exitVelo": 93.1,
+      "launchAngle": 18.2,
+      "xwOBA": 0.338,
+      "xSLG": 0.46
+    },
+    "derek hill": {
+      "barrelRate": 11.4,
+      "hardHitRate": 41.7,
+      "exitVelo": 89.9,
+      "launchAngle": 14,
+      "xwOBA": 0.348,
+      "xSLG": 0.446
+    },
+    "graham pauley": {
+      "barrelRate": 3.5,
+      "hardHitRate": 17.5,
+      "exitVelo": 83.3,
+      "launchAngle": 21.5,
+      "xwOBA": 0.197,
+      "xSLG": 0.228
+    },
+    "samuel basallo": {
+      "barrelRate": 11.3,
+      "hardHitRate": 49,
+      "exitVelo": 92.7,
+      "launchAngle": 15.3,
+      "xwOBA": 0.342,
+      "xSLG": 0.474
+    },
+    "jonathan india": {
+      "barrelRate": 5.7,
+      "hardHitRate": 31.4,
+      "exitVelo": 85.7,
+      "launchAngle": 28.3,
+      "xwOBA": 0.285,
+      "xSLG": 0.289
+    },
+    "jerar encarnacion": {
+      "barrelRate": 7.7,
+      "hardHitRate": 34.6,
+      "exitVelo": 87.5,
+      "launchAngle": 5.4,
+      "xwOBA": 0.21,
+      "xSLG": 0.266
+    },
+    "trevor story": {
+      "barrelRate": 3.6,
+      "hardHitRate": 41.8,
+      "exitVelo": 88.9,
+      "launchAngle": 12.9,
+      "xwOBA": 0.249,
+      "xSLG": 0.309
+    },
+    "blaze alexander": {
+      "barrelRate": 2.9,
+      "hardHitRate": 47.1,
+      "exitVelo": 92.1,
+      "launchAngle": 9.6,
+      "xwOBA": 0.308,
+      "xSLG": 0.358
+    },
+    "xavier edwards": {
+      "barrelRate": 6.6,
+      "hardHitRate": 35.3,
+      "exitVelo": 88.3,
+      "launchAngle": 11.8,
+      "xwOBA": 0.352,
+      "xSLG": 0.433
+    },
+    "luis rengifo": {
+      "barrelRate": 5.9,
+      "hardHitRate": 36.7,
+      "exitVelo": 87.7,
+      "launchAngle": 4.4,
+      "xwOBA": 0.283,
+      "xSLG": 0.333
+    },
+    "isaac paredes": {
+      "barrelRate": 4.6,
+      "hardHitRate": 26,
+      "exitVelo": 87.2,
+      "launchAngle": 26.4,
+      "xwOBA": 0.299,
+      "xSLG": 0.34
+    },
+    "gabriel moreno": {
+      "barrelRate": 11,
+      "hardHitRate": 42.5,
+      "exitVelo": 88.9,
+      "launchAngle": 16.1,
+      "xwOBA": 0.333,
+      "xSLG": 0.424
+    },
+    "everson pereira": {
+      "barrelRate": 11.4,
+      "hardHitRate": 43.2,
+      "exitVelo": 87.8,
+      "launchAngle": 12.7,
+      "xwOBA": 0.314,
+      "xSLG": 0.431
+    },
+    "austin riley": {
+      "barrelRate": 10.4,
+      "hardHitRate": 46.3,
+      "exitVelo": 90.8,
+      "launchAngle": 18,
+      "xwOBA": 0.308,
+      "xSLG": 0.416
+    },
+    "ryan mcmahon": {
+      "barrelRate": 9.2,
+      "hardHitRate": 48.9,
+      "exitVelo": 90.8,
+      "launchAngle": 14,
+      "xwOBA": 0.286,
+      "xSLG": 0.37
+    },
+    "julio rodriguez": {
+      "barrelRate": 7.8,
+      "hardHitRate": 41.8,
+      "exitVelo": 89.6,
+      "launchAngle": 11.5,
+      "xwOBA": 0.329,
+      "xSLG": 0.439
+    },
+    "roman anthony": {
+      "barrelRate": 9.3,
+      "hardHitRate": 47.4,
+      "exitVelo": 92.3,
+      "launchAngle": 8.3,
+      "xwOBA": 0.353,
+      "xSLG": 0.41
+    },
+    "yandy diaz": {
+      "barrelRate": 8.6,
+      "hardHitRate": 44.4,
+      "exitVelo": 90.2,
+      "launchAngle": 4.9,
+      "xwOBA": 0.378,
+      "xSLG": 0.482
+    },
+    "christian walker": {
+      "barrelRate": 11.7,
+      "hardHitRate": 46.9,
+      "exitVelo": 90.9,
+      "launchAngle": 14.6,
+      "xwOBA": 0.338,
+      "xSLG": 0.459
+    },
+    "zack short": {
+      "barrelRate": 0,
+      "hardHitRate": 20,
+      "exitVelo": 91.1,
+      "launchAngle": 17,
+      "xwOBA": 0.301,
+      "xSLG": 0.249
+    },
+    "byron buxton": {
+      "barrelRate": 20,
+      "hardHitRate": 45.4,
+      "exitVelo": 89.4,
+      "launchAngle": 24.3,
+      "xwOBA": 0.331,
+      "xSLG": 0.491
+    },
+    "bryce teodosio": {
+      "barrelRate": 6.7,
+      "hardHitRate": 23.3,
+      "exitVelo": 83.5,
+      "launchAngle": 6.4,
+      "xwOBA": 0.203,
+      "xSLG": 0.236
+    },
+    "trevor larnach": {
+      "barrelRate": 6.7,
+      "hardHitRate": 30,
+      "exitVelo": 85.7,
+      "launchAngle": 10.9,
+      "xwOBA": 0.311,
+      "xSLG": 0.331
+    },
+    "luis matos": {
+      "barrelRate": 0,
+      "hardHitRate": 23.1,
+      "exitVelo": 84.1,
+      "launchAngle": 19.8,
+      "xwOBA": 0.13,
+      "xSLG": 0.136
+    },
+    "jake rogers": {
+      "barrelRate": 9.7,
+      "hardHitRate": 35.5,
+      "exitVelo": 87.1,
+      "launchAngle": 34.8,
+      "xwOBA": 0.247,
+      "xSLG": 0.311
+    },
+    "tanner murray": {
+      "barrelRate": 8.7,
+      "hardHitRate": 43.5,
+      "exitVelo": 90.7,
+      "launchAngle": 25.6,
+      "xwOBA": 0.276,
+      "xSLG": 0.39
+    },
+    "rafael marchan": {
+      "barrelRate": 2.2,
+      "hardHitRate": 21.7,
+      "exitVelo": 85.7,
+      "launchAngle": 26.2,
+      "xwOBA": 0.184,
+      "xSLG": 0.209
+    },
+    "owen caissie": {
+      "barrelRate": 13.2,
+      "hardHitRate": 45.6,
+      "exitVelo": 91.7,
+      "launchAngle": 15.2,
+      "xwOBA": 0.295,
+      "xSLG": 0.39
+    },
+    "ryan ohearn": {
+      "barrelRate": 7.1,
+      "hardHitRate": 44.9,
+      "exitVelo": 90.3,
+      "launchAngle": 12,
+      "xwOBA": 0.356,
+      "xSLG": 0.451
+    },
+    "eugenio suarez": {
+      "barrelRate": 8.6,
+      "hardHitRate": 19.7,
+      "exitVelo": 84.8,
+      "launchAngle": 19.5,
+      "xwOBA": 0.273,
+      "xSLG": 0.333
+    },
+    "richie palacios": {
+      "barrelRate": 5,
+      "hardHitRate": 26.2,
+      "exitVelo": 86.2,
+      "launchAngle": 11.4,
+      "xwOBA": 0.328,
+      "xSLG": 0.341
+    },
+    "mj melendez": {
+      "barrelRate": 15.4,
+      "hardHitRate": 59,
+      "exitVelo": 93.9,
+      "launchAngle": 18.5,
+      "xwOBA": 0.283,
+      "xSLG": 0.33
+    },
+    "matt shaw": {
+      "barrelRate": 5.1,
+      "hardHitRate": 35.4,
+      "exitVelo": 86.4,
+      "launchAngle": 15.5,
+      "xwOBA": 0.3,
+      "xSLG": 0.384
+    },
+    "dalton rushing": {
+      "barrelRate": 12,
+      "hardHitRate": 44,
+      "exitVelo": 88.3,
+      "launchAngle": 16.8,
+      "xwOBA": 0.364,
+      "xSLG": 0.487
+    },
+    "max schuemann": {
+      "barrelRate": 0,
+      "hardHitRate": 40,
+      "exitVelo": 85.2,
+      "launchAngle": 26.4,
+      "xwOBA": 0.311,
+      "xSLG": 0.221
+    },
+    "brandon lockridge": {
+      "barrelRate": 1.7,
+      "hardHitRate": 32.8,
+      "exitVelo": 86.2,
+      "launchAngle": 1.2,
+      "xwOBA": 0.277,
+      "xSLG": 0.284
+    },
+    "miguel amaya": {
+      "barrelRate": 7.3,
+      "hardHitRate": 25.5,
+      "exitVelo": 86.7,
+      "launchAngle": 20.9,
+      "xwOBA": 0.296,
+      "xSLG": 0.317
+    },
+    "kyle tucker": {
+      "barrelRate": 5.8,
+      "hardHitRate": 42,
+      "exitVelo": 89,
+      "launchAngle": 16.6,
+      "xwOBA": 0.339,
+      "xSLG": 0.391
+    },
+    "esteury ruiz": {
+      "barrelRate": 9.1,
+      "hardHitRate": 31.8,
+      "exitVelo": 87.8,
+      "launchAngle": 29.7,
+      "xwOBA": 0.222,
+      "xSLG": 0.316
+    },
+    "drake baldwin": {
+      "barrelRate": 18.6,
+      "hardHitRate": 53.8,
+      "exitVelo": 92.8,
+      "launchAngle": 12.1,
+      "xwOBA": 0.418,
+      "xSLG": 0.587
+    },
+    "jordan walker": {
+      "barrelRate": 16,
+      "hardHitRate": 51.9,
+      "exitVelo": 94.4,
+      "launchAngle": 14.1,
+      "xwOBA": 0.38,
+      "xSLG": 0.528
+    },
+    "tyler stephenson": {
+      "barrelRate": 12.3,
+      "hardHitRate": 42.9,
+      "exitVelo": 90.8,
+      "launchAngle": 22.7,
+      "xwOBA": 0.325,
+      "xSLG": 0.413
+    },
+    "will brennan": {
+      "barrelRate": 0,
+      "hardHitRate": 25,
+      "exitVelo": 85.3,
+      "launchAngle": 13.9,
+      "xwOBA": 0.163,
+      "xSLG": 0.222
+    },
+    "myles straw": {
+      "barrelRate": 5.9,
+      "hardHitRate": 25,
+      "exitVelo": 86.4,
+      "launchAngle": 16.3,
+      "xwOBA": 0.322,
+      "xSLG": 0.385
+    },
+    "gunnar henderson": {
+      "barrelRate": 9.5,
+      "hardHitRate": 43.5,
+      "exitVelo": 89.8,
+      "launchAngle": 14.6,
+      "xwOBA": 0.296,
+      "xSLG": 0.396
+    },
+    "adam frazier": {
+      "barrelRate": 2,
+      "hardHitRate": 16.3,
+      "exitVelo": 83.7,
+      "launchAngle": 13.9,
+      "xwOBA": 0.245,
+      "xSLG": 0.263
+    },
+    "ramon laureano": {
+      "barrelRate": 13.5,
+      "hardHitRate": 44.2,
+      "exitVelo": 89.4,
+      "launchAngle": 12,
+      "xwOBA": 0.315,
+      "xSLG": 0.413
+    },
+    "will smith": {
+      "barrelRate": 13.7,
+      "hardHitRate": 39.3,
+      "exitVelo": 89.7,
+      "launchAngle": 20.6,
+      "xwOBA": 0.367,
+      "xSLG": 0.47
+    },
+    "rodolfo duran": {
+      "barrelRate": 30,
+      "hardHitRate": 60,
+      "exitVelo": 93.6,
+      "launchAngle": 25.9,
+      "xwOBA": 0.398,
+      "xSLG": 0.659
+    },
+    "lenyn sosa": {
+      "barrelRate": 6.1,
+      "hardHitRate": 36.6,
+      "exitVelo": 89.1,
+      "launchAngle": 20.6,
+      "xwOBA": 0.243,
+      "xSLG": 0.353
+    },
+    "oneil cruz": {
+      "barrelRate": 17.1,
+      "hardHitRate": 61.3,
+      "exitVelo": 95.8,
+      "launchAngle": 5.8,
+      "xwOBA": 0.339,
+      "xSLG": 0.475
+    },
+    "jared triolo": {
+      "barrelRate": 2.2,
+      "hardHitRate": 30.4,
+      "exitVelo": 85.2,
+      "launchAngle": 4.8,
+      "xwOBA": 0.26,
+      "xSLG": 0.293
+    },
+    "colt emerson": {
+      "barrelRate": 0,
+      "hardHitRate": 33.3,
+      "exitVelo": 87.4,
+      "launchAngle": 22.5,
+      "xwOBA": 0.259,
+      "xSLG": 0.181
+    },
+    "taylor ward": {
+      "barrelRate": 4.6,
+      "hardHitRate": 37.4,
+      "exitVelo": 89,
+      "launchAngle": 11.8,
+      "xwOBA": 0.355,
+      "xSLG": 0.361
+    },
+    "denzel clarke": {
+      "barrelRate": 3.2,
+      "hardHitRate": 46.9,
+      "exitVelo": 91.9,
+      "launchAngle": 2.6,
+      "xwOBA": 0.193,
+      "xSLG": 0.19
+    },
+    "kebryan hayes": {
+      "barrelRate": 9.4,
+      "hardHitRate": 39,
+      "exitVelo": 90.5,
+      "launchAngle": 15.8,
+      "xwOBA": 0.312,
+      "xSLG": 0.409
+    },
+    "spencer steer": {
+      "barrelRate": 14.6,
+      "hardHitRate": 37.8,
+      "exitVelo": 90.2,
+      "launchAngle": 18.3,
+      "xwOBA": 0.383,
+      "xSLG": 0.532
+    },
+    "tyler oneill": {
+      "barrelRate": 5,
+      "hardHitRate": 38.3,
+      "exitVelo": 89,
+      "launchAngle": 24.7,
+      "xwOBA": 0.282,
+      "xSLG": 0.314
+    },
+    "carlos correa": {
+      "barrelRate": 10.3,
+      "hardHitRate": 41.2,
+      "exitVelo": 89.2,
+      "launchAngle": 7.2,
+      "xwOBA": 0.365,
+      "xSLG": 0.459
+    },
+    "sean murphy": {
+      "barrelRate": 0,
+      "hardHitRate": 25,
+      "exitVelo": 80.3,
+      "launchAngle": 1.9,
+      "xwOBA": 0.133,
+      "xSLG": 0.16
+    },
+    "munetaka murakami": {
+      "barrelRate": 21.2,
+      "hardHitRate": 58.7,
+      "exitVelo": 94.6,
+      "launchAngle": 14.4,
+      "xwOBA": 0.385,
+      "xSLG": 0.543
+    },
+    "starling marte": {
+      "barrelRate": 8.3,
+      "hardHitRate": 33.3,
+      "exitVelo": 90.1,
+      "launchAngle": 7.9,
+      "xwOBA": 0.287,
+      "xSLG": 0.334
+    },
+    "griffin conine": {
+      "barrelRate": 25,
+      "hardHitRate": 62.5,
+      "exitVelo": 90.1,
+      "launchAngle": 6.4,
+      "xwOBA": 0.513,
+      "xSLG": 0.773
+    },
+    "joey bart": {
+      "barrelRate": 7.9,
+      "hardHitRate": 36.8,
+      "exitVelo": 86.9,
+      "launchAngle": 15.2,
+      "xwOBA": 0.256,
+      "xSLG": 0.347
+    },
+    "jakob marsee": {
+      "barrelRate": 3.9,
+      "hardHitRate": 38.3,
+      "exitVelo": 87.9,
+      "launchAngle": 21.1,
+      "xwOBA": 0.296,
+      "xSLG": 0.304
+    },
+    "christian vazquez": {
+      "barrelRate": 2.7,
+      "hardHitRate": 28,
+      "exitVelo": 87.5,
+      "launchAngle": 11.1,
+      "xwOBA": 0.263,
+      "xSLG": 0.292
+    },
+    "brett baty": {
+      "barrelRate": 9.3,
+      "hardHitRate": 40.2,
+      "exitVelo": 90.3,
+      "launchAngle": 9.3,
+      "xwOBA": 0.318,
+      "xSLG": 0.407
+    },
+    "yoan moncada": {
+      "barrelRate": 7.7,
+      "hardHitRate": 40.9,
+      "exitVelo": 90.3,
+      "launchAngle": 15.8,
+      "xwOBA": 0.27,
+      "xSLG": 0.286
+    },
+    "andruw monasterio": {
+      "barrelRate": 6.3,
+      "hardHitRate": 40.6,
+      "exitVelo": 88.4,
+      "launchAngle": 19.9,
+      "xwOBA": 0.313,
+      "xSLG": 0.393
+    },
+    "evan carter": {
+      "barrelRate": 8.1,
+      "hardHitRate": 38.7,
+      "exitVelo": 88.2,
+      "launchAngle": 20,
+      "xwOBA": 0.305,
+      "xSLG": 0.352
+    },
+    "zach neto": {
+      "barrelRate": 11.7,
+      "hardHitRate": 39.1,
+      "exitVelo": 89.6,
+      "launchAngle": 22.1,
+      "xwOBA": 0.319,
+      "xSLG": 0.398
+    },
+    "nick loftin": {
+      "barrelRate": 6.3,
+      "hardHitRate": 35.4,
+      "exitVelo": 86.7,
+      "launchAngle": 15,
+      "xwOBA": 0.333,
+      "xSLG": 0.357
+    },
+    "wilyer abreu": {
+      "barrelRate": 11,
+      "hardHitRate": 43.2,
+      "exitVelo": 90,
+      "launchAngle": 16,
+      "xwOBA": 0.353,
+      "xSLG": 0.472
+    },
+    "jeremy pena": {
+      "barrelRate": 2.2,
+      "hardHitRate": 28.3,
+      "exitVelo": 85.9,
+      "launchAngle": 20.7,
+      "xwOBA": 0.328,
+      "xSLG": 0.402
+    },
+    "jhonny pereda": {
+      "barrelRate": 8.3,
+      "hardHitRate": 58.3,
+      "exitVelo": 91.7,
+      "launchAngle": 22.2,
+      "xwOBA": 0.384,
+      "xSLG": 0.495
+    },
+    "jung hoo lee": {
+      "barrelRate": 1.9,
+      "hardHitRate": 31.4,
+      "exitVelo": 88,
+      "launchAngle": 11.4,
+      "xwOBA": 0.314,
+      "xSLG": 0.372
+    },
+    "andres gimenez": {
+      "barrelRate": 3.8,
+      "hardHitRate": 24.8,
+      "exitVelo": 85.5,
+      "launchAngle": 9.9,
+      "xwOBA": 0.259,
+      "xSLG": 0.31
+    },
+    "nick fortes": {
+      "barrelRate": 1,
+      "hardHitRate": 45.9,
+      "exitVelo": 87.6,
+      "launchAngle": 5.3,
+      "xwOBA": 0.283,
+      "xSLG": 0.335
+    },
+    "zach dezenzo": {
+      "barrelRate": 13,
+      "hardHitRate": 30.4,
+      "exitVelo": 84,
+      "launchAngle": 12.5,
+      "xwOBA": 0.265,
+      "xSLG": 0.366
+    },
+    "haseong kim": {
+      "barrelRate": 0,
+      "hardHitRate": 30,
+      "exitVelo": 85.4,
+      "launchAngle": 11.1,
+      "xwOBA": 0.258,
+      "xSLG": 0.22
+    },
+    "carter jensen": {
+      "barrelRate": 9.6,
+      "hardHitRate": 42.6,
+      "exitVelo": 90.1,
+      "launchAngle": 19.4,
+      "xwOBA": 0.291,
+      "xSLG": 0.347
+    },
+    "jesus sanchez": {
+      "barrelRate": 6,
+      "hardHitRate": 44,
+      "exitVelo": 90.4,
+      "launchAngle": 10.7,
+      "xwOBA": 0.328,
+      "xSLG": 0.434
+    },
+    "brady house": {
+      "barrelRate": 10.6,
+      "hardHitRate": 43,
+      "exitVelo": 89,
+      "launchAngle": 5.5,
+      "xwOBA": 0.32,
+      "xSLG": 0.427
+    },
+    "nathan church": {
+      "barrelRate": 9.6,
+      "hardHitRate": 33,
+      "exitVelo": 86.1,
+      "launchAngle": 12,
+      "xwOBA": 0.297,
+      "xSLG": 0.404
+    },
+    "drew romo": {
+      "barrelRate": 11.8,
+      "hardHitRate": 29.4,
+      "exitVelo": 83.4,
+      "launchAngle": 7.3,
+      "xwOBA": 0.349,
+      "xSLG": 0.424
+    },
+    "alejandro kirk": {
+      "barrelRate": 5.6,
+      "hardHitRate": 44.4,
+      "exitVelo": 85.5,
+      "launchAngle": 4.7,
+      "xwOBA": 0.298,
+      "xSLG": 0.343
+    },
+    "davis schneider": {
+      "barrelRate": 10,
+      "hardHitRate": 42.5,
+      "exitVelo": 86.6,
+      "launchAngle": 24.7,
+      "xwOBA": 0.281,
+      "xSLG": 0.255
+    },
+    "garrett mitchell": {
+      "barrelRate": 13.5,
+      "hardHitRate": 52.7,
+      "exitVelo": 92.5,
+      "launchAngle": 4.8,
+      "xwOBA": 0.329,
+      "xSLG": 0.392
+    },
+    "brice turang": {
+      "barrelRate": 8.9,
+      "hardHitRate": 46.8,
+      "exitVelo": 91.6,
+      "launchAngle": 8.6,
+      "xwOBA": 0.394,
+      "xSLG": 0.496
+    },
+    "mike trout": {
+      "barrelRate": 21.5,
+      "hardHitRate": 50,
+      "exitVelo": 91.5,
+      "launchAngle": 20.2,
+      "xwOBA": 0.42,
+      "xSLG": 0.577
+    },
+    "heliot ramos": {
+      "barrelRate": 13.8,
+      "hardHitRate": 48.7,
+      "exitVelo": 92,
+      "launchAngle": 7.9,
+      "xwOBA": 0.326,
+      "xSLG": 0.448
+    },
+    "jc escarra": {
+      "barrelRate": 5.1,
+      "hardHitRate": 35.9,
+      "exitVelo": 89.9,
+      "launchAngle": 9.7,
+      "xwOBA": 0.285,
+      "xSLG": 0.346
+    },
+    "isiah kinerfalefa": {
+      "barrelRate": 2.6,
+      "hardHitRate": 17.9,
+      "exitVelo": 82.3,
+      "launchAngle": 9.7,
+      "xwOBA": 0.29,
+      "xSLG": 0.318
+    },
+    "shohei ohtani": {
+      "barrelRate": 17.6,
+      "hardHitRate": 49.2,
+      "exitVelo": 93.1,
+      "launchAngle": 12.1,
+      "xwOBA": 0.404,
+      "xSLG": 0.531
+    },
+    "jj wetherholt": {
+      "barrelRate": 7.6,
+      "hardHitRate": 43.8,
+      "exitVelo": 89.8,
+      "launchAngle": 16.6,
+      "xwOBA": 0.355,
+      "xSLG": 0.441
+    },
+    "jesus rodriguez": {
+      "barrelRate": 0,
+      "hardHitRate": 26.9,
+      "exitVelo": 85.5,
+      "launchAngle": 5.3,
+      "xwOBA": 0.313,
+      "xSLG": 0.342
+    },
+    "spencer horwitz": {
+      "barrelRate": 3.4,
+      "hardHitRate": 29.3,
+      "exitVelo": 86.3,
+      "launchAngle": 15.7,
+      "xwOBA": 0.316,
+      "xSLG": 0.347
+    },
+    "jose fermin": {
+      "barrelRate": 0,
+      "hardHitRate": 31.8,
+      "exitVelo": 85,
+      "launchAngle": 26,
+      "xwOBA": 0.249,
+      "xSLG": 0.255
+    },
+    "travis bazzana": {
+      "barrelRate": 3.4,
+      "hardHitRate": 33.3,
+      "exitVelo": 88.9,
+      "launchAngle": 11.5,
+      "xwOBA": 0.352,
+      "xSLG": 0.379
+    },
+    "cesar salazar": {
+      "barrelRate": 0,
+      "hardHitRate": 30,
+      "exitVelo": 85.7,
+      "launchAngle": 6.2,
+      "xwOBA": 0.352,
+      "xSLG": 0.352
+    },
+    "will benson": {
+      "barrelRate": 13.3,
+      "hardHitRate": 39.6,
+      "exitVelo": 91.7,
+      "launchAngle": 25.7,
+      "xwOBA": 0.329,
+      "xSLG": 0.389
+    },
+    "bryce harper": {
+      "barrelRate": 13.9,
+      "hardHitRate": 40.3,
+      "exitVelo": 89,
+      "launchAngle": 13.1,
+      "xwOBA": 0.406,
+      "xSLG": 0.57
+    },
+    "josh jung": {
+      "barrelRate": 6.1,
+      "hardHitRate": 46.6,
+      "exitVelo": 90.2,
+      "launchAngle": 11.8,
+      "xwOBA": 0.364,
+      "xSLG": 0.468
+    },
+    "cody bellinger": {
+      "barrelRate": 7.8,
+      "hardHitRate": 39.4,
+      "exitVelo": 89.7,
+      "launchAngle": 20,
+      "xwOBA": 0.385,
+      "xSLG": 0.468
+    },
+    "jahmai jones": {
+      "barrelRate": 13.9,
+      "hardHitRate": 50,
+      "exitVelo": 92.5,
+      "launchAngle": 12,
+      "xwOBA": 0.349,
+      "xSLG": 0.474
+    },
+    "bryce johnson": {
+      "barrelRate": 0,
+      "hardHitRate": 11.1,
+      "exitVelo": 80.5,
+      "launchAngle": 23.1,
+      "xwOBA": 0.18,
+      "xSLG": 0.154
+    },
+    "ryan kreidler": {
+      "barrelRate": 15,
+      "hardHitRate": 40,
+      "exitVelo": 91.6,
+      "launchAngle": 19.9,
+      "xwOBA": 0.438,
+      "xSLG": 0.626
+    },
+    "corey seager": {
+      "barrelRate": 15.7,
+      "hardHitRate": 45.4,
+      "exitVelo": 91.1,
+      "launchAngle": 12.6,
+      "xwOBA": 0.331,
+      "xSLG": 0.442
+    },
+    "harrison bader": {
+      "barrelRate": 6.8,
+      "hardHitRate": 39,
+      "exitVelo": 88.6,
+      "launchAngle": 12,
+      "xwOBA": 0.262,
+      "xSLG": 0.344
+    },
+    "joey wiemer": {
+      "barrelRate": 10,
+      "hardHitRate": 39,
+      "exitVelo": 88.8,
+      "launchAngle": 2.2,
+      "xwOBA": 0.316,
+      "xSLG": 0.349
+    },
+    "jonah heim": {
+      "barrelRate": 4,
+      "hardHitRate": 22,
+      "exitVelo": 84.6,
+      "launchAngle": 14.6,
+      "xwOBA": 0.25,
+      "xSLG": 0.304
+    },
+    "hyeseong kim": {
+      "barrelRate": 3.8,
+      "hardHitRate": 21.5,
+      "exitVelo": 85,
+      "launchAngle": 9.6,
+      "xwOBA": 0.31,
+      "xSLG": 0.351
+    },
+    "marcell ozuna": {
+      "barrelRate": 8.6,
+      "hardHitRate": 39.3,
+      "exitVelo": 89.3,
+      "launchAngle": 24,
+      "xwOBA": 0.318,
+      "xSLG": 0.413
+    },
+    "andrew vaughn": {
+      "barrelRate": 3.2,
+      "hardHitRate": 35.5,
+      "exitVelo": 89.1,
+      "launchAngle": 7.8,
+      "xwOBA": 0.402,
+      "xSLG": 0.436
+    },
+    "manny machado": {
+      "barrelRate": 6.2,
+      "hardHitRate": 44.2,
+      "exitVelo": 90.5,
+      "launchAngle": 10.8,
+      "xwOBA": 0.308,
+      "xSLG": 0.375
+    },
+    "brandon nimmo": {
+      "barrelRate": 9.7,
+      "hardHitRate": 50,
+      "exitVelo": 91.4,
+      "launchAngle": 8.8,
+      "xwOBA": 0.373,
+      "xSLG": 0.486
+    },
+    "matt mclain": {
+      "barrelRate": 6.9,
+      "hardHitRate": 36.4,
+      "exitVelo": 87.9,
+      "launchAngle": 20.2,
+      "xwOBA": 0.319,
+      "xSLG": 0.38
+    },
+    "carlos narvaez": {
+      "barrelRate": 7.6,
+      "hardHitRate": 39.4,
+      "exitVelo": 91.6,
+      "launchAngle": 13.8,
+      "xwOBA": 0.298,
+      "xSLG": 0.359
+    },
+    "cal raleigh": {
+      "barrelRate": 12.3,
+      "hardHitRate": 31.1,
+      "exitVelo": 87.5,
+      "launchAngle": 23.1,
+      "xwOBA": 0.289,
+      "xSLG": 0.387
+    },
+    "tyler freeman": {
+      "barrelRate": 0,
+      "hardHitRate": 30.2,
+      "exitVelo": 86.7,
+      "launchAngle": 10.9,
+      "xwOBA": 0.33,
+      "xSLG": 0.372
+    },
+    "mickey moniak": {
+      "barrelRate": 13.5,
+      "hardHitRate": 41.4,
+      "exitVelo": 89.7,
+      "launchAngle": 25.3,
+      "xwOBA": 0.324,
+      "xSLG": 0.47
+    },
+    "daylen lile": {
+      "barrelRate": 7.4,
+      "hardHitRate": 38.7,
+      "exitVelo": 88.1,
+      "launchAngle": 16.2,
+      "xwOBA": 0.335,
+      "xSLG": 0.438
+    },
+    "taylor walls": {
+      "barrelRate": 2.4,
+      "hardHitRate": 15.1,
+      "exitVelo": 82.3,
+      "launchAngle": 18.3,
+      "xwOBA": 0.245,
+      "xSLG": 0.23
+    },
+    "teoscar hernandez": {
+      "barrelRate": 11.6,
+      "hardHitRate": 42.5,
+      "exitVelo": 89.9,
+      "launchAngle": 13.5,
+      "xwOBA": 0.333,
+      "xSLG": 0.431
+    },
+    "jackson merrill": {
+      "barrelRate": 9.4,
+      "hardHitRate": 46.5,
+      "exitVelo": 89.6,
+      "launchAngle": 11.9,
+      "xwOBA": 0.305,
+      "xSLG": 0.404
+    },
+    "randy arozarena": {
+      "barrelRate": 6.7,
+      "hardHitRate": 42.2,
+      "exitVelo": 91,
+      "launchAngle": 6.5,
+      "xwOBA": 0.334,
+      "xSLG": 0.379
+    },
+    "oswald peraza": {
+      "barrelRate": 8.6,
+      "hardHitRate": 33,
+      "exitVelo": 86.5,
+      "launchAngle": 13.5,
+      "xwOBA": 0.322,
+      "xSLG": 0.398
+    },
+    "sebastian rivero": {
+      "barrelRate": 0,
+      "hardHitRate": 9.1,
+      "exitVelo": 83.8,
+      "launchAngle": 18.6,
+      "xwOBA": 0.2,
+      "xSLG": 0.223
+    },
+    "nick gonzales": {
+      "barrelRate": 1.5,
+      "hardHitRate": 39.1,
+      "exitVelo": 86.7,
+      "launchAngle": 5,
+      "xwOBA": 0.347,
+      "xSLG": 0.403
+    },
+    "christopher morel": {
+      "barrelRate": 3.1,
+      "hardHitRate": 43.8,
+      "exitVelo": 88.7,
+      "launchAngle": 21.6,
+      "xwOBA": 0.216,
+      "xSLG": 0.234
+    }
+  },
+  "fetchedAt": "2026-05-23T17:03:49.898Z",
+  "count": 471
 }

@@ -98,6 +98,8 @@ tr:hover td { background: var(--bs) }
 /* ── Lineup Slots ──────────────────────────────────────────────────────────── */
 .lu-slot { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border: 0.5px solid var(--brd-t); border-radius: var(--r); margin-bottom: 5px; background: var(--bp) }
 .lu-slot.filled { border-color: var(--brd-su); background: var(--bsu) }
+.lu-slot-cpt { border-color: rgba(59,130,246,.5) !important; background: rgba(59,130,246,.08) !important }
+.lu-slot-cpt.filled { border-color: rgba(59,130,246,.7) !important; background: rgba(59,130,246,.15) !important }
 .slot-pos { font-size: 11px; font-weight: 500; color: var(--tt); width: 34px; flex-shrink: 0; text-transform: uppercase }
 .slot-name { font-size: 13px; font-weight: 500; color: var(--tp) }
 .slot-info { font-size: 11px; color: var(--ts) }
@@ -164,10 +166,54 @@ tr:hover td { background: var(--bs) }
 .ln { color: var(--td) }
 .lz { color: var(--ts) }
 
+/* ── Best Plays Panel ──────────────────────────────────────────────────────── */
+.bp-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start }
+.bp-col { display: flex; flex-direction: column; gap: 12px }
+.bp-col-hdr { padding: 10px 14px; border-radius: var(--rl) var(--rl) 0 0; background: var(--bs); border: 0.5px solid var(--brd-t); border-bottom: 2px solid var(--brd-s); margin-bottom: 2px }
+.bp-col-hdr-gpp { background: rgba(59,130,246,.07); border-bottom-color: rgba(59,130,246,.5) }
+.bp-col-title { font-size: 15px; font-weight: 600; color: var(--tp) }
+.bp-col-sub { font-size: 11px; color: var(--tt); margin-top: 2px; letter-spacing: .02em }
+
+.bp-card { background: var(--bp); border: 0.5px solid var(--brd-t); border-radius: var(--rl); overflow: hidden }
+.bp-card-warn { border-color: var(--brd-w); background: var(--bw) }
+.bp-card-feature { border-color: rgba(59,130,246,.4); background: rgba(59,130,246,.05) }
+.bp-section-hdr { display: flex; align-items: baseline; gap: 8px; padding: 8px 12px 4px; font-size: 12px; font-weight: 600; color: var(--tp); border-bottom: 0.5px solid var(--brd-t) }
+.bp-card-warn .bp-section-hdr { color: var(--tw); border-bottom-color: rgba(0,0,0,.1) }
+.bp-card-feature .bp-section-hdr { color: var(--ti) }
+.bp-subhdr { font-size: 10px; font-weight: 400; color: var(--tt); text-transform: none; letter-spacing: 0 }
+.bp-section-meta { display: flex; flex-wrap: wrap; gap: 4px; padding: 5px 12px 3px }
+.bp-card-body { display: flex; flex-direction: column }
+.bp-card-tip { font-size: 10px; color: var(--tt); padding: 4px 12px 8px; line-height: 1.4; font-style: italic }
+.bp-chalk-text { font-size: 11px; color: var(--tw); line-height: 1.6; padding: 2px 12px 8px }
+
+.bp-player-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 12px; border-bottom: 0.5px solid var(--brd-t); transition: background .1s }
+.bp-player-row:last-child { border-bottom: none }
+.bp-player-row:hover { background: var(--bs) }
+.bp-player-left { display: flex; align-items: center; gap: 5px; min-width: 0; flex: 1 }
+.bp-player-right { display: flex; align-items: center; gap: 5px; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end }
+
+.bp-pos { font-size: 10px; font-weight: 600; color: var(--tt); text-transform: uppercase; width: 22px; flex-shrink: 0 }
+.bp-name { font-size: 12px; font-weight: 500; color: var(--tp); cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 140px }
+.bp-name:hover { color: var(--ti); text-decoration: underline }
+.bp-team { font-size: 10px; color: var(--tt); background: var(--bs); padding: 1px 5px; border-radius: 4px }
+.bp-order { font-size: 10px; font-weight: 600; color: var(--tw); background: var(--bw); padding: 1px 4px; border-radius: 3px }
+.bp-sal { font-size: 11px; color: var(--ts) }
+.bp-own { font-size: 10px; padding: 1px 5px; border-radius: 4px; background: var(--bs); color: var(--ts) }
+.bp-own-low { background: var(--bsu); color: var(--tsu) }
+.bp-own-high { background: var(--bw); color: var(--tw) }
+.bp-pts { font-size: 11px; font-weight: 500; color: var(--tp); white-space: nowrap }
+.bp-ceil { color: var(--tsu); font-weight: 400 }
+
+.bp-tag { display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 4px; white-space: nowrap }
+.bp-tag-good { background: var(--bsu); color: var(--tsu) }
+.bp-tag-ok { background: var(--bi); color: var(--ti) }
+.bp-tag-bad { background: var(--bw); color: var(--tw) }
+
 /* ── Responsive ────────────────────────────────────────────────────────────── */
 @media (max-width: 768px) {
   body { padding: 8px }
   .two-col { grid-template-columns: 1fr }
+  .bp-columns { grid-template-columns: 1fr }
   .tab { padding: 6px 10px; font-size: 12px }
   .config-grid { grid-template-columns: 1fr 1fr }
   .tbl-wrap { font-size: 11px }

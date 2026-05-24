@@ -1,306 +1,306 @@
 {
   "data": {
     "ATL": {
-      "era": 2.03,
-      "whip": 0.91,
-      "kPer9": 8.3,
-      "bbPer9": 2.35,
-      "hrPer9": 1.2,
-      "ip": 115,
-      "saves": 3,
-      "blownSaves": 0
-    },
-    "NYY": {
-      "era": 2.47,
-      "whip": 1.05,
-      "kPer9": 9.7,
-      "bbPer9": 2.65,
-      "hrPer9": 1.2,
-      "ip": 98.1,
-      "saves": 5,
-      "blownSaves": 2
-    },
-    "SEA": {
-      "era": 2.62,
-      "whip": 0.95,
-      "kPer9": 9.18,
-      "bbPer9": 2.01,
-      "hrPer9": 1.2,
-      "ip": 116.2,
-      "saves": 2,
-      "blownSaves": 2
-    },
-    "NYM": {
-      "era": 2.9,
-      "whip": 1.2,
-      "kPer9": 8.87,
-      "bbPer9": 3.3,
-      "hrPer9": 1.2,
-      "ip": 111.2,
-      "saves": 2,
-      "blownSaves": 1
-    },
-    "TEX": {
-      "era": 2.94,
-      "whip": 1.08,
-      "kPer9": 10.01,
-      "bbPer9": 2.61,
-      "hrPer9": 1.2,
-      "ip": 107,
-      "saves": 5,
-      "blownSaves": 1
-    },
-    "CIN": {
-      "era": 3.11,
-      "whip": 1.23,
-      "kPer9": 8.75,
-      "bbPer9": 3.85,
-      "hrPer9": 1.2,
-      "ip": 110,
-      "saves": 6,
-      "blownSaves": 2
-    },
-    "CLE": {
-      "era": 3.13,
-      "whip": 1.15,
-      "kPer9": 11.03,
-      "bbPer9": 3.91,
-      "hrPer9": 1.2,
-      "ip": 115,
-      "saves": 5,
-      "blownSaves": 1
-    },
-    "PIT": {
-      "era": 3.33,
-      "whip": 1.3,
-      "kPer9": 10,
-      "bbPer9": 4.33,
-      "hrPer9": 1.2,
-      "ip": 108,
-      "saves": 2,
-      "blownSaves": 1
-    },
-    "LAD": {
-      "era": 3.36,
+      "era": 3.08,
       "whip": 1.13,
-      "kPer9": 7.82,
-      "bbPer9": 3.36,
+      "kPer9": 8.88,
+      "bbPer9": 3.41,
       "hrPer9": 1.2,
-      "ip": 107,
-      "saves": 4,
-      "blownSaves": 1
-    },
-    "CHC": {
-      "era": 3.43,
-      "whip": 1.12,
-      "kPer9": 7.89,
-      "bbPer9": 3.34,
-      "hrPer9": 1.2,
-      "ip": 105,
-      "saves": 2,
-      "blownSaves": 3
-    },
-    "COL": {
-      "era": 3.66,
-      "whip": 1.28,
-      "kPer9": 7.92,
-      "bbPer9": 2.64,
-      "hrPer9": 1.2,
-      "ip": 105.2,
-      "saves": 5,
-      "blownSaves": 1
+      "ip": 465,
+      "saves": 15,
+      "blownSaves": 5
     },
     "MIL": {
-      "era": 3.77,
-      "whip": 1.34,
-      "kPer9": 10.63,
-      "bbPer9": 4.63,
-      "hrPer9": 1.2,
-      "ip": 105,
-      "saves": 4,
-      "blownSaves": 0
-    },
-    "MIA": {
-      "era": 3.79,
-      "whip": 1.17,
-      "kPer9": 9.5,
-      "bbPer9": 4.12,
-      "hrPer9": 1.2,
-      "ip": 107,
-      "saves": 4,
-      "blownSaves": 2
-    },
-    "LAA": {
-      "era": 3.8,
-      "whip": 1.41,
-      "kPer9": 9.62,
-      "bbPer9": 5.12,
-      "hrPer9": 1.2,
-      "ip": 116,
-      "saves": 4,
-      "blownSaves": 2
-    },
-    "SD": {
-      "era": 3.82,
-      "whip": 1.3,
-      "kPer9": 9.17,
+      "era": 3.12,
+      "whip": 1.19,
+      "kPer9": 9.92,
       "bbPer9": 3.48,
       "hrPer9": 1.2,
-      "ip": 106,
-      "saves": 4,
-      "blownSaves": 4
+      "ip": 427.1,
+      "saves": 16,
+      "blownSaves": 8
     },
-    "ARI": {
-      "era": 3.89,
-      "whip": 1.25,
-      "kPer9": 6.86,
+    "LAD": {
+      "era": 3.17,
+      "whip": 1.1,
+      "kPer9": 9,
+      "bbPer9": 2.89,
+      "hrPer9": 1.2,
+      "ip": 449,
+      "saves": 11,
+      "blownSaves": 5
+    },
+    "NYY": {
+      "era": 3.3,
+      "whip": 1.18,
+      "kPer9": 8.92,
       "bbPer9": 3.13,
       "hrPer9": 1.2,
-      "ip": 106.1,
-      "saves": 4,
+      "ip": 460.1,
+      "saves": 12,
+      "blownSaves": 10
+    },
+    "TB": {
+      "era": 3.54,
+      "whip": 1.19,
+      "kPer9": 7.75,
+      "bbPer9": 3.09,
+      "hrPer9": 1.2,
+      "ip": 442.2,
+      "saves": 23,
+      "blownSaves": 8
+    },
+    "SEA": {
+      "era": 3.57,
+      "whip": 1.22,
+      "kPer9": 8.8,
+      "bbPer9": 2.6,
+      "hrPer9": 1.2,
+      "ip": 463.1,
+      "saves": 14,
+      "blownSaves": 8
+    },
+    "CLE": {
+      "era": 3.6,
+      "whip": 1.24,
+      "kPer9": 9.49,
+      "bbPer9": 3.43,
+      "hrPer9": 1.2,
+      "ip": 470.1,
+      "saves": 20,
       "blownSaves": 4
     },
-    "BAL": {
-      "era": 4.02,
-      "whip": 1.39,
-      "kPer9": 9.23,
-      "bbPer9": 4.44,
+    "TEX": {
+      "era": 3.64,
+      "whip": 1.21,
+      "kPer9": 8.59,
+      "bbPer9": 3.28,
       "hrPer9": 1.2,
-      "ip": 105.1,
-      "saves": 6,
-      "blownSaves": 2
-    },
-    "SF": {
-      "era": 4.03,
-      "whip": 1.34,
-      "kPer9": 8.92,
-      "bbPer9": 3.72,
-      "hrPer9": 1.2,
-      "ip": 116,
-      "saves": 2,
-      "blownSaves": 2
-    },
-    "MIN": {
-      "era": 4.11,
-      "whip": 1.43,
-      "kPer9": 8.4,
-      "bbPer9": 4.11,
-      "hrPer9": 1.2,
-      "ip": 105,
-      "saves": 4,
-      "blownSaves": 0
+      "ip": 435.2,
+      "saves": 11,
+      "blownSaves": 5
     },
     "BOS": {
-      "era": 4.19,
-      "whip": 1.35,
-      "kPer9": 8.72,
-      "bbPer9": 3.93,
+      "era": 3.74,
+      "whip": 1.23,
+      "kPer9": 8.38,
+      "bbPer9": 3.17,
       "hrPer9": 1.2,
-      "ip": 105.1,
-      "saves": 3,
-      "blownSaves": 2
+      "ip": 442.1,
+      "saves": 12,
+      "blownSaves": 5
     },
-    "PHI": {
-      "era": 4.21,
+    "NYM": {
+      "era": 3.82,
       "whip": 1.28,
-      "kPer9": 10.09,
-      "bbPer9": 2.19,
+      "kPer9": 9.25,
+      "bbPer9": 3.65,
       "hrPer9": 1.2,
-      "ip": 107,
-      "saves": 4,
-      "blownSaves": 0
+      "ip": 459,
+      "saves": 8,
+      "blownSaves": 6
     },
-    "DET": {
-      "era": 4.4,
-      "whip": 1.42,
-      "kPer9": 8.25,
-      "bbPer9": 4.4,
+    "PIT": {
+      "era": 3.86,
+      "whip": 1.23,
+      "kPer9": 8.93,
+      "bbPer9": 3.55,
       "hrPer9": 1.2,
-      "ip": 100.1,
-      "saves": 1,
-      "blownSaves": 1
+      "ip": 463.2,
+      "saves": 8,
+      "blownSaves": 12
     },
     "TOR": {
-      "era": 4.43,
-      "whip": 1.35,
-      "kPer9": 11.41,
-      "bbPer9": 3.61,
+      "era": 3.88,
+      "whip": 1.27,
+      "kPer9": 9.33,
+      "bbPer9": 3.14,
       "hrPer9": 1.2,
-      "ip": 109.2,
-      "saves": 2,
+      "ip": 452.1,
+      "saves": 12,
+      "blownSaves": 10
+    },
+    "SD": {
+      "era": 3.91,
+      "whip": 1.25,
+      "kPer9": 8.76,
+      "bbPer9": 3.45,
+      "hrPer9": 1.2,
+      "ip": 446,
+      "saves": 18,
+      "blownSaves": 8
+    },
+    "DET": {
+      "era": 3.97,
+      "whip": 1.3,
+      "kPer9": 8.34,
+      "bbPer9": 3.51,
+      "hrPer9": 1.2,
+      "ip": 453.1,
+      "saves": 9,
+      "blownSaves": 11
+    },
+    "CHC": {
+      "era": 4.07,
+      "whip": 1.23,
+      "kPer9": 8.18,
+      "bbPer9": 3.1,
+      "hrPer9": 1.2,
+      "ip": 453.1,
+      "saves": 10,
+      "blownSaves": 7
+    },
+    "ARI": {
+      "era": 4.14,
+      "whip": 1.26,
+      "kPer9": 7.37,
+      "bbPer9": 3.06,
+      "hrPer9": 1.2,
+      "ip": 441,
+      "saves": 13,
+      "blownSaves": 9
+    },
+    "MIN": {
+      "era": 4.22,
+      "whip": 1.32,
+      "kPer9": 7.78,
+      "bbPer9": 3.64,
+      "hrPer9": 1.2,
+      "ip": 450,
+      "saves": 12,
+      "blownSaves": 6
+    },
+    "SF": {
+      "era": 4.23,
+      "whip": 1.34,
+      "kPer9": 7.96,
+      "bbPer9": 3.83,
+      "hrPer9": 1.2,
+      "ip": 451,
+      "saves": 9,
+      "blownSaves": 6
+    },
+    "PHI": {
+      "era": 4.24,
+      "whip": 1.35,
+      "kPer9": 9.53,
+      "bbPer9": 2.84,
+      "hrPer9": 1.2,
+      "ip": 456.1,
+      "saves": 12,
       "blownSaves": 5
     },
     "KC": {
-      "era": 4.64,
-      "whip": 1.45,
-      "kPer9": 9.37,
-      "bbPer9": 4.39,
+      "era": 4.24,
+      "whip": 1.37,
+      "kPer9": 8.5,
+      "bbPer9": 4.22,
       "hrPer9": 1.2,
-      "ip": 104.2,
-      "saves": 5,
-      "blownSaves": 1
+      "ip": 452,
+      "saves": 14,
+      "blownSaves": 9
     },
     "STL": {
-      "era": 4.95,
-      "whip": 1.52,
-      "kPer9": 6.11,
-      "bbPer9": 4.38,
+      "era": 4.24,
+      "whip": 1.38,
+      "kPer9": 7.27,
+      "bbPer9": 3.69,
       "hrPer9": 1.2,
-      "ip": 109,
-      "saves": 4,
-      "blownSaves": 2
-    },
-    "TB": {
-      "era": 4.96,
-      "whip": 1.24,
-      "kPer9": 7.78,
-      "bbPer9": 3.25,
-      "hrPer9": 1.2,
-      "ip": 105.1,
-      "saves": 3,
-      "blownSaves": 2
+      "ip": 443.1,
+      "saves": 17,
+      "blownSaves": 9
     },
     "OAK": {
-      "era": 5.2,
-      "whip": 1.71,
-      "kPer9": 7.89,
-      "bbPer9": 6.4,
+      "era": 4.33,
+      "whip": 1.41,
+      "kPer9": 7.92,
+      "bbPer9": 3.99,
       "hrPer9": 1.2,
-      "ip": 97,
-      "saves": 2,
-      "blownSaves": 5
+      "ip": 455.2,
+      "saves": 15,
+      "blownSaves": 11
+    },
+    "MIA": {
+      "era": 4.33,
+      "whip": 1.28,
+      "kPer9": 8.55,
+      "bbPer9": 3.78,
+      "hrPer9": 1.2,
+      "ip": 457.2,
+      "saves": 13,
+      "blownSaves": 9
     },
     "CWS": {
-      "era": 5.45,
-      "whip": 1.56,
-      "kPer9": 8.31,
-      "bbPer9": 4.85,
+      "era": 4.34,
+      "whip": 1.35,
+      "kPer9": 8.26,
+      "bbPer9": 4.14,
       "hrPer9": 1.2,
-      "ip": 104,
-      "saves": 3,
-      "blownSaves": 4
+      "ip": 443.2,
+      "saves": 16,
+      "blownSaves": 11
     },
-    "HOU": {
-      "era": 6.05,
-      "whip": 1.63,
-      "kPer9": 10.27,
-      "bbPer9": 5.58,
+    "CIN": {
+      "era": 4.71,
+      "whip": 1.46,
+      "kPer9": 7.86,
+      "bbPer9": 4.67,
       "hrPer9": 1.2,
-      "ip": 113,
-      "saves": 3,
-      "blownSaves": 0
+      "ip": 445.1,
+      "saves": 13,
+      "blownSaves": 9
+    },
+    "COL": {
+      "era": 4.88,
+      "whip": 1.46,
+      "kPer9": 7.47,
+      "bbPer9": 3.53,
+      "hrPer9": 1.2,
+      "ip": 459,
+      "saves": 13,
+      "blownSaves": 6
+    },
+    "LAA": {
+      "era": 4.94,
+      "whip": 1.45,
+      "kPer9": 8.64,
+      "bbPer9": 4.72,
+      "hrPer9": 1.2,
+      "ip": 459.1,
+      "saves": 5,
+      "blownSaves": 11
+    },
+    "BAL": {
+      "era": 4.95,
+      "whip": 1.45,
+      "kPer9": 8.41,
+      "bbPer9": 3.84,
+      "hrPer9": 1.2,
+      "ip": 447.1,
+      "saves": 14,
+      "blownSaves": 5
     },
     "WSH": {
-      "era": 6.06,
-      "whip": 1.65,
-      "kPer9": 7.74,
-      "bbPer9": 5.05,
+      "era": 4.96,
+      "whip": 1.41,
+      "kPer9": 7.86,
+      "bbPer9": 3.63,
       "hrPer9": 1.2,
-      "ip": 107,
-      "saves": 1,
-      "blownSaves": 4
+      "ip": 471.2,
+      "saves": 14,
+      "blownSaves": 14
+    },
+    "HOU": {
+      "era": 5.28,
+      "whip": 1.52,
+      "kPer9": 8.64,
+      "bbPer9": 5.02,
+      "hrPer9": 1.2,
+      "ip": 455.1,
+      "saves": 12,
+      "blownSaves": 2
     }
   },
-  "fetchedAt": "2026-04-09T15:25:37.673Z",
+  "fetchedAt": "2026-05-23T17:03:50.042Z",
   "count": 30
 }

@@ -1,0 +1,1320 @@
+{
+  "data": {
+    "STL": {
+      "P": {
+        "avgAllowed": 3.61,
+        "games": 19,
+        "rank": 25,
+        "totalTeams": 30
+      },
+      "3B": {
+        "avgAllowed": 12.4,
+        "games": 5,
+        "rank": 3,
+        "totalTeams": 30
+      },
+      "OF": {
+        "avgAllowed": 10.94,
+        "games": 13,
+        "rank": 2,
+        "totalTeams": 30
+      },
+      "SS": {
+        "avgAllowed": 11.56,
+        "games": 4,
+        "rank": 3,
+        "totalTeams": 30
+      },
+      "1B": {
+        "avgAllowed": 8.48,
+        "games": 11,
+        "rank": 5,
+        "totalTeams": 30
+      },
+      "2B": {
+        "avgAllowed": 9.5,
+        "games": 4,
+        "rank": 7,
+        "totalTeams": 29
+      },
+      "C": {
+        "avgAllowed": 4.75,
+        "games": 4,
+        "rank": 19,
+        "totalTeams": 30
+      }
+    },
+    "DET": {
+      "3B": {
+        "avgAllowed": 5.81,
+        "games": 4,
+        "rank": 14,
+        "totalTeams": 30
+      },
+      "P": {
+        "avgAllowed": 4.77,
+        "games": 19,
+        "rank": 20,
+        "totalTeams": 30
+      },
+      "OF": {
+        "avgAllowed": 6.21,
+        "games": 14,
+        "rank": 15,
+        "totalTeams": 30
+      },
+      "2B": {
+        "avgAllowed": 12.5,
+        "games": 4,
+        "rank": 4,
+        "totalTeams": 29
+      },
+      "1B": {
+        "avgAllowed": 7.44,
+        "games": 9,
+        "rank": 9,
+        "totalTeams": 30
+      },
+      "C": {
+        "avgAllowed": 7.05,
+        "games": 5,
+        "rank": 8,
+        "totalTeams": 30
+      },
+      "SS": {
+        "avgAllowed": 2.67,
+        "games": 3,
+        "rank": 27,
+        "totalTeams": 30
+      }
+    },
+    "SD": {
+      "OF": {
+        "avgAllowed": 10,
+        "games": 13,
+        "rank": 3,
+        "totalTeams": 30
+      },
+      "1B": {
+        "avgAllowed": 4.75,
+        "games": 8,
+        "rank": 22,
+        "totalTeams": 30
+      },
+      "P": {
+        "avgAllowed": 4.28,
+        "games": 20,
+        "rank": 22,
+        "totalTeams": 30
+      },
+      "SS": {
+        "avgAllowed": 3.75,
+        "games": 4,
+        "rank": 24,
+        "totalTeams": 30
+      },
+      "3B": {
+        "avgAllowed": 3.25,
+        "games": 4,
+        "rank": 23,
+        "totalTeams": 30
+      },
+      "C": {
+        "avgAllowed": 4.25,
+        "games": 4,
+        "rank": 23,
+        "totalTeams": 30
+      },
+      "2B": {
+        "avgAllowed": 4.31,
+        "games": 4,
+        "rank": 22,
+        "totalTeams": 29
+      }
+    },
+    "BOS": {
+      "C": {
+        "avgAllowed": 7,
+        "games": 4,
+        "rank": 9,
+        "totalTeams": 30
+      },
+      "P": {
+        "avgAllowed": 4.89,
+        "games": 17,
+        "rank": 19,
+        "totalTeams": 30
+      },
+      "OF": {
+        "avgAllowed": 7.56,
+        "games": 13,
+        "rank": 10,
+        "totalTeams": 30
+      },
+      "3B": {
+        "avgAllowed": 9,
+        "games": 4,
+        "rank": 7,
+        "totalTeams": 30
+      },
+      "1B": {
+        "avgAllowed": 5.67,
+        "games": 9,
+        "rank": 16,
+        "totalTeams": 30
+      },
+      "SS": {
+        "avgAllowed": 7.25,
+        "games": 4,
+        "rank": 15,
+        "totalTeams": 30
+      },
+      "2B": {
+        "avgAllowed": 4.75,
+        "games": 4,
+        "rank": 19,
+        "totalTeams": 29
+      }
+    },
+    "HOU": {
+      "OF": {
+        "avgAllowed": 7.2,
+        "games": 15,
+        "rank": 13,
+        "totalTeams": 30
+      },
+      "1B": {
+        "avgAllowed": 11.14,
+        "games": 9,
+        "rank": 2,
+        "totalTeams": 30
+      },
+      "2B": {
+        "avgAllowed": 12.8,
+        "games": 5,
+        "rank": 3,
+        "totalTeams": 29
+      },
+      "C": {
+        "avgAllowed": 3.6,
+        "games": 5,
+        "rank": 24,
+        "totalTeams": 30
+      },
+      "P": {
+        "avgAllowed": 2.74,
+        "games": 17,
+        "rank": 30,
+        "totalTeams": 30
+      },
+      "3B": {
+        "avgAllowed": 8,
+        "games": 4,
+        "rank": 10,
+        "totalTeams": 30
+      },
+      "SS": {
+        "avgAllowed": 2,
+        "games": 3,
+        "rank": 29,
+        "totalTeams": 30
+      }
+    },
+    "OAK": {
+      "3B": {
+        "avgAllowed": 14.25,
+        "games": 4,
+        "rank": 1,
+        "totalTeams": 30
+      },
+      "SS": {
+        "avgAllowed": 9.5,
+        "games": 4,
+        "rank": 7,
+        "totalTeams": 30
+      },
+      "P": {
+        "avgAllowed": 5.07,
+        "games": 14,
+        "rank": 17,
+        "totalTeams": 30
+      },
+      "OF": {
+        "avgAllowed": 9.82,
+        "games": 11,
+        "rank": 4,
+        "totalTeams": 30
+      },
+      "2B": {
+        "avgAllowed": 7.5,
+        "games": 4,
+        "rank": 10,
+        "totalTeams": 29
+      },
+      "1B": {
+        "avgAllowed": 16.5,
+        "games": 6,
+        "rank": 1,
+        "totalTeams": 30
+      },
+      "C": {
+        "avgAllowed": 8,
+        "games": 3,
+        "rank": 4,
+        "totalTeams": 30
+      }
+    },
+    "MIL": {
+      "C": {
+        "avgAllowed": 4.6,
+        "games": 5,
+        "rank": 21,
+        "totalTeams": 30
+      },
+      "P": {
+        "avgAllowed": 5.51,
+        "games": 22,
+        "rank": 11,
+        "totalTeams": 30
+      },
+      "2B": {
+        "avgAllowed": 3.43,
+        "games": 7,
+        "rank": 24,
+        "totalTeams": 29
+      },
+      "OF": {
+        "avgAllowed": 5.71,
+        "games": 17,
+        "rank": 19,
+        "totalTeams": 30
+      },
+      "1B": {
+        "avgAllowed": 7.82,
+        "games": 11,
+        "rank": 7,
+        "totalTeams": 30
+      },
+      "3B": {
+        "avgAllowed": 10,
+        "games": 5,
+        "rank": 6,
+        "totalTeams": 30
+      },
+      "SS": {
+        "avgAllowed": 8.65,
+        "games": 5,
+        "rank": 9,
+        "totalTeams": 30
+      }
+    },
+    "KC": {
+      "SS": {
+        "avgAllowed": 6.5,
+        "games": 6,
+        "rank": 20,
+        "totalTeams": 30
+      },
+      "P": {
+        "avgAllowed": 5.49,
+        "games": 22,
+        "rank": 13,
+        "totalTeams": 30
+      },
+      "1B": {
+        "avgAllowed": 4.4,
+        "games": 15,
+        "rank": 24,
+        "totalTeams": 30
+      },
+      "OF": {
+        "avgAllowed": 6.67,
+        "games": 18,
+        "rank": 14,
+        "totalTeams": 30
+      },
+      "3B": {
+        "avgAllowed": 6,
+        "games": 5,
+        "rank": 13,
+        "totalTeams": 30
+      },
+      "2B": {
+        "avgAllowed": 6.6,
+        "games": 5,
+        "rank": 15,
+        "totalTeams": 29
+      },
+      "C": {
+        "avgAllowed": 6.8,
+        "games": 5,
+        "rank": 10,
+        "totalTeams": 30
+      }
+    },
+    "LAD": {
+      "3B": {
+        "avgAllowed": 3.2,
+        "games": 5,
+        "rank": 24,
+        "totalTeams": 30
+      },
+      "SS": {
+        "avgAllowed": 12.25,
+        "games": 4,
+        "rank": 1,
+        "totalTeams": 30
+      },
+      "C": {
+        "avgAllowed": 1.75,
+        "games": 4,
+        "rank": 27,
+        "totalTeams": 30
+      },
+      "2B": {
+        "avgAllowed": 8,
+        "games": 4,
+        "rank": 8,
+        "totalTeams": 29
+      },
+      "P": {
+        "avgAllowed": 3.31,
+        "games": 18,
+        "rank": 27,
+        "totalTeams": 30
+      },
+      "1B": {
+        "avgAllowed": 6.3,
+        "games": 10,
+        "rank": 13,
+        "totalTeams": 30
+      },
+      "OF": {
+        "avgAllowed": 3.77,
+        "games": 13,
+        "rank": 26,
+        "totalTeams": 30
+      }
+    },
+    "WSH": {
+      "C": {
+        "avgAllowed": 5.5,
+        "games": 6,
+        "rank": 13,
+        "totalTeams": 30
+      },
+      "P": {
+        "avgAllowed": 3.82,
+        "games": 18,
+        "rank": 23,
+        "totalTeams": 30
+      },
+      "OF": {
+        "avgAllowed": 13.69,
+        "games": 13,
+        "rank": 1,
+        "totalTeams": 30
+      },
+      "3B": {
+        "avgAllowed": 13.75,
+        "games": 4,
+        "rank": 2,
+        "totalTeams": 30
+      },
+      "1B": {
+        "avgAllowed": 9.28,
+        "games": 8,
+        "rank": 3,
+        "totalTeams": 30
+      },
+      "SS": {
+        "avgAllowed": 6.45,
+        "games": 5,
+        "rank": 21,
+        "totalTeams": 30
+      },
+      "2B": {
+        "avgAllowed": 7,
+        "games": 4,
+        "rank": 12,
+        "totalTeams": 29
+      }
+    },
+    "BAL": {
+      "1B": {
+        "avgAllowed": 5.61,
+        "games": 9,
+        "rank": 19,
+        "totalTeams": 30
+      },
+      "2B": {
+        "avgAllowed": 6.75,
+        "games": 4,
+        "rank": 13,
+        "totalTeams": 29
+      },
+      "OF": {
+        "avgAllowed": 7.64,
+        "games": 14,
+        "rank": 9,
+        "totalTeams": 30
+      },
+      "C": {
+        "avgAllowed": 0.75,
+        "games": 4,
+        "rank": 30,
+        "totalTeams": 30
+      },
+      "P": {
+        "avgAllowed": 7.3,
+        "games": 16,
+        "rank": 3,
+        "totalTeams": 30
+      },
+      "SS": {
+        "avgAllowed": 2.75,
+        "games": 4,
+        "rank": 26,
+        "totalTeams": 30
+      },
+      "3B": {
+        "avgAllowed": 2.75,
+        "games": 4,
+        "rank": 28,
+        "totalTeams": 30
+      }
+    },
+    "PIT": {
+      "P": {
+        "avgAllowed": 3.76,
+        "games": 16,
+        "rank": 24,
+        "totalTeams": 30
+      },
+      "1B": {
+        "avgAllowed": 3.38,
+        "games": 8,
+        "rank": 29,
+        "totalTeams": 30
+      },
+      "SS": {
+        "avgAllowed": 7.75,
+        "games": 4,
+        "rank": 12,
+        "totalTeams": 30
+      },
+      "OF": {
+        "avgAllowed": 5,
+        "games": 13,
+        "rank": 22,
+        "totalTeams": 30
+      },
+      "C": {
+        "avgAllowed": 5,
+        "games": 4,
+        "rank": 18,
+        "totalTeams": 30
+      },
+      "3B": {
+        "avgAllowed": 4,
+        "games": 4,
+        "rank": 18,
+        "totalTeams": 30
+      },
+      "2B": {
+        "avgAllowed": 6.5,
+        "games": 4,
+        "rank": 16,
+        "totalTeams": 29
+      }
+    },
+    "TOR": {
+      "1B": {
+        "avgAllowed": 8.48,
+        "games": 11,
+        "rank": 6,
+        "totalTeams": 30
+      },
+      "OF": {
+        "avgAllowed": 7.94,
+        "games": 13,
+        "rank": 8,
+        "totalTeams": 30
+      },
+      "P": {
+        "avgAllowed": 5.5,
+        "games": 18,
+        "rank": 12,
+        "totalTeams": 30
+      },
+      "2B": {
+        "avgAllowed": 6,
+        "games": 4,
+        "rank": 17,
+        "totalTeams": 29
+      },
+      "SS": {
+        "avgAllowed": 8,
+        "games": 5,
+        "rank": 11,
+        "totalTeams": 30
+      },
+      "C": {
+        "avgAllowed": 11.75,
+        "games": 4,
+        "rank": 1,
+        "totalTeams": 30
+      },
+      "3B": {
+        "avgAllowed": 10.25,
+        "games": 4,
+        "rank": 5,
+        "totalTeams": 30
+      }
+    },
+    "CWS": {
+      "P": {
+        "avgAllowed": 5.14,
+        "games": 18,
+        "rank": 16,
+        "totalTeams": 30
+      },
+      "2B": {
+        "avgAllowed": 4,
+        "games": 4,
+        "rank": 23,
+        "totalTeams": 29
+      },
+      "OF": {
+        "avgAllowed": 3.08,
+        "games": 16,
+        "rank": 29,
+        "totalTeams": 30
+      },
+      "SS": {
+        "avgAllowed": 8.25,
+        "games": 4,
+        "rank": 10,
+        "totalTeams": 30
+      },
+      "1B": {
+        "avgAllowed": 6.88,
+        "games": 8,
+        "rank": 11,
+        "totalTeams": 30
+      },
+      "C": {
+        "avgAllowed": 4.75,
+        "games": 4,
+        "rank": 20,
+        "totalTeams": 30
+      },
+      "3B": {
+        "avgAllowed": 3.5,
+        "games": 4,
+        "rank": 21,
+        "totalTeams": 30
+      }
+    },
+    "MIA": {
+      "P": {
+        "avgAllowed": 4.97,
+        "games": 19,
+        "rank": 18,
+        "totalTeams": 30
+      },
+      "SS": {
+        "avgAllowed": 6.75,
+        "games": 4,
+        "rank": 18,
+        "totalTeams": 30
+      },
+      "OF": {
+        "avgAllowed": 8.19,
+        "games": 12,
+        "rank": 6,
+        "totalTeams": 30
+      },
+      "3B": {
+        "avgAllowed": 3.45,
+        "games": 5,
+        "rank": 22,
+        "totalTeams": 30
+      },
+      "C": {
+        "avgAllowed": 4.6,
+        "games": 5,
+        "rank": 22,
+        "totalTeams": 30
+      },
+      "1B": {
+        "avgAllowed": 7.5,
+        "games": 10,
+        "rank": 8,
+        "totalTeams": 30
+      },
+      "2B": {
+        "avgAllowed": 8,
+        "games": 4,
+        "rank": 9,
+        "totalTeams": 29
+      }
+    },
+    "NYY": {
+      "OF": {
+        "avgAllowed": 5.82,
+        "games": 11,
+        "rank": 18,
+        "totalTeams": 30
+      },
+      "P": {
+        "avgAllowed": 3.04,
+        "games": 16,
+        "rank": 29,
+        "totalTeams": 30
+      },
+      "3B": {
+        "avgAllowed": 5.67,
+        "games": 3,
+        "rank": 15,
+        "totalTeams": 30
+      },
+      "2B": {
+        "avgAllowed": 16,
+        "games": 3,
+        "rank": 1,
+        "totalTeams": 29
+      },
+      "1B": {
+        "avgAllowed": 5.67,
+        "games": 9,
+        "rank": 17,
+        "totalTeams": 30
+      },
+      "C": {
+        "avgAllowed": 5.33,
+        "games": 3,
+        "rank": 16,
+        "totalTeams": 30
+      },
+      "SS": {
+        "avgAllowed": 9,
+        "games": 3,
+        "rank": 8,
+        "totalTeams": 30
+      }
+    },
+    "NYM": {
+      "1B": {
+        "avgAllowed": 3.83,
+        "games": 6,
+        "rank": 25,
+        "totalTeams": 30
+      },
+      "OF": {
+        "avgAllowed": 1.5,
+        "games": 10,
+        "rank": 30,
+        "totalTeams": 30
+      },
+      "P": {
+        "avgAllowed": 3.53,
+        "games": 15,
+        "rank": 26,
+        "totalTeams": 30
+      },
+      "C": {
+        "avgAllowed": 8,
+        "games": 3,
+        "rank": 5,
+        "totalTeams": 30
+      },
+      "3B": {
+        "avgAllowed": 9,
+        "games": 3,
+        "rank": 8,
+        "totalTeams": 30
+      },
+      "SS": {
+        "avgAllowed": 2,
+        "games": 3,
+        "rank": 30,
+        "totalTeams": 30
+      },
+      "2B": {
+        "avgAllowed": 3,
+        "games": 3,
+        "rank": 26,
+        "totalTeams": 29
+      }
+    },
+    "SF": {
+      "C": {
+        "avgAllowed": 6.2,
+        "games": 5,
+        "rank": 12,
+        "totalTeams": 30
+      },
+      "3B": {
+        "avgAllowed": 7.25,
+        "games": 4,
+        "rank": 11,
+        "totalTeams": 30
+      },
+      "OF": {
+        "avgAllowed": 8.09,
+        "games": 14,
+        "rank": 7,
+        "totalTeams": 30
+      },
+      "1B": {
+        "avgAllowed": 9.25,
+        "games": 8,
+        "rank": 4,
+        "totalTeams": 30
+      },
+      "P": {
+        "avgAllowed": 5.67,
+        "games": 16,
+        "rank": 10,
+        "totalTeams": 30
+      },
+      "2B": {
+        "avgAllowed": 4.75,
+        "games": 4,
+        "rank": 20,
+        "totalTeams": 29
+      },
+      "SS": {
+        "avgAllowed": 2.5,
+        "games": 4,
+        "rank": 28,
+        "totalTeams": 30
+      }
+    },
+    "CIN": {
+      "OF": {
+        "avgAllowed": 6.07,
+        "games": 15,
+        "rank": 16,
+        "totalTeams": 30
+      },
+      "P": {
+        "avgAllowed": 5.77,
+        "games": 17,
+        "rank": 8,
+        "totalTeams": 30
+      },
+      "1B": {
+        "avgAllowed": 3.67,
+        "games": 9,
+        "rank": 28,
+        "totalTeams": 30
+      },
+      "SS": {
+        "avgAllowed": 3.5,
+        "games": 4,
+        "rank": 25,
+        "totalTeams": 30
+      },
+      "3B": {
+        "avgAllowed": 1,
+        "games": 5,
+        "rank": 29,
+        "totalTeams": 30
+      },
+      "2B": {
+        "avgAllowed": 0.8,
+        "games": 5,
+        "rank": 29,
+        "totalTeams": 29
+      },
+      "C": {
+        "avgAllowed": 5.5,
+        "games": 4,
+        "rank": 14,
+        "totalTeams": 30
+      }
+    },
+    "TEX": {
+      "SS": {
+        "avgAllowed": 6.75,
+        "games": 4,
+        "rank": 19,
+        "totalTeams": 30
+      },
+      "1B": {
+        "avgAllowed": 2.78,
+        "games": 9,
+        "rank": 30,
+        "totalTeams": 30
+      },
+      "OF": {
+        "avgAllowed": 3.67,
+        "games": 15,
+        "rank": 27,
+        "totalTeams": 30
+      },
+      "P": {
+        "avgAllowed": 8.52,
+        "games": 13,
+        "rank": 1,
+        "totalTeams": 30
+      },
+      "2B": {
+        "avgAllowed": 5.5,
+        "games": 4,
+        "rank": 18,
+        "totalTeams": 29
+      },
+      "C": {
+        "avgAllowed": 5.25,
+        "games": 4,
+        "rank": 17,
+        "totalTeams": 30
+      },
+      "3B": {
+        "avgAllowed": 5.5,
+        "games": 4,
+        "rank": 16,
+        "totalTeams": 30
+      }
+    },
+    "SEA": {
+      "3B": {
+        "avgAllowed": 3.2,
+        "games": 5,
+        "rank": 25,
+        "totalTeams": 30
+      },
+      "SS": {
+        "avgAllowed": 11.25,
+        "games": 4,
+        "rank": 5,
+        "totalTeams": 30
+      },
+      "1B": {
+        "avgAllowed": 5.66,
+        "games": 8,
+        "rank": 18,
+        "totalTeams": 30
+      },
+      "P": {
+        "avgAllowed": 6.25,
+        "games": 20,
+        "rank": 4,
+        "totalTeams": 30
+      },
+      "OF": {
+        "avgAllowed": 5.15,
+        "games": 13,
+        "rank": 21,
+        "totalTeams": 30
+      },
+      "C": {
+        "avgAllowed": 8.06,
+        "games": 4,
+        "rank": 3,
+        "totalTeams": 30
+      }
+    },
+    "LAA": {
+      "1B": {
+        "avgAllowed": 3.75,
+        "games": 8,
+        "rank": 26,
+        "totalTeams": 30
+      },
+      "2B": {
+        "avgAllowed": 10,
+        "games": 4,
+        "rank": 5,
+        "totalTeams": 29
+      },
+      "OF": {
+        "avgAllowed": 5.25,
+        "games": 13,
+        "rank": 20,
+        "totalTeams": 30
+      },
+      "SS": {
+        "avgAllowed": 7,
+        "games": 5,
+        "rank": 16,
+        "totalTeams": 30
+      },
+      "C": {
+        "avgAllowed": 6.6,
+        "games": 5,
+        "rank": 11,
+        "totalTeams": 30
+      },
+      "3B": {
+        "avgAllowed": 6.25,
+        "games": 4,
+        "rank": 12,
+        "totalTeams": 30
+      },
+      "P": {
+        "avgAllowed": 5.75,
+        "games": 19,
+        "rank": 9,
+        "totalTeams": 30
+      }
+    },
+    "CHC": {
+      "P": {
+        "avgAllowed": 5.27,
+        "games": 22,
+        "rank": 15,
+        "totalTeams": 30
+      },
+      "1B": {
+        "avgAllowed": 7.35,
+        "games": 10,
+        "rank": 10,
+        "totalTeams": 30
+      },
+      "C": {
+        "avgAllowed": 5.4,
+        "games": 5,
+        "rank": 15,
+        "totalTeams": 30
+      },
+      "2B": {
+        "avgAllowed": 3,
+        "games": 5,
+        "rank": 27,
+        "totalTeams": 29
+      },
+      "SS": {
+        "avgAllowed": 5.4,
+        "games": 5,
+        "rank": 22,
+        "totalTeams": 30
+      },
+      "OF": {
+        "avgAllowed": 7.22,
+        "games": 18,
+        "rank": 12,
+        "totalTeams": 30
+      },
+      "3B": {
+        "avgAllowed": 3.2,
+        "games": 5,
+        "rank": 26,
+        "totalTeams": 30
+      }
+    },
+    "CLE": {
+      "OF": {
+        "avgAllowed": 4.29,
+        "games": 14,
+        "rank": 25,
+        "totalTeams": 30
+      },
+      "1B": {
+        "avgAllowed": 6.55,
+        "games": 11,
+        "rank": 12,
+        "totalTeams": 30
+      },
+      "P": {
+        "avgAllowed": 4.36,
+        "games": 19,
+        "rank": 21,
+        "totalTeams": 30
+      },
+      "3B": {
+        "avgAllowed": 2.8,
+        "games": 5,
+        "rank": 27,
+        "totalTeams": 30
+      },
+      "C": {
+        "avgAllowed": 7.4,
+        "games": 5,
+        "rank": 7,
+        "totalTeams": 30
+      },
+      "SS": {
+        "avgAllowed": 11.4,
+        "games": 5,
+        "rank": 4,
+        "totalTeams": 30
+      },
+      "2B": {
+        "avgAllowed": 9.8,
+        "games": 5,
+        "rank": 6,
+        "totalTeams": 29
+      }
+    },
+    "ATL": {
+      "P": {
+        "avgAllowed": 5.97,
+        "games": 17,
+        "rank": 5,
+        "totalTeams": 30
+      },
+      "1B": {
+        "avgAllowed": 6,
+        "games": 10,
+        "rank": 14,
+        "totalTeams": 30
+      },
+      "3B": {
+        "avgAllowed": 4,
+        "games": 4,
+        "rank": 19,
+        "totalTeams": 30
+      },
+      "2B": {
+        "avgAllowed": 3.2,
+        "games": 5,
+        "rank": 25,
+        "totalTeams": 29
+      },
+      "SS": {
+        "avgAllowed": 5.06,
+        "games": 4,
+        "rank": 23,
+        "totalTeams": 30
+      },
+      "C": {
+        "avgAllowed": 3.2,
+        "games": 5,
+        "rank": 25,
+        "totalTeams": 30
+      },
+      "OF": {
+        "avgAllowed": 7.25,
+        "games": 12,
+        "rank": 11,
+        "totalTeams": 30
+      }
+    },
+    "ARI": {
+      "OF": {
+        "avgAllowed": 3.42,
+        "games": 10,
+        "rank": 28,
+        "totalTeams": 30
+      },
+      "SS": {
+        "avgAllowed": 12,
+        "games": 3,
+        "rank": 2,
+        "totalTeams": 30
+      },
+      "C": {
+        "avgAllowed": 11.67,
+        "games": 3,
+        "rank": 2,
+        "totalTeams": 30
+      },
+      "1B": {
+        "avgAllowed": 4.67,
+        "games": 6,
+        "rank": 23,
+        "totalTeams": 30
+      },
+      "P": {
+        "avgAllowed": 5.84,
+        "games": 13,
+        "rank": 7,
+        "totalTeams": 30
+      },
+      "2B": {
+        "avgAllowed": 1,
+        "games": 3,
+        "rank": 28,
+        "totalTeams": 29
+      },
+      "3B": {
+        "avgAllowed": 1,
+        "games": 3,
+        "rank": 30,
+        "totalTeams": 30
+      }
+    },
+    "PHI": {
+      "P": {
+        "avgAllowed": 5.92,
+        "games": 18,
+        "rank": 6,
+        "totalTeams": 30
+      },
+      "1B": {
+        "avgAllowed": 5.71,
+        "games": 7,
+        "rank": 15,
+        "totalTeams": 30
+      },
+      "2B": {
+        "avgAllowed": 4.65,
+        "games": 5,
+        "rank": 21,
+        "totalTeams": 29
+      },
+      "OF": {
+        "avgAllowed": 4.35,
+        "games": 15,
+        "rank": 24,
+        "totalTeams": 30
+      },
+      "C": {
+        "avgAllowed": 7.8,
+        "games": 5,
+        "rank": 6,
+        "totalTeams": 30
+      },
+      "SS": {
+        "avgAllowed": 7.75,
+        "games": 4,
+        "rank": 13,
+        "totalTeams": 30
+      },
+      "3B": {
+        "avgAllowed": 8.75,
+        "games": 4,
+        "rank": 9,
+        "totalTeams": 30
+      }
+    },
+    "COL": {
+      "OF": {
+        "avgAllowed": 5.94,
+        "games": 13,
+        "rank": 17,
+        "totalTeams": 30
+      },
+      "P": {
+        "avgAllowed": 5.32,
+        "games": 15,
+        "rank": 14,
+        "totalTeams": 30
+      },
+      "1B": {
+        "avgAllowed": 4.88,
+        "games": 8,
+        "rank": 21,
+        "totalTeams": 30
+      },
+      "C": {
+        "avgAllowed": 1.75,
+        "games": 4,
+        "rank": 28,
+        "totalTeams": 30
+      },
+      "3B": {
+        "avgAllowed": 5,
+        "games": 4,
+        "rank": 17,
+        "totalTeams": 30
+      },
+      "2B": {
+        "avgAllowed": 7.25,
+        "games": 4,
+        "rank": 11,
+        "totalTeams": 29
+      },
+      "SS": {
+        "avgAllowed": 7.75,
+        "games": 4,
+        "rank": 14,
+        "totalTeams": 30
+      }
+    },
+    "TB": {
+      "P": {
+        "avgAllowed": 3.13,
+        "games": 18,
+        "rank": 28,
+        "totalTeams": 30
+      },
+      "C": {
+        "avgAllowed": 1.25,
+        "games": 4,
+        "rank": 29,
+        "totalTeams": 30
+      },
+      "SS": {
+        "avgAllowed": 7,
+        "games": 4,
+        "rank": 17,
+        "totalTeams": 30
+      },
+      "OF": {
+        "avgAllowed": 8.75,
+        "games": 12,
+        "rank": 5,
+        "totalTeams": 30
+      },
+      "1B": {
+        "avgAllowed": 3.75,
+        "games": 10,
+        "rank": 27,
+        "totalTeams": 30
+      },
+      "3B": {
+        "avgAllowed": 3.75,
+        "games": 4,
+        "rank": 20,
+        "totalTeams": 30
+      },
+      "2B": {
+        "avgAllowed": 6.75,
+        "games": 4,
+        "rank": 14,
+        "totalTeams": 29
+      }
+    },
+    "MIN": {
+      "P": {
+        "avgAllowed": 8.12,
+        "games": 13,
+        "rank": 2,
+        "totalTeams": 30
+      },
+      "2B": {
+        "avgAllowed": 13.25,
+        "games": 4,
+        "rank": 2,
+        "totalTeams": 29
+      },
+      "OF": {
+        "avgAllowed": 4.5,
+        "games": 14,
+        "rank": 23,
+        "totalTeams": 30
+      },
+      "C": {
+        "avgAllowed": 3,
+        "games": 5,
+        "rank": 26,
+        "totalTeams": 30
+      },
+      "1B": {
+        "avgAllowed": 5.56,
+        "games": 9,
+        "rank": 20,
+        "totalTeams": 30
+      },
+      "SS": {
+        "avgAllowed": 11.25,
+        "games": 4,
+        "rank": 6,
+        "totalTeams": 30
+      },
+      "3B": {
+        "avgAllowed": 10.5,
+        "games": 4,
+        "rank": 4,
+        "totalTeams": 30
+      }
+    }
+  },
+  "fetchedAt": "2026-04-18T18:47:27.161Z",
+  "cacheKey": "2026-04-04_2026-04-18"
+}

@@ -28,9 +28,12 @@ const STATE = {
   optimalExposure: {}, optimalStacks: {},
 
   // Portfolio
-  portfolioLineups: [], portfolioExposure: {},
+  portfolioLineups: [], portfolioExposure: {}, lastPortfolioResult: null,
   playerExposureOverrides: {},
   teamExposureOverrides: {},
+
+  // Slate type
+  slateType: 'classic', // 'classic' | 'showdown'
 
   // Backtesting
   historyData: [],
@@ -44,16 +47,96 @@ const STATE = {
   bullpenData: {},
   framingRawData: {}, framingMap: {},
   sprintSpeedData: {},
+
+  // Source-aware multiplier flags — when projection CSV already prices in park/Vegas,
+  // we suppress those multipliers in scoring to avoid double-counting (the ⚠ adj badge
+  // tracks the residual deviation only). Defaults assume ROO (which prices both in).
+  sourceIncludesPark: true,
+  sourceIncludesVegas: true,
 };
+
+// ── DOM element cache — populated once at init, used in all hot-path functions ──
+// Avoids repeated getElementById traversals (5+ per keystroke in filterPlayers).
+const _EL = {};
+function cacheDOM() {
+  const ids = [
+    'team-sel', 'game-sel', 'search-inp', 'filter-confirmed', 'filter-hide-injured',
+    'player-tbody', 'player-count', 'player-more', 'median-total', 'own-avg',
+    'sal-bar', 'sal-rem'
+  ];
+  ids.forEach(id => { _EL[id] = document.getElementById(id); });
+}
+
+// ── Debug logging ─────────────────────────────────────────────────────────────
+// Persists via localStorage so the user can toggle via window.toggleDebug() and
+// keep verbose output across reloads. The engine has its own _debug flag that we
+// sync via Engine.setDebug() so the engine's portfolio diagnostics also gate
+// correctly. Warnings/errors are NOT gated — only the chatty info-level logs.
+let _debug = (() => {
+  try { return localStorage.getItem('mlbdfs_debug') === '1'; } catch (e) { return false; }
+})();
+function dlog(...args) { if (_debug) console.log(...args); }
+function dgroup(label, fn) {
+  if (!_debug) return fn();
+  console.group(label);
+  try { fn(); } finally { console.groupEnd(); }
+}
+window.toggleDebug = function () {
+  _debug = !_debug;
+  try { localStorage.setItem('mlbdfs_debug', _debug ? '1' : '0'); } catch (e) {}
+  if (window.Engine?.setDebug) Engine.setDebug(_debug);
+  console.log('[mlbdfs] debug mode', _debug ? 'ON' : 'OFF');
+  return _debug;
+};
+// Sync engine debug state on load (engine module loaded before app.js runs this)
+if (window.Engine?.setDebug) Engine.setDebug(_debug);
 
 // ── Constants (from Engine) ────────────────────────────────────────────────────
 const SALARY_CAP = 50000, CAP = SALARY_CAP, ROSTER_SIZE = 10;
 const DK_SLOTS = Engine.DK_SLOTS;
+const SHOWDOWN_SALARY_CAP = Engine.SHOWDOWN_SALARY_CAP;
+const SHOWDOWN_ROSTER_SIZE = Engine.SHOWDOWN_ROSTER_SIZE;
 const DISPLAY_LIMIT = 80, MIN_SALARY_PER_SLOT = 3000, OPTIMIZER_ITERATIONS = 5000;
+
+// Returns the active slot definitions based on current slate type
+function activeSlots() { return STATE.slateType === 'showdown' ? Engine.SHOWDOWN_SLOTS : DK_SLOTS; }
+function activeRosterSize() { return STATE.slateType === 'showdown' ? SHOWDOWN_ROSTER_SIZE : ROSTER_SIZE; }
+function activeSalaryCap() { return STATE.slateType === 'showdown' ? SHOWDOWN_SALARY_CAP : SALARY_CAP; }
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
 const n = v => parseFloat(v) || 0;
 function rp(p, slot) { return Engine.rp(p, slot); }
+
+// Normalize team abbreviations from various sources (Baseball Reference, FanGraphs,
+// ESPN, MLB Stats API) to the DraftKings short codes that the pool uses. Without this,
+// stacks/scoring data using CHW/SFG/KCR/WAS appear as off-slate teams because they
+// don't match the DK pool's CWS/SF/KC/WSH abbreviations.
+//
+// Only includes the codes that ACTUALLY differ across common feeds — most teams
+// use the same abbreviation everywhere (NYY, NYM, BOS, ATL, LAD, etc.).
+const _TEAM_ALIASES = {
+  // Baseball Reference / FanGraphs style → DK
+  WAS: 'WSH', WSN: 'WSH',         // Washington Nationals
+  CHW: 'CWS', CHA: 'CWS',         // Chicago White Sox
+  SFG: 'SF',                       // San Francisco Giants
+  KCR: 'KC',                       // Kansas City Royals
+  TBR: 'TB',                       // Tampa Bay Rays
+  SDP: 'SD',                       // San Diego Padres
+  // MLB Stats API quirks
+  AZ: 'ARI',                       // Arizona Diamondbacks
+  // Athletics rebrand: DK now uses ATH (Sacramento Athletics, 2025+). Old
+  // projection/stack CSVs using OAK get translated FORWARD to the current DK code.
+  // (Previous version of this map went the wrong direction, ATH→OAK, which caused
+  // stacks to appear off-slate against an ATH-coded DK pool.)
+  OAK: 'ATH',
+  // Retrosheet historical codes (uncommon but harmless to map)
+  CHN: 'CHC', NYA: 'NYY', NYN: 'NYM', LAN: 'LAD', ANA: 'LAA',
+};
+function normalizeTeamAbbr(t) {
+  if (!t) return '';
+  const up = String(t).trim().toUpperCase();
+  return _TEAM_ALIASES[up] || up;
+}
 function posMatchFilter(p, f) { if (f === 'ALL') return true; if (f === 'SP') return rp(p, 'P'); return rp(p, f); }
 function toRosterPos(dkPos) {
   return dkPos.split('/').map(x => { const t = x.trim(); return (t === 'SP' || t === 'RP') ? 'P' : t; }).join('/');
@@ -108,13 +191,32 @@ function getEngineContext() {
   // Detected by checking if any player in the pool has been marked confirmed.
   // Without this flag, unconfirmedMultiplier is a no-op so pre-fetch runs are unaffected.
   const hasConfirmedData = STATE.POOL.some(p => p.isConfirmed === true);
-  return { vegasData: STATE.vegasData, parkFactors: STATE.parkFactors, weatherData: STATE.weatherData, stadiums: STATE.stadiumData, teamScoring: STATE.TEAM_SCORING, contestSize: STATE.contestSize, pool, optimalExposure: STATE.optimalExposure, optimalStacks: STATE.optimalStacks, umpireData: STATE.umpireData, blendWeights: STATE.blendWeights, bullpenData: STATE.bullpenData, framingMap: STATE.framingMap, sprintSpeedData: STATE.sprintSpeedData, dvpData: STATE.dvpData, hasConfirmedData };
+
+  // Sync vegasData to engine so getCorrelation can apply game-O/U-aware scaling.
+  // Called here (rather than tracking every vegasData write) since this runs before
+  // every scoring/sim/optimizer call — guarantees correlation math sees current state.
+  if (Engine.setVegasContext) Engine.setVegasContext(STATE.vegasData);
+  return { vegasData: STATE.vegasData, parkFactors: STATE.parkFactors, weatherData: STATE.weatherData, stadiums: STATE.stadiumData, teamScoring: STATE.TEAM_SCORING, contestSize: STATE.contestSize, pool, optimalExposure: STATE.optimalExposure, optimalStacks: STATE.optimalStacks, umpireData: STATE.umpireData, blendWeights: STATE.blendWeights, bullpenData: STATE.bullpenData, framingMap: STATE.framingMap, sprintSpeedData: STATE.sprintSpeedData, dvpData: STATE.dvpData, hasConfirmedData,
+    sourceIncludesPark: STATE.sourceIncludesPark, sourceIncludesVegas: STATE.sourceIncludesVegas };
 }
 
 // Returns calibrated pool for optimizer calls — scoring functions score individual
 // players from this pool, so calibration must be applied at the pool level
 function getCalibratedPool() {
-  return Engine.calibratePool(STATE.POOL);
+  // Teams that have a confirmed batting order posted — non-starters from these teams are excluded.
+  const confirmedTeams = new Set();
+  Object.values(STATE.confirmedLineups).forEach(g => {
+    if (g.homeOrder?.length > 0) confirmedTeams.add(g.homeTeam);
+    if (g.awayOrder?.length > 0) confirmedTeams.add(g.awayTeam);
+  });
+
+  return Engine.calibratePool(STATE.POOL.filter(p => {
+    if (p.dkStatus === 'O') return false;           // DK salary file marks player as Out
+    if (p.injuryType === 'IL') return false;         // injury API confirmed IL
+    // Batter whose team has posted its lineup but they're not in it — sitting out today
+    if (!rp(p, 'P') && confirmedTeams.has(p.team) && !p.isConfirmed) return false;
+    return true;
+  }));
 }
 
 // ── Tab Navigation ────────────────────────────────────────────────────────────
@@ -124,12 +226,14 @@ function showTab(t) {
   const panel = document.getElementById('panel-' + t);
   if (panel) panel.classList.add('active');
   const tabs = document.querySelectorAll('.tab');
-  const map = { upload: 0, players: 1, stacks: 2, vegas: 3, lineup: 4, portfolio: 5, simulator: 6, backtest: 7 };
+  const map = { upload: 0, players: 1, stacks: 2, vegas: 3, lineup: 4, portfolio: 5, simulator: 6, backtest: 7, slate: 8, plays: 9 };
   if (map[t] !== undefined && tabs[map[t]]) tabs[map[t]].classList.add('active');
 
   // Load data for specific tabs
   if (t === 'vegas') loadVegasWeatherData();
   if (t === 'backtest') loadHistory();
+  if (t === 'slate') renderSlateSummary();
+  if (t === 'plays') renderBestPlays();
   if (t === 'portfolio') renderPortfolioTeamSelectors();
   if (t === 'players' && STATE.POOL.length && !Object.keys(STATE.confirmedLineups).length) {
     // Auto-fetch confirmed lineups once per session when switching to Players tab
@@ -158,8 +262,8 @@ function detectFileType(fields) {
   const hasSalary = h.includes('salary');
   if (hasBatterCols && hasSalary) return 'stacks';
   const hasFloor = h.some(x => x.includes('floor'));
-  const hasMedian = h.some(x => x.includes('median'));
-  const hasCeiling = h.some(x => x.includes('ceiling'));
+  const hasMedian = h.some(x => x.includes('median') || x === 'proj' || x === 'projection' || x === 'fpts' || x === 'score');
+  const hasCeiling = h.some(x => x.includes('ceiling') || x.includes('upside') || x === 'max');
   const hasPosition = h.includes('position');
   if (hasFloor && hasMedian && hasCeiling && hasPosition) return 'roo';
   if (hasFloor && hasMedian && hasCeiling) return 'roo';
@@ -167,7 +271,7 @@ function detectFileType(fields) {
   const hasStdDev = h.some(x => x === 'std_dev');
   if (hasProjVal && hasStdDev && hasPosition) return 'roo';
 
-  // Optimal lineups file: SP1/SP2/C/1B/2B/3B/SS/OF1/OF2/OF3 + Salary + Proj + Stack
+  // Optimal lineups file — classic: SP1/SP2/C/1B/2B/3B/SS/OF1/OF2/OF3 + Salary + Proj + Stack
   const hasSP1 = h.some(x => x === 'sp1');
   const hasSP2 = h.some(x => x === 'sp2');
   const hasC = h.includes('c');
@@ -175,6 +279,11 @@ function detectFileType(fields) {
   const hasStack = h.includes('stack');
   const hasProj = h.some(x => x === 'proj' || x === 'projected' || x === 'projection');
   if (hasSP1 && hasSP2 && hasC && hasOF1 && (hasStack || hasProj)) return 'optimal';
+
+  // Optimal lineups file — showdown: CPT + FLEX1/FLEX2/.../FLEX5 or repeated FLEX columns
+  const hasCpt = h.some(x => x === 'cpt');
+  const flexCount = h.filter(x => x === 'flex' || /^flex[1-9]$/.test(x)).length;
+  if (hasCpt && flexCount >= 4) return 'optimal_showdown';
 
   return 'unknown';
 }
@@ -199,12 +308,27 @@ function parseFile(file) {
       else if (type === 'stacks') loadStackFile(res.data, file.name);
       else if (type === 'team_scoring') loadTeamScoring(res.data, file.name);
       else if (type === 'optimal') loadOptimalLineups(res.data, file.name);
+      else if (type === 'optimal_showdown') loadShowdownOptimalLineups(res.data, file.name);
       else showUploadWarn('unknown', file.name, res.meta.fields || []);
-    }, error(err) { console.error('Parse error:', err); }
+    }, error(err) {
+      console.error('Parse error:', err);
+      // Surface the failure visibly — previously this was a console-only error
+      // and the user had no feedback that the upload silently dropped.
+      showToast(`Failed to parse "${file.name}": ${err.message || err}. Check that the file is a valid CSV.`, 'warn', 7000);
+    }
   });
 }
 
 function loadDK(data, fname) {
+  // Detect showdown slate: Roster Position values are 'CPT' / 'FLEX'
+  const isShowdown = data.some(r => {
+    const rp = (r['Roster Position'] || '').trim().toUpperCase();
+    return rp === 'CPT' || rp === 'FLEX';
+  });
+  if (isShowdown) { loadShowdownDK(data, fname); return; }
+
+  STATE.slateType = 'classic';
+  STATE.lineup = new Array(ROSTER_SIZE).fill(null);
   STATE.DK_PLAYERS = data.map(r => {
     const dkPos = (r.Position || '').trim();
     const rosterPos = toRosterPos(dkPos);
@@ -216,12 +340,76 @@ function loadDK(data, fname) {
     const gm = gameInfo.match(/^([A-Z]+)@([A-Z]+)\s*(.*)/);
     const away = gm ? gm[1] : '', home = gm ? gm[2] : '';
     const opp = team === away ? home : team === home ? away : '';
-    return { name, dkId: id, nameId, dkPos, rosterPos, team, opp, salary: n(r.Salary || 0), game: gm ? away + '@' + home : '', gameTime: gm ? gm[3] : '', avgPpg: n(r.AvgPointsPerGame || 0), floor: 0, median: 0, ceiling: 0, top: 0, own: 0, lev: 0, order: 0, hand: '', gpp: 0, hasDk: true, hasRoo: false };
+    const dkStatus = (r['Injury Indicator'] || '').trim().toUpperCase(); // 'O'=Out, 'D'=Doubtful, 'Q'=Questionable
+    return { name, dkId: id, nameId, dkPos, rosterPos, team, opp, salary: n(r.Salary || 0), game: gm ? away + '@' + home : '', gameTime: gm ? gm[3] : '', avgPpg: n(r.AvgPointsPerGame || 0), floor: 0, median: 0, ceiling: 0, top: 0, own: 0, lev: 0, order: 0, hand: '', gpp: 0, hasDk: true, hasRoo: false, dkStatus };
   }).filter(p => p.name && p.salary > 0);
   setFileStatus('dk', fname, STATE.DK_PLAYERS.length + ' players');
   document.getElementById('dk-export-btn').style.display = 'inline-block';
   STATE.MODE = 'dk';
+  updateShowdownIndicator();
   mergePools();
+}
+
+function loadShowdownDK(data, fname) {
+  STATE.slateType = 'showdown';
+  STATE.lineup = new Array(SHOWDOWN_ROSTER_SIZE).fill(null);
+  let parsed = data.map(r => {
+    const rosterPos = (r['Roster Position'] || '').trim().toUpperCase(); // 'CPT' or 'FLEX'
+    const name = (r.Name || '').trim();
+    const id = (r.ID || '').trim();
+    const nameId = (r['Name + ID'] || r['Name+ID'] || name + (id ? ' (' + id + ')' : '')).trim();
+    const team = (r.TeamAbbrev || r.teamabbrev || '').trim();
+    const gameInfo = (r['Game Info'] || '').trim();
+    const gm = gameInfo.match(/^([A-Z]+)@([A-Z]+)\s*(.*)/);
+    const away = gm ? gm[1] : '', home = gm ? gm[2] : '';
+    const opp = team === away ? home : team === home ? away : '';
+    const dkStatus = (r['Injury Indicator'] || '').trim().toUpperCase();
+    return {
+      name, dkId: id, nameId,
+      dkPos: rosterPos, rosterPos,
+      team, opp, salary: n(r.Salary || 0),
+      game: gm ? away + '@' + home : '', gameTime: gm ? gm[3] : '',
+      avgPpg: n(r.AvgPointsPerGame || 0),
+      floor: 0, median: 0, ceiling: 0, top: 0, own: 0, lev: 0, order: 0, hand: '', gpp: 0,
+      hasDk: true, hasRoo: false,
+      isCpt: rosterPos === 'CPT',
+      isFlex: rosterPos === 'FLEX',
+      dkStatus,
+    };
+  }).filter(p => p.name && p.salary > 0);
+
+  // Some DK showdown CSVs only export CPT-slot entries (Roster Position = 'CPT' for all rows).
+  // In that case synthesize FLEX entries: same player/nameId, salary = round(CPT / 1.5).
+  const hasFlex = parsed.some(p => p.isFlex);
+  if (!hasFlex && parsed.length > 0) {
+    console.log('[Showdown DK] No FLEX rows found — synthesizing FLEX from', parsed.length, 'CPT entries.');
+    const flexEntries = parsed.map(p => ({
+      ...p,
+      dkPos: 'FLEX', rosterPos: 'FLEX',
+      salary: Math.round(p.salary / 1.5),
+      isCpt: false,
+      isFlex: true,
+    }));
+    parsed = parsed.concat(flexEntries);
+  }
+
+  STATE.DK_PLAYERS = parsed;
+  setFileStatus('dk', fname, STATE.DK_PLAYERS.length + ' players (Showdown)');
+  document.getElementById('dk-export-btn').style.display = 'inline-block';
+  STATE.MODE = 'dk';
+  updateShowdownIndicator();
+  mergePools();
+}
+
+function updateShowdownIndicator() {
+  const el = document.getElementById('showdown-badge');
+  if (!el) return;
+  if (STATE.slateType === 'showdown') {
+    el.style.display = 'inline-flex';
+    el.textContent = 'SHOWDOWN';
+  } else {
+    el.style.display = 'none';
+  }
 }
 
 function nextRooSlot() {
@@ -231,33 +419,92 @@ function nextRooSlot() {
 
 function loadROO(data, fname, idx) {
   if (idx == null) idx = nextRooSlot();
-  const parsed = data.map(r => {
-    const pos = (r.Position || r.position || r.Pos || r.pos || '').trim();
-    const own = n(r['Own%'] || r['own%'] || r.Own || r.own || r['Ownership %'] || r.Ownership || r.ownership || 0);
-    const projVal = n(r['Projected FP'] || r['Projected Value'] || r.projected_value || 0);
-    const stdDev = n(r['Std Dev'] || r.std_dev || 0);
-    const median = n(r.Median || r.median || 0) || projVal;
-    const floor = n(r.Floor || r.floor || 0) || (projVal > 0 ? Math.max(0, projVal - stdDev) : 0);
-    const ceil = n(r.Ceiling || r.ceiling || 0) || (projVal > 0 ? projVal + 2 * stdDev : 0);
+  const parsed = data.map(rawRow => {
+    // Normalize keys: trim whitespace + lowercase so column access is case-insensitive.
+    // "MEDIAN", "Median", " median " all resolve to rc['median']. Preserves original
+    // row on `r` for any lookup that needs exact casing (none currently).
+    const rc = {};
+    Object.entries(rawRow).forEach(([k, v]) => { rc[k.trim().toLowerCase()] = v; });
+
+    const pos = (rc.position || rc.pos || '').trim();
+    const own = n(rc['own%'] || rc['ownership %'] || rc.ownership || rc.own || 0);
+    const projVal = n(rc['projected fp'] || rc['projected value'] || rc.projected_value || 0);
+    const stdDev = n(rc['std dev'] || rc.std_dev || 0);
+    // Accept "Median", "MEDIAN", "Proj", "Projection", "fpts", "score", or Projected FP/Value
+    const median = n(rc.median || rc.proj || rc.projection || rc.fpts || rc.score || 0) || projVal;
+    const floor = n(rc.floor || rc['floor pts'] || rc['floor points'] || rc.floor_pts || 0) || (projVal > 0 ? Math.max(0, projVal - stdDev) : 0);
+    const ceil = n(rc.ceiling || rc['ceiling pts'] || rc['ceiling points'] || rc.ceiling_pts || rc.upside || rc.max || 0) || (projVal > 0 ? projVal + 2 * stdDev : 0);
     return {
-      name: (r.Player || r.player || r.Name || r.name || '').trim(),
+      name: (rc.player || rc.name || '').trim(),
       dkPos: pos, rosterPos: toRosterPos(pos),
-      team: (r.Team || r.team || '').trim(), opp: (r.Opp || r.opp || r.Opponent || r.opponent || '').trim(),
-      hand: (r.Hand || r.hand || '').trim(), order: n(r.Order || r.order || r['Bat Pos.'] || r['bat_pos.'] || 0),
-      salary: n(r.Salary || r.salary || r.DK_Salary || 0),
+      // Normalize to DK abbreviations — many projection sources use WAS/CHW/SFG/KCR
+      // which would mismatch against the DK pool (WSH/CWS/SF/KC) without remapping.
+      team: normalizeTeamAbbr(rc.team || ''),
+      opp: normalizeTeamAbbr(rc.opp || rc.opponent || ''),
+      hand: (rc.hand || '').trim(), order: n(rc.order || rc['bat pos.'] || rc.bat_pos || 0),
+      salary: n(rc.salary || rc.dk_salary || 0),
       floor, median, ceiling: ceil,
-      top: n(r['Top_finish'] || r.top_finish || 0),
-      own, gpp: n(r['GPP%'] || r['gpp%'] || 0),
+      top: n(rc['top_finish'] || rc.top_finish || 0),
+      own, gpp: n(rc['gpp%'] || 0),
       lev: own > 0 ? (ceil / own * 10 - 10) : 0,
       dkId: '', nameId: '', avgPpg: 0, game: '', gameTime: '',
       hasDk: false, hasRoo: true
     };
   }).filter(p => p.name && (p.salary > 0 || p.median > 0));
+
+  // ── Floor integrity check ─────────────────────────────────────────────────
+  // Some ROO exports output Floor = Median × 0.10 exactly (a derived ratio, not a
+  // real projection). This makes cash variance calculations wrong and silences the
+  // floor-safety signal. Detect the pattern and reconstruct realistic floors.
+  const playersWithMedian = parsed.filter(p => p.median > 1);
+  const brokenCount = playersWithMedian.filter(p =>
+    p.floor > 0 && Math.abs(p.floor / p.median - 0.10) < 0.001
+  ).length;
+  const brokenRate = playersWithMedian.length > 0 ? brokenCount / playersWithMedian.length : 0;
+
+  if (brokenRate > 0.80) {
+    // Reconstruct floor using order-aware minimums that match the sim engine's floor policy.
+    // Pitchers: 15% (early exit / 1st-inning bust); batters: 18–28% by batting order.
+    parsed.forEach(p => {
+      if (p.median <= 0) return;
+      const pos = (p.rosterPos || p.dkPos || '').toUpperCase();
+      const isSP = pos.includes('SP') || (pos.includes('P') && !pos.includes('RP') && !pos.includes('C'));
+      const order = p.order || 0;
+      let mult;
+      if (isSP) {
+        mult = 0.15;
+      } else if (order >= 1 && order <= 4) {
+        mult = 0.28;
+      } else if (order >= 5 && order <= 7) {
+        mult = 0.22;
+      } else if (order >= 8) {
+        mult = 0.18;
+      } else {
+        mult = 0.22;
+      }
+      p.floor = parseFloat((p.median * mult).toFixed(2));
+    });
+    showToast(
+      `Floor values in ${fname} appear to be Median÷10 (detected in ${Math.round(brokenRate * 100)}% of players). ` +
+      `Floors have been reconstructed using order-aware minimums.`,
+      'warn', 7000
+    );
+  }
+
   STATE.ROO_SOURCES[idx] = { data: parsed, fname };
   setFileStatus('roo' + (idx + 1), fname, parsed.length + ' players');
   autoBalanceWeights();
   blendROO();
   if (!STATE.DK_PLAYERS.length) STATE.MODE = 'roo';
+  // Auto-detect classic slate from ROO positions: if any player has a standard
+  // baseball position (P/C/1B/2B/3B/SS/OF), reset slateType to classic.
+  // This prevents stale 'showdown' state from a previous load from persisting.
+  const hasClassicPos = parsed.some(p => /^(P|SP|RP|C|1B|2B|3B|SS|OF)(\/|$)/i.test(p.dkPos || ''));
+  if (hasClassicPos && STATE.slateType === 'showdown') {
+    STATE.slateType = 'classic';
+    STATE.lineup = new Array(ROSTER_SIZE).fill(null);
+    updateShowdownIndicator();
+  }
   mergePools();
 }
 
@@ -330,14 +577,19 @@ function loadStackFile(data, fname) {
   const batterCols = allCols.filter(col => /^b[0-9]/i.test(col)).sort((a, b) => parseInt(a.match(/\d+/)[0]) - parseInt(b.match(/\d+/)[0]));
   if (batterCols.length < 2) { showUploadWarn('unknown', fname, allCols); return; }
 
+  const normalizations = new Set(); // raw→normalized pairs that actually changed
   const parsed = data.map((r, i) => {
     const players = [];
     for (const col of batterCols) {
       const v = (r[col] || '').toString().trim();
       if (v && v !== 'nan' && v !== 'NaN' && v !== '') players.push(v);
     }
-    const team = (r.Team || r.team || r.Team_ || r.team_ || '').toString().trim()
+    const rawTeam = (r.Team || r.team || r.Team_ || r.team_ || '').toString().trim()
       || ((r.Player || r.player || '').toString().trim().match(/^([A-Z]{2,4})\b/) || [])[1] || '';
+    // Normalize Baseball Reference / FanGraphs / MLB-API style abbreviations to DK codes
+    // (WAS→WSH, CHW→CWS, SFG→SF, KCR→KC, etc.) so stacks align with the loaded pool.
+    const team = normalizeTeamAbbr(rawTeam);
+    if (rawTeam && team !== rawTeam.toUpperCase()) normalizations.add(`${rawTeam.toUpperCase()}→${team}`);
     const proj = n(r.Proj || r.proj || r.Median || r.median || r.Proj_ || r.proj_ || 0);
     const salary = n(r.Salary || r.salary || r.Salary_ || r.salary_ || 0);
     const own = n(r['Own%'] || r['own%'] || r.Own || r.own || r.Own_ || r.own_ || 0);
@@ -345,6 +597,9 @@ function loadStackFile(data, fname) {
     const ceiling = n(r.Ceiling || r.ceiling || 0);
     return { id: (size === 3 ? 's3' : 's5') + i, players, size, team, proj, salary, own, floor, ceiling };
   }).filter(s => s.players.length >= 2);
+  if (normalizations.size) {
+    showToast(`Stack team codes normalized to DK format: ${[...normalizations].join(', ')}. Stacks now align with the player pool.`, 'info', 6000);
+  }
 
   if (size === 3) { STATE.STACKS3 = parsed; setFileStatus('s3', fname, parsed.length + ' 3-man stacks'); }
   else { STATE.STACKS5 = parsed; setFileStatus('s5', fname, parsed.length + ' 5-man stacks'); }
@@ -371,8 +626,10 @@ function loadTeamScoring(data, fname) {
   const pctVal = v => parseFloat(String(v || '0').replace('%', '')) || 0;
   data.forEach(r => {
     const fields = Object.keys(r);
-    const team = (r[colMap(fields, 'names', 'team')] || r.Team || r.team || r.Names || r.names || '').trim();
-    if (!team) return;
+    const rawTeam = (r[colMap(fields, 'names', 'team')] || r.Team || r.team || r.Names || r.names || '').trim();
+    if (!rawTeam) return;
+    // Normalize to DK codes so the lookup in applyTeamScoringToPool aligns with p.team
+    const team = normalizeTeamAbbr(rawTeam);
     STATE.TEAM_SCORING[team] = {
       oppSP: (r[colMap(fields, 'oppsp')] || '').trim(),
       avgScore: n(r[colMap(fields, 'avgscore')] || 0),
@@ -492,6 +749,52 @@ function loadOptimalLineups(data, fname) {
   if (STATE.POOL.length) { renderPlayers(); renderStacks(); }
 }
 
+// Showdown optimal lineup file: columns CPT, FLEX, FLEX, FLEX, FLEX, FLEX [+ Proj, Own%, Salary]
+// Tracks per-player CPT exposure separately so the optimizer can boost captain picks.
+function loadShowdownOptimalLineups(data, fname) {
+  if (!data.length) return;
+  const keys = Object.keys(data[0]);
+  // Support both repeated "FLEX" and numbered "FLEX1"–"FLEX5"
+  const flexKeys = keys.filter(k => k.trim().toUpperCase() === 'FLEX' || /^FLEX[1-9]$/i.test(k.trim()));
+  const cptKey = keys.find(k => k.trim().toUpperCase() === 'CPT') || 'CPT';
+  const colMap = {};
+  keys.forEach(k => { colMap[k.toLowerCase().replace(/\s+/g, '')] = k; });
+  const col = name => colMap[name.toLowerCase().replace(/\s+/g, '')] || name;
+
+  STATE.OPTIMAL_LINEUPS = data.map(r => {
+    const cptName = (r[cptKey] || '').trim();
+    const flexNames = flexKeys.map(k => (r[k] || '').trim()).filter(Boolean);
+    const players = [cptName, ...flexNames].filter(Boolean);
+    return {
+      players,
+      cptName,
+      salary: parseFloat(r[col('Salary')] || r[col('salary')] || 0) || 0,
+      proj: parseFloat(r[col('Proj')] || r[col('projected')] || r[col('projection')] || 0) || 0,
+      own: parseFloat(r[col('Own%')] || r[col('own%')] || r[col('own')] || 0) || 0,
+    };
+  }).filter(lu => lu.players.length >= 4);
+
+  // Compute exposure — track CPT appearances separately for captain boosting
+  STATE.optimalExposure = {};
+  const total = STATE.OPTIMAL_LINEUPS.length;
+  STATE.OPTIMAL_LINEUPS.forEach(lu => {
+    lu.players.forEach((name, i) => {
+      if (!name) return;
+      if (!STATE.optimalExposure[name]) STATE.optimalExposure[name] = { count: 0, pct: 0, cptCount: 0 };
+      STATE.optimalExposure[name].count++;
+      if (i === 0) STATE.optimalExposure[name].cptCount++;
+    });
+  });
+  Object.keys(STATE.optimalExposure).forEach(name => {
+    STATE.optimalExposure[name].pct = parseFloat((STATE.optimalExposure[name].count / total * 100).toFixed(1));
+  });
+
+  applyOptimalToPool();
+  setFileStatus('opt', fname, total + ' showdown lineups');
+  checkAllLoaded();
+  if (STATE.POOL.length) { renderPlayers(); }
+}
+
 function applyOptimalToPool() {
   STATE.POOL.forEach(p => {
     const exp = STATE.optimalExposure[p.name];
@@ -529,7 +832,9 @@ function mergePools() {
       const roo = rooMap[dk.name.toLowerCase()];
       if (roo) {
         p.hasRoo = true;
-        p.floor = roo.floor; p.median = roo.median; p.ceiling = roo.ceiling;
+        // For showdown CPT players, scale projections by 1.5× to reflect the captain multiplier
+        const cptMult = (STATE.slateType === 'showdown' && p.isCpt) ? 1.5 : 1.0;
+        p.floor = roo.floor * cptMult; p.median = roo.median * cptMult; p.ceiling = roo.ceiling * cptMult;
         p.top = roo.top; p.own = roo.own; p.gpp = roo.gpp;
         p.order = roo.order; p.hand = roo.hand;
         if (!p.opp) p.opp = roo.opp;
@@ -537,10 +842,12 @@ function mergePools() {
       }
       return p;
     });
-    const matched = STATE.POOL.filter(p => p.hasRoo).length;
-    const matchPct = Math.round(matched / STATE.ROO.length * 100);
-    if (STATE.ROO.length > 0 && matched < STATE.ROO.length * 0.8) {
-      showUploadWarn('mismatch', null, null, { matched, total: STATE.ROO.length, matchPct });
+    // For showdown, count unique player names for match rate (each player has CPT + FLEX entry)
+    const matchedNames = new Set(STATE.POOL.filter(p => p.hasRoo).map(p => p.name.toLowerCase()));
+    const rooCount = STATE.ROO.length;
+    const matchPct = rooCount > 0 ? Math.round(matchedNames.size / rooCount * 100) : 100;
+    if (STATE.ROO.length > 0 && matchedNames.size < STATE.ROO.length * 0.8) {
+      showUploadWarn('mismatch', null, null, { matched: matchedNames.size, total: rooCount, matchPct });
     } else { hideUploadWarn('mismatch'); }
   } else {
     STATE.POOL = STATE.ROO.map(p => ({ ...p, lev: Engine.calcLeverage(p, STATE.contestSize) }));
@@ -548,8 +855,14 @@ function mergePools() {
   }
   if (Object.keys(STATE.TEAM_SCORING).length) applyTeamScoringToPool();
   if (Object.keys(STATE.optimalExposure).length) applyOptimalToPool();
+  if (Object.keys(STATE.confirmedLineups).length) applyConfirmedToPool();
+  invalidatePlayerRenderCache(); // pool changed — force re-filter on next render
   updateUI();
   checkAllLoaded();
+  // Keep Slate Summary live: auto-refresh whenever the pool changes and the tab is open.
+  if (document.getElementById('panel-slate')?.classList.contains('active')) {
+    renderSlateSummary();
+  }
 }
 
 // ── UI Updates ────────────────────────────────────────────────────────────────
@@ -573,10 +886,43 @@ function updateUI() {
   document.getElementById('player-content').style.display = 'block';
   document.getElementById('lineup-empty').style.display = 'none';
   document.getElementById('lineup-content').style.display = 'block';
+  updateShowdownIndicator();
+  updateShowdownLineupUI();
   renderPlayers(); renderLineup(); renderLuPool(); renderStacks();
   renderValueScatter();
   renderBlendControls();
   applyPendingLineupRestore();
+}
+
+function updateShowdownLineupUI() {
+  const sd = isShowdown();
+
+  // Lineup builder
+  const tip = document.getElementById('showdown-lineup-tip');
+  if (tip) tip.style.display = sd ? 'block' : 'none';
+  const lbl = document.getElementById('lineup-mode-label');
+  if (lbl) lbl.textContent = sd ? 'DraftKings Showdown' : 'DraftKings MLB';
+  const btn = document.getElementById('gen-three-btn');
+  if (btn) btn.textContent = sd ? 'Generate 3 Showdown Lineups' : 'Generate Cash + Single + GPP';
+  const bvpRow = document.getElementById('allow-bvp')?.closest('label');
+  if (bvpRow) bvpRow.style.display = sd ? 'none' : '';
+  const contestSel = document.getElementById('contest-type-sel');
+  if (contestSel) contestSel.style.display = sd ? 'none' : '';
+
+  // Portfolio builder — hide classic-only settings in showdown mode
+  document.querySelectorAll('.port-classic-only').forEach(el => {
+    el.style.display = sd ? 'none' : '';
+  });
+  const lockban = document.getElementById('port-lockban-section');
+  if (lockban) lockban.style.display = sd ? 'none' : '';
+  const descClassic = document.getElementById('port-desc-classic');
+  const descShowdown = document.getElementById('port-desc-showdown');
+  if (descClassic) descClassic.style.display = sd ? 'none' : '';
+  if (descShowdown) descShowdown.style.display = sd ? '' : 'none';
+
+  // Player pool position buttons — hide in showdown (no positions apply)
+  const luPosBtns = document.getElementById('lu-pos-btns');
+  if (luPosBtns) luPosBtns.style.display = sd ? 'none' : '';
 }
 
 function setFileStatus(type, fname, count, warnMode) {
@@ -640,15 +986,15 @@ function setSortCol(c) { if (STATE.sortCol === c) STATE.sortDir *= -1; else { ST
 function showMorePlayers() { STATE.playerLimit += DISPLAY_LIMIT; renderPlayers(); }
 
 function filterPlayers() {
-  const tf = document.getElementById('team-sel').value;
-  const gf = document.getElementById('game-sel').value;
-  const q = (document.getElementById('search-inp').value || '').toLowerCase().trim();
-  const filterConfirmed = document.getElementById('filter-confirmed')?.checked;
-  const filterHideInjured = document.getElementById('filter-hide-injured')?.checked;
+  const tf = (_EL['team-sel'] || document.getElementById('team-sel'))?.value;
+  const gf = (_EL['game-sel'] || document.getElementById('game-sel'))?.value;
+  const q = ((_EL['search-inp'] || document.getElementById('search-inp'))?.value || '').toLowerCase().trim();
+  const filterConfirmed = (_EL['filter-confirmed'] || document.getElementById('filter-confirmed'))?.checked;
+  const filterHideInjured = (_EL['filter-hide-injured'] || document.getElementById('filter-hide-injured'))?.checked;
   return STATE.POOL.filter(p =>
     posMatchFilter(p, STATE.curPos) &&
-    (tf === 'ALL' || p.team === tf) &&
-    (gf === 'ALL' || !p.game || p.game === gf) &&
+    (!tf || tf === 'ALL' || p.team === tf) &&
+    (!gf || gf === 'ALL' || !p.game || p.game === gf) &&
     (!q || p.name.toLowerCase().includes(q)) &&
     (!filterConfirmed || p.isConfirmed) &&
     (!filterHideInjured || p.injuryType !== 'IL')
@@ -696,7 +1042,10 @@ function renderPlayerRow(p, idx, maxC, usedNames) {
   const optExpVal = p.optExp > 0 ? `<span class="pill ${p.optExp > 30 ? 'psu' : p.optExp > 10 ? 'pi' : 'pg'}">${p.optExp.toFixed(1)}%</span>` : '\u2014';
   const confirmedBadge = p.isConfirmed ? `<span class="pill psu" style="font-size:9px;margin-left:3px">${p.confirmedOrder ? '#' + p.confirmedOrder : 'SP'}</span>` : '';
   const scBadge = p.barrelRate > 0 ? `<span class="pill ${p.barrelRate >= 10 ? 'psu' : p.barrelRate >= 7 ? 'pi' : 'pg'}" style="font-size:9px;margin-left:3px">Brl:${p.barrelRate.toFixed(0)}%</span>` : '';
-  const injuryBadge = p.injuryFlag ? `<span class="pill ${p.injuryType === 'IL' ? 'pd' : 'pw'}" style="font-size:9px;margin-left:3px" title="${escAttr(p.injuryDesc || '')}">${p.injuryType || 'INJ'}</span>` : '';
+  const injuryBadge = p.dkStatus === 'O'
+    ? `<span class="pill pd" style="font-size:9px;margin-left:3px" title="DK: Out">OUT</span>`
+    : p.injuryFlag ? `<span class="pill ${p.injuryType === 'IL' ? 'pd' : 'pw'}" style="font-size:9px;margin-left:3px" title="${escAttr(p.injuryDesc || '')}">${p.injuryType || 'INJ'}</span>` : '';
+  const postponedBadge = p.isPostponed ? `<span class="pill pd" style="font-size:9px;margin-left:3px" title="Game postponed/cancelled">PPD</span>` : '';
   const formColor = p.recentAvgDK && p.median > 0 ? (p.recentAvgDK / p.median >= 1.2 ? 'var(--tsu)' : p.recentAvgDK / p.median <= 0.8 ? 'var(--td)' : '') : '';
   const kDisplay = rp(p, 'P') && p.kRate > 0 ? `<span style="font-size:11px;color:${p.kRate > 25 ? 'var(--tsu)' : p.kRate > 20 ? 'var(--ti)' : 'var(--ts)'}">${p.kRate.toFixed(0)}%</span>` : '\u2014';
   let dvpBadge = '';
@@ -707,24 +1056,51 @@ function renderPlayerRow(p, idx, maxC, usedNames) {
       const pct = dvpEntry.rank / dvpEntry.totalTeams;
       const dvpClass = pct <= 0.25 ? 'psu' : pct >= 0.75 ? 'pd' : 'pi';
       const dvpLabel = pct <= 0.25 ? 'easy' : pct >= 0.75 ? 'tough' : 'mid';
-      dvpBadge = `<span class="pill ${dvpClass}" style="font-size:9px;margin-left:3px" title="vs ${p.opp} ${dvpPos} rank ${dvpEntry.rank}/${dvpEntry.totalTeams} (${dvpEntry.avgAllowed} DK avg allowed)">DvP:${dvpLabel}</span>`;
+      // #14: Surface sample size — early-season DVP can be noisy at < 15 games.
+      // Show sample as a small suffix; dim styling when sample is thin (<15 games)
+      // so users discount the signal appropriately.
+      const games = dvpEntry.games || 0;
+      const sampleStr = games > 0 ? ` N=${games}` : '';
+      const thin = games > 0 && games < 15;
+      const sampleStyle = thin ? 'opacity:.55;font-style:italic' : '';
+      dvpBadge = `<span class="pill ${dvpClass}" style="font-size:9px;margin-left:3px;${sampleStyle}" title="vs ${p.opp} ${dvpPos} rank ${dvpEntry.rank}/${dvpEntry.totalTeams} (${dvpEntry.avgAllowed} DK avg allowed${games > 0 ? ', sample ' + games + ' games' + (thin ? ' — small sample, discount this signal' : '') : ''})">DvP:${dvpLabel}${sampleStr}</span>`;
     }
   }
-  return `<tr style="${inLu ? 'opacity:.38;' : ''}"><td><strong style="${formColor ? 'color:' + formColor : ''}">${esc(p.name)}</strong>${STATE.MODE === 'dk' && !p.hasRoo ? '<span style="font-size:10px;background:var(--bw);color:var(--tw);border-radius:3px;padding:1px 4px;margin-left:4px">no proj</span>' : ''}${confirmedBadge}${scBadge}${injuryBadge}${dvpBadge}${multBadge}</td><td><span class="pill pi" style="font-size:10px">${esc(p.dkPos) || '\u2014'}</span></td><td>${esc(p.team)}</td><td>${p.salary > 0 ? '$' + p.salary.toLocaleString() : '\u2014'}</td><td>${p.order > 0 ? '#' + p.order : '\u2014'}</td><td>${p.floor > 0 ? p.floor.toFixed(1) : '\u2014'}</td><td>${p.median > 0 ? '<strong>' + p.median.toFixed(1) + '</strong>' : '\u2014'}</td><td>${p.ceiling > 0 ? `<div class="bar-w"><div class="bar" style="width:${bw}px"></div><span style="font-size:11px;color:var(--ts)">${p.ceiling.toFixed(1)}</span></div>` : '\u2014'}</td><td><input type="number" min="0" max="100" step="0.5" value="${p.own > 0 ? p.own.toFixed(1) : ''}" placeholder="0" title="Edit projected ownership %" style="width:50px;font-size:11px;padding:2px 4px;border:0.5px solid var(--brd-s);border-radius:4px;background:var(--bp);color:${p.own > 50 ? 'var(--td)' : p.own > 25 ? 'var(--tw)' : p.own > 10 ? 'var(--ti)' : 'var(--tp)'};text-align:center" oninput="updatePlayerOwn(${idx},this.value)"></td><td class="${lc}">${p.lev !== 0 ? (p.lev > 0 ? '+' : '') + p.lev.toFixed(1) : '\u2014'}</td><td style="color:var(--ti);font-weight:500">${gppS > 0 ? gppS.toFixed(1) : '\u2014'}</td><td>${optExpVal}</td><td>${p.avgPpg > 0 ? p.avgPpg.toFixed(1) : '\u2014'}</td><td>${kDisplay}</td><td><button class="btn" style="padding:3px 8px;font-size:11px" ${inLu ? 'disabled' : ''} onclick="addPlayerByPoolIdx(${idx})">+</button></td></tr>`;
+  return `<tr style="${inLu ? 'opacity:.38;' : ''}"><td><strong style="${formColor ? 'color:' + formColor : ''}">${esc(p.name)}</strong>${STATE.MODE === 'dk' && !p.hasRoo ? '<span style="font-size:10px;background:var(--bw);color:var(--tw);border-radius:3px;padding:1px 4px;margin-left:4px">no proj</span>' : ''}${confirmedBadge}${scBadge}${injuryBadge}${postponedBadge}${dvpBadge}${multBadge}</td><td><span class="pill pi" style="font-size:10px">${esc(p.dkPos) || '\u2014'}</span></td><td>${esc(p.team)}</td><td>${p.salary > 0 ? '$' + p.salary.toLocaleString() : '\u2014'}</td><td>${p.order > 0 ? '#' + p.order : '\u2014'}</td><td>${p.floor > 0 ? p.floor.toFixed(1) : '\u2014'}</td><td>${p.median > 0 ? '<strong>' + p.median.toFixed(1) + '</strong>' : '\u2014'}</td><td>${p.ceiling > 0 ? `<div class="bar-w"><div class="bar" style="width:${bw}px"></div><span style="font-size:11px;color:var(--ts)">${p.ceiling.toFixed(1)}</span></div>` : '\u2014'}</td><td><input type="number" min="0" max="100" step="0.5" value="${p.own > 0 ? p.own.toFixed(1) : ''}" placeholder="0" title="Edit projected ownership %" style="width:50px;font-size:11px;padding:2px 4px;border:0.5px solid var(--brd-s);border-radius:4px;background:var(--bp);color:${p.own > 50 ? 'var(--td)' : p.own > 25 ? 'var(--tw)' : p.own > 10 ? 'var(--ti)' : 'var(--tp)'};text-align:center" oninput="updatePlayerOwn(${idx},this.value)"></td><td class="${lc}">${p.lev !== 0 ? (p.lev > 0 ? '+' : '') + p.lev.toFixed(1) : '\u2014'}</td><td style="color:var(--ti);font-weight:500">${gppS > 0 ? gppS.toFixed(1) : '\u2014'}</td><td>${optExpVal}</td><td>${p.avgPpg > 0 ? p.avgPpg.toFixed(1) : '\u2014'}</td><td>${kDisplay}</td><td><button class="btn" style="padding:3px 8px;font-size:11px" ${inLu ? 'disabled' : ''} onclick="addPlayerByPoolIdx(${idx})">+</button></td></tr>`;
 }
+
+// Filter/sort result cache — avoids O(n log n) resort on every render when filters haven't changed
+let _playerRenderCache = null;
+function invalidatePlayerRenderCache() { _playerRenderCache = null; }
 
 function renderPlayers() {
   if (!STATE.POOL.length) return;
-  const sf = document.getElementById('sort-sel').value;
+  const sf = (_EL['sort-sel'] || document.getElementById('sort-sel'))?.value || '';
   const sc = sf || STATE.sortCol;
-  const data = sortPlayers(filterPlayers(), sc);
-  const maxC = Math.max(...data.map(p => p.ceiling), 1);
+  const tf = (_EL['team-sel'] || document.getElementById('team-sel'))?.value || 'ALL';
+  const gf = (_EL['game-sel'] || document.getElementById('game-sel'))?.value || 'ALL';
+  const q  = (_EL['search-inp'] || document.getElementById('search-inp'))?.value || '';
+  const fc = (_EL['filter-confirmed'] || document.getElementById('filter-confirmed'))?.checked || false;
+  const fh = (_EL['filter-hide-injured'] || document.getElementById('filter-hide-injured'))?.checked || false;
+  const cacheKey = `${STATE.POOL.length}|${STATE.curPos}|${sc}|${tf}|${gf}|${q}|${fc}|${fh}|${STATE.playerLimit}`;
+
+  let data;
+  if (_playerRenderCache && _playerRenderCache.key === cacheKey) {
+    data = _playerRenderCache.data;
+  } else {
+    data = sortPlayers(filterPlayers(), sc);
+    _playerRenderCache = { key: cacheKey, data };
+  }
+
+  const maxC = data.reduce((m, p) => Math.max(m, p.ceiling || 0), 1);
   const usedNames = new Set(STATE.lineup.filter(Boolean).map(p => p.name));
   const displayData = data.slice(0, STATE.playerLimit);
   STATE._playerPoolCache = displayData;
-  document.getElementById('player-tbody').innerHTML = displayData.map((p, idx) => renderPlayerRow(p, idx, maxC, usedNames)).join('');
-  document.getElementById('player-more').style.display = data.length > STATE.playerLimit ? 'block' : 'none';
-  const countEl = document.getElementById('player-count');
+  const tbody = _EL['player-tbody'] || document.getElementById('player-tbody');
+  if (tbody) tbody.innerHTML = displayData.map((p, idx) => renderPlayerRow(p, idx, maxC, usedNames)).join('');
+  const moreEl = _EL['player-more'] || document.getElementById('player-more');
+  if (moreEl) moreEl.style.display = data.length > STATE.playerLimit ? 'block' : 'none';
+  const countEl = _EL['player-count'] || document.getElementById('player-count');
   if (countEl) {
     const showing = Math.min(data.length, STATE.playerLimit);
     countEl.textContent = data.length === STATE.POOL.length ? `${data.length} players` : `Showing ${showing} of ${data.length} (${STATE.POOL.length} total)`;
@@ -735,8 +1111,12 @@ function renderPlayers() {
 function renderStacks() {
   const allStacks = [...STATE.STACKS3, ...STATE.STACKS5];
   if (!allStacks.length) return;
-  const poolTeams = new Set(STATE.POOL.map(p => p.team));
-  const stackTeams = [...new Set(allStacks.map(s => s.team))];
+  // Normalize both sides through the alias table before comparing — so an in-memory
+  // stack loaded with an old code (e.g. OAK from a pre-rebrand CSV) still matches a
+  // DK pool using the current code (ATH). Without normalization on the pool side,
+  // a partial alias rollout left orphan codes flagged as off-slate.
+  const poolTeams = new Set(STATE.POOL.map(p => normalizeTeamAbbr(p.team)));
+  const stackTeams = [...new Set(allStacks.map(s => normalizeTeamAbbr(s.team)))];
   const offSlate = stackTeams.filter(t => poolTeams.size > 0 && !poolTeams.has(t));
   const warnEl = document.getElementById('stacks-slate-warn');
   if (offSlate.length > 0 && STATE.POOL.length > 0) {
@@ -773,10 +1153,15 @@ function renderStacks() {
 
 // ── Lineup Builder ────────────────────────────────────────────────────────────
 function getSalaryUsed() { return STATE.lineup.reduce((s, p) => s + (p ? p.salary : 0), 0); }
+function isShowdown() { return STATE.slateType === 'showdown'; }
 
 function renderLineup() {
-  // Pre-compute BvP conflicts: pitcher opp teams → set of batter teams that conflict
-  const allowBvP = document.getElementById('allow-bvp')?.checked || false;
+  const slots = activeSlots();
+  const cap = activeSalaryCap();
+  const sd = isShowdown();
+
+  // Pre-compute BvP conflicts (classic only — showdown typically includes cross-game matchups)
+  const allowBvP = sd || document.getElementById('allow-bvp')?.checked || false;
   const bvpConflicts = new Set();
   if (!allowBvP) {
     STATE.lineup.forEach(p => {
@@ -784,16 +1169,22 @@ function renderLineup() {
     });
   }
 
-  document.getElementById('lineup-slots').innerHTML = DK_SLOTS.map((slot, i) => {
+  document.getElementById('lineup-slots').innerHTML = slots.map((slot, i) => {
     const p = STATE.lineup[i];
-    if (!p) return `<div class="lu-slot"><div class="slot-pos">${slot.label}</div><div class="slot-empty">Empty</div></div>`;
+    const isCptSlot = sd && slot.key === 'CPT';
+    if (!p) {
+      const cptHint = isCptSlot ? '<span style="font-size:10px;color:var(--ti);margin-left:6px">1.5× pts</span>' : '';
+      return `<div class="lu-slot${isCptSlot ? ' lu-slot-cpt' : ''}"><div class="slot-pos"${isCptSlot ? ' style="color:var(--ti)"' : ''}>${slot.label}</div><div class="slot-empty">Empty${cptHint}</div></div>`;
+    }
     const ownDisplay = p.own > 0 ? ` \u00B7 ${p.own.toFixed(1)}% own` : '';
     const isBvP = !allowBvP && !rp(p, 'P') && bvpConflicts.has(p.team);
-    const slotClass = isBvP ? 'lu-slot filled lu-slot-bvp' : 'lu-slot filled';
-    const bvpBadge = isBvP ? `<span style="font-size:10px;font-weight:600;color:var(--td);margin-left:6px" title="Batter vs. Pitcher conflict — this batter faces your pitcher">BvP</span>` : '';
-    return `<div class="${slotClass}"${isBvP ? ' style="border-color:var(--brd-d);background:var(--bd)"' : ''}><div class="slot-pos" style="${isBvP ? 'color:var(--td)' : ''}">${slot.label}</div><div style="flex:1"><div class="slot-name">${esc(p.name)}${bvpBadge}</div><div class="slot-info">${esc(p.dkPos || p.rosterPos)} \u00B7 ${esc(p.team)}${p.opp ? ' vs ' + esc(p.opp) : ''} \u00B7 $${p.salary.toLocaleString()}${ownDisplay}</div></div><button class="slot-rm" onclick="removeFromLineup(${i})">x</button></div>`;
+    const slotClass = `lu-slot filled${isBvP ? ' lu-slot-bvp' : ''}${isCptSlot ? ' lu-slot-cpt' : ''}`;
+    const bvpBadge = isBvP ? `<span style="font-size:10px;font-weight:600;color:var(--td);margin-left:6px" title="Batter vs. Pitcher conflict">BvP</span>` : '';
+    const cptBadge = isCptSlot ? `<span style="font-size:10px;font-weight:700;color:var(--ti);margin-left:6px" title="Captain — scores 1.5× points">CPT 1.5×</span>` : '';
+    const posLabel = sd ? '' : (esc(p.dkPos || p.rosterPos) + ' \u00B7 ');
+    return `<div class="${slotClass}"${isBvP ? ' style="border-color:var(--brd-d);background:var(--bd)"' : ''}><div class="slot-pos" style="${isCptSlot ? 'color:var(--ti);font-weight:700' : isBvP ? 'color:var(--td)' : ''}">${slot.label}</div><div style="flex:1"><div class="slot-name">${esc(p.name)}${cptBadge}${bvpBadge}</div><div class="slot-info">${posLabel}${esc(p.team)}${p.opp ? ' vs ' + esc(p.opp) : ''} \u00B7 $${p.salary.toLocaleString()}${ownDisplay}</div></div><button class="slot-rm" onclick="removeFromLineup(${i})">x</button></div>`;
   }).join('');
-  const used = getSalaryUsed(), rem = CAP - used, pct = Math.min(used / CAP * 100, 100);
+  const used = getSalaryUsed(), rem = cap - used, pct = Math.min(used / cap * 100, 100);
   document.getElementById('sal-used').textContent = '$' + used.toLocaleString();
   const re = document.getElementById('sal-remain');
   re.textContent = rem >= 0 ? '$' + rem.toLocaleString() + ' left' : 'OVER by $' + Math.abs(rem).toLocaleString();
@@ -803,14 +1194,17 @@ function renderLineup() {
 
   const playersInLineup = STATE.lineup.filter(Boolean);
   const totalMedian = playersInLineup.reduce((sum, p) => sum + (p.median || 0), 0);
-  const avgOwnership = playersInLineup.reduce((sum, p) => sum + (p.own || 0), 0);
+  const avgOwnership = playersInLineup.length > 0
+    ? playersInLineup.reduce((sum, p) => sum + (p.own || 0), 0) / playersInLineup.length
+    : 0;
   document.getElementById('median-total').textContent = totalMedian.toFixed(1);
   document.getElementById('own-avg').textContent = avgOwnership.toFixed(1);
 
+  const rosterSz = activeRosterSize();
   const warns = [];
-  if (rem < 0) warns.push('Over $50k salary cap');
+  if (rem < 0) warns.push(`Over $${cap.toLocaleString()} salary cap`);
   const filled = playersInLineup.length;
-  if (filled > 0 && filled < ROSTER_SIZE) warns.push(`${ROSTER_SIZE - filled} slot${ROSTER_SIZE - filled > 1 ? 's' : ''} empty`);
+  if (filled > 0 && filled < rosterSz) warns.push(`${rosterSz - filled} slot${rosterSz - filled > 1 ? 's' : ''} empty`);
   if (bvpConflicts.size > 0) {
     const bvpPlayers = playersInLineup.filter(p => !rp(p, 'P') && bvpConflicts.has(p.team)).map(p => p.name);
     if (bvpPlayers.length) warns.push(`BvP conflict: ${bvpPlayers.join(', ')} face your pitcher — toggle "Allow BvP" to permit`);
@@ -819,7 +1213,7 @@ function renderLineup() {
   wEl.style.display = warns.length ? 'block' : 'none';
   if (warns.length) { wEl.className = 'ib warn'; wEl.innerHTML = warns.map(w => w).join('<br>'); }
 
-  // Live lineup analysis: correlation, stacks, bring-backs
+  // Live lineup analysis: correlation, stacks, calibration disclosure
   const analysisEl = document.getElementById('lineup-analysis');
   if (analysisEl && playersInLineup.length >= 4) {
     const analysis = Engine.analyzeLineup(STATE.lineup);
@@ -828,6 +1222,24 @@ function renderLineup() {
       const stackBadges = analysis.stacks.map(s =>
         `<span class="pill psu" style="font-size:10px">${esc(s.team)} ${s.count}-stack</span>`
       ).join(' ');
+
+      // Raw (uncalibrated) median — reverse the active calibration scales so users
+      // can compare this number against external optimizer projections.
+      const cal = Engine.getCalibration();
+      const batScale = cal.batterScale || 1.0;
+      const pitScale = cal.pitcherScale || 1.0;
+      const hasCalibration = Math.abs(batScale - 1.0) > 0.01 || Math.abs(pitScale - 1.0) > 0.01;
+      let calBadge = '';
+      if (hasCalibration) {
+        const rawMedian = playersInLineup.reduce((s, p) => {
+          const scale = rp(p, 'P') ? pitScale : batScale;
+          return s + (scale > 0 ? (p.median || 0) / scale : (p.median || 0));
+        }, 0);
+        calBadge = `<span title="Calibration active: batters ×${batScale.toFixed(3)}, pitchers ×${pitScale.toFixed(3)}. Raw ROO projection = ${rawMedian.toFixed(1)} pts." ` +
+          `style="background:var(--bw);color:var(--tw);padding:2px 7px;border-radius:4px;font-size:10px;font-weight:600;cursor:help">` +
+          `Cal ×${batScale.toFixed(2)} · Raw ${rawMedian.toFixed(0)}</span>`;
+      }
+
       analysisEl.style.display = 'block';
       analysisEl.innerHTML = `<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;font-size:11px">
         <span>Corr: <strong style="color:${corrColor}">${analysis.correlationScore.toFixed(2)}</strong></span>
@@ -835,6 +1247,7 @@ function renderLineup() {
         <span>Floor: <strong>${analysis.floorPts.toFixed(1)}</strong></span>
         <span>Val: <strong>${analysis.salaryEfficiency}</strong>x</span>
         ${stackBadges}
+        ${calBadge}
       </div>`;
     }
   } else if (analysisEl) {
@@ -847,22 +1260,32 @@ function renderLineup() {
 function renderLuPool() {
   if (!STATE.POOL.length) return;
   const usedNames = new Set(STATE.lineup.filter(Boolean).map(p => p.name));
+  const sd = isShowdown();
   STATE._luPoolCache = STATE.POOL.filter(p => posMatchFilter(p, STATE.luPos)).sort((a, b) => b.median - a.median || b.avgPpg - a.avgPpg).slice(0, 100);
   document.getElementById('lu-pool-tbody').innerHTML = STATE._luPoolCache.map((p, idx) => {
     const inLu = usedNames.has(p.name);
-    return `<tr style="${inLu ? 'opacity:.35;' : ''}"><td>${esc(p.name)}</td><td style="color:var(--tt);font-size:11px">${esc(p.dkPos) || '\u2014'}</td><td>${esc(p.team)}</td><td>$${p.salary.toLocaleString()}</td><td>${p.median > 0 ? p.median.toFixed(1) : '\u2014'}</td><td>${p.own > 0 ? p.own.toFixed(1) + '%' : '\u2014'}</td><td><button class="btn" style="padding:2px 7px;font-size:11px" ${inLu ? 'disabled' : ''} onclick="addPlayerByLuIdx(${idx})">+</button></td></tr>`;
+    const posCell = sd
+      ? (p.isCpt ? '<span style="font-size:10px;font-weight:700;color:#60a5fa">CPT</span>' : '<span style="font-size:10px;color:var(--tt)">FLEX</span>')
+      : (esc(p.dkPos) || '\u2014');
+    const medDisplay = sd && p.isCpt
+      ? `<span style="color:#60a5fa">${p.median > 0 ? p.median.toFixed(1) : '\u2014'}</span>`
+      : (p.median > 0 ? p.median.toFixed(1) : '\u2014');
+    return `<tr style="${inLu ? 'opacity:.35;' : ''}"><td>${esc(p.name)}</td><td style="color:var(--tt);font-size:11px">${posCell}</td><td>${esc(p.team)}</td><td>$${p.salary.toLocaleString()}</td><td>${medDisplay}</td><td>${p.own > 0 ? p.own.toFixed(1) + '%' : '\u2014'}</td><td><button class="btn" style="padding:2px 7px;font-size:11px" ${inLu ? 'disabled' : ''} onclick="addPlayerByLuIdx(${idx})">+</button></td></tr>`;
   }).join('');
 }
 
 function addToLineupByName(name) { const p = STATE.POOL.find(r => r.name === name); if (p) addToLineup(p); }
 function addToLineup(p) {
   if (!p) return;
+  // In showdown, block adding same underlying player twice (CPT + FLEX of same person)
   if (STATE.lineup.some(lp => lp && lp.name === p.name)) return;
-  for (let i = 0; i < DK_SLOTS.length; i++) {
+  const slots = activeSlots();
+  const cap = activeSalaryCap();
+  for (let i = 0; i < slots.length; i++) {
     if (STATE.lineup[i]) continue;
-    if (!DK_SLOTS[i].eligible(p)) continue;
-    if (getSalaryUsed() + p.salary > CAP) {
-      const over = getSalaryUsed() + p.salary - CAP;
+    if (!slots[i].eligible(p)) continue;
+    if (getSalaryUsed() + p.salary > cap) {
+      const over = getSalaryUsed() + p.salary - cap;
       showToast(`Cannot add ${esc(p.name)} — would exceed cap by $${over.toLocaleString()}`, 'warn', 3000);
       return;
     }
@@ -885,7 +1308,7 @@ function removeFromLineup(i) {
     });
   }
 }
-function clearLineup() { STATE.lineup = new Array(ROSTER_SIZE).fill(null); renderLineup(); renderLuPool(); document.getElementById('export-out').style.display = 'none'; saveSession(); }
+function clearLineup() { STATE.lineup = new Array(activeRosterSize()).fill(null); renderLineup(); renderLuPool(); document.getElementById('export-out').style.display = 'none'; saveSession(); }
 
 // ── Auto-fill / Generate Lineups (using Engine) ──────────────────────────────
 function autoFill() {
@@ -894,18 +1317,24 @@ function autoFill() {
   const pool = getCalibratedPool();
   const contestType = document.getElementById('contest-type-sel')?.value || 'single';
   const allowBvP = document.getElementById('allow-bvp')?.checked || false;
-  let scoreFn;
-  if (contestType === 'cash') scoreFn = p => Engine.scoreCash(p, ctx);
-  else if (contestType === 'gpp') scoreFn = p => Engine.scoreGpp(p, ctx);
-  else scoreFn = p => Engine.scoreSingle(p, ctx);
 
-  const stackBonusFn = contestType === 'gpp' ? lu => Engine.gppStackBonus(lu, null) : null;
-  STATE.lineup = Engine.optimizeLineup(pool, scoreFn, { iterations: OPTIMIZER_ITERATIONS, stackBonusFn, allowBvP, contestType }) || new Array(ROSTER_SIZE).fill(null);
+  if (isShowdown()) {
+    const scoreFn = p => Engine.scoreGpp(p, { ...ctx, pool });
+    STATE.lineup = Engine.optimizeShowdownLineup(pool, scoreFn) || new Array(SHOWDOWN_ROSTER_SIZE).fill(null);
+  } else {
+    let scoreFn;
+    if (contestType === 'cash') scoreFn = p => Engine.scoreCash(p, ctx);
+    else if (contestType === 'gpp') scoreFn = p => Engine.scoreGpp(p, ctx);
+    else scoreFn = p => Engine.scoreSingle(p, ctx);
+    const stackBonusFn = contestType === 'gpp' ? lu => Engine.gppStackBonus(lu, null) : null;
+    STATE.lineup = Engine.optimizeLineup(pool, scoreFn, { iterations: OPTIMIZER_ITERATIONS, stackBonusFn, allowBvP, contestType }) || new Array(ROSTER_SIZE).fill(null);
+  }
   renderLineup(); renderLuPool(); saveSession();
 }
 
 function generateThreeLineups() {
   if (!STATE.POOL.length) return;
+  if (isShowdown()) { generateShowdownLineups(); return; }
   STATE.generatedLineups = [];
   const ctx = getEngineContext();
   const pool = getCalibratedPool();
@@ -932,19 +1361,43 @@ function generateThreeLineups() {
   displayThreeLineups();
 }
 
+function generateShowdownLineups() {
+  STATE.generatedLineups = [];
+  const ctx = getEngineContext();
+  const pool = getCalibratedPool();
+  // Generate 3 showdown lineups with increasing jitter for diversity
+  for (let v = 0; v < 3; v++) {
+    const jitter = v * 0.4;
+    const exclude = new Set(v > 0 ? (STATE.generatedLineups[v - 1] || []).filter(Boolean).map(p => p.name).slice(0, 2) : []);
+    const scoreFn = p => Engine.scoreGpp(p, { ...ctx, pool }) + (Math.random() - 0.5) * jitter;
+    const lu = Engine.optimizeShowdownLineup(pool, scoreFn, { excludeNames: exclude });
+    STATE.generatedLineups.push(lu || new Array(SHOWDOWN_ROSTER_SIZE).fill(null));
+  }
+  displayThreeLineups();
+}
+
 function displayThreeLineups() {
-  const types = [
-    { name: 'CASH', lineup: STATE.generatedLineups[0], strategy: 'High Floor / Batting Order / Pitcher Matchups' },
-    { name: 'SINGLE ENTRY', lineup: STATE.generatedLineups[1], strategy: 'Balanced Upside / Salary Value / Optimal Median' },
-    { name: 'GPP', lineup: STATE.generatedLineups[2], strategy: 'Ceiling Chase / Stacking / Low Own' }
-  ];
+  const sd = isShowdown();
+  const slots = activeSlots();
+  const rosterSz = activeRosterSize();
+  const types = sd
+    ? [
+        { name: 'SHOWDOWN #1', lineup: STATE.generatedLineups[0], strategy: 'Top Projected / Ceiling Chase' },
+        { name: 'SHOWDOWN #2', lineup: STATE.generatedLineups[1], strategy: 'Contrarian Captain / Low Own' },
+        { name: 'SHOWDOWN #3', lineup: STATE.generatedLineups[2], strategy: 'Value / Balanced Ownership' }
+      ]
+    : [
+        { name: 'CASH', lineup: STATE.generatedLineups[0], strategy: 'High Floor / Batting Order / Pitcher Matchups' },
+        { name: 'SINGLE ENTRY', lineup: STATE.generatedLineups[1], strategy: 'Balanced Upside / Salary Value / Optimal Median' },
+        { name: 'GPP', lineup: STATE.generatedLineups[2], strategy: 'Ceiling Chase / Stacking / Low Own' }
+      ];
   const html = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px">${types.map(type => {
-    const lu = type.lineup;
+    const lu = type.lineup || new Array(rosterSz).fill(null);
     const filled = lu.filter(Boolean);
     const mediaScore = filled.reduce((s, p) => s + (p.median || 0), 0);
     const ceilScore = filled.reduce((s, p) => s + (p.ceiling || 0), 0);
     const salUsed = filled.reduce((s, p) => s + p.salary, 0);
-    const avgOwn = filled.reduce((s, p) => s + (p.own || 0), 0);
+    const avgOwn = filled.length > 0 ? filled.reduce((s, p) => s + (p.own || 0), 0) / filled.length : 0;
     const analysis = Engine.analyzeLineup(lu);
     const stackInfo = analysis ? analysis.stacks.map(s => s.team + ' x' + s.count).join(', ') : '';
 
@@ -953,8 +1406,12 @@ function displayThreeLineups() {
         <div style="flex:1"><div style="font-size:13px;font-weight:500;color:var(--tp)">${type.name}</div><div style="font-size:10px;color:var(--ts)">${type.strategy}</div></div>
       </div>
       <div style="margin-bottom:8px">${lu.map((p, i) => {
-        if (!p) return `<div style="padding:4px 6px;font-size:11px;color:var(--ts);background:var(--bs);border-radius:4px;margin-bottom:3px">${DK_SLOTS[i].label}: EMPTY</div>`;
-        return `<div style="padding:4px 6px;font-size:11px;background:var(--bsu);border-radius:4px;margin-bottom:3px"><strong>${esc(p.name)}</strong> (${esc(p.dkPos)}) ${p.order > 0 && p.order <= 4 ? '<span style="font-size:9px;background:var(--bw);color:var(--tw);padding:1px 3px;border-radius:3px">#' + p.order + '</span>' : ''} $${p.salary.toLocaleString()} ${p.median.toFixed(1)}pts ${p.own > 0 ? p.own.toFixed(1) + '%' : ''}</div>`;
+        const slotLabel = slots[i]?.label || '?';
+        const isCpt = sd && slotLabel === 'CPT';
+        if (!p) return `<div style="padding:4px 6px;font-size:11px;color:var(--ts);background:var(--bs);border-radius:4px;margin-bottom:3px">${slotLabel}: EMPTY</div>`;
+        const posInfo = sd ? '' : `(${esc(p.dkPos)}) `;
+        const cptTag = isCpt ? `<span style="font-size:9px;font-weight:700;color:var(--ti);background:rgba(59,130,246,.15);padding:1px 4px;border-radius:3px;margin-right:3px">CPT</span>` : '';
+        return `<div style="padding:4px 6px;font-size:11px;background:${isCpt ? 'rgba(59,130,246,.1)' : 'var(--bsu)'};border-radius:4px;margin-bottom:3px">${cptTag}<strong>${esc(p.name)}</strong> ${posInfo}${p.order > 0 && p.order <= 4 && !sd ? '<span style="font-size:9px;background:var(--bw);color:var(--tw);padding:1px 3px;border-radius:3px">#' + p.order + '</span> ' : ''}$${p.salary.toLocaleString()} ${p.median.toFixed(1)}pts ${p.own > 0 ? p.own.toFixed(1) + '%' : ''}</div>`;
       }).join('')}</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:8px;background:var(--bs);border-radius:var(--r);font-size:11px">
         <div>Salary: <strong>$${salUsed.toLocaleString()}</strong></div>
@@ -962,7 +1419,7 @@ function displayThreeLineups() {
         <div>Ceiling: <strong>${ceilScore.toFixed(1)}</strong></div>
         <div>Own: <strong>${avgOwn.toFixed(1)}%</strong></div>
       </div>
-      ${stackInfo ? `<div style="margin-top:6px;padding:4px 8px;background:var(--bi);border-radius:4px;font-size:10px;color:var(--ti)">Stack: ${stackInfo}</div>` : ''}
+      ${!sd && stackInfo ? `<div style="margin-top:6px;padding:4px 8px;background:var(--bi);border-radius:4px;font-size:10px;color:var(--ti)">Stack: ${stackInfo}</div>` : ''}
       ${analysis ? `<div style="margin-top:4px;font-size:10px;color:var(--tt)">Corr: ${analysis.correlationScore.toFixed(3)} / Eff: ${analysis.salaryEfficiency} pts/$k</div>` : ''}
     </div>`;
   }).join('')}</div>`;
@@ -984,20 +1441,25 @@ function csvQuote(v) {
 
 function exportLineup() {
   if (!STATE.lineup.filter(Boolean).length) return;
+  const slots = activeSlots();
   const rows = [['Slot', 'Player', 'Pos', 'Team', 'Salary', 'Median']];
   STATE.lineup.forEach((p, i) => {
-    rows.push(p ? [DK_SLOTS[i].label, p.name, p.dkPos || '', p.team, '$' + p.salary, p.median > 0 ? p.median.toFixed(1) : ''] : [DK_SLOTS[i].label, 'EMPTY', '', '', '', '']);
+    const label = slots[i]?.label || '?';
+    rows.push(p ? [label, p.name, p.dkPos || '', p.team, '$' + p.salary, p.median > 0 ? p.median.toFixed(1) : ''] : [label, 'EMPTY', '', '', '', '']);
   });
   dlFile(rows.map(r => r.map(csvQuote).join(',')).join('\n'), 'lineups.csv', 'text/csv');
 }
 function exportDK() {
+  const rosterSz = activeRosterSize();
+  const cap = activeSalaryCap();
+  const slots = activeSlots();
   if (!STATE.lineup.every(Boolean)) {
-    alert('Lineup has empty slots. Fill all 10 positions before exporting.');
+    alert(`Lineup has empty slots. Fill all ${rosterSz} positions before exporting.`);
     return;
   }
   const salary = STATE.lineup.reduce((s, p) => s + (p?.salary || 0), 0);
-  if (salary > 50000) {
-    alert(`Lineup is over the $50,000 salary cap ($${salary.toLocaleString()}). Please adjust before exporting.`);
+  if (salary > cap) {
+    alert(`Lineup is over the $${cap.toLocaleString()} salary cap ($${salary.toLocaleString()}). Please adjust before exporting.`);
     return;
   }
   const missing = STATE.lineup.filter(p => !p.dkId);
@@ -1005,7 +1467,18 @@ function exportDK() {
     alert('Missing DK IDs for: ' + missing.map(p => p.name).join(', ') + '\nUpload your DK Salaries CSV first.');
     return;
   }
-  const header = DK_SLOTS.map(s => s.label).join(',');
+  // Warn on injured, unconfirmed, or postponed players before upload
+  const exportWarnings = [];
+  STATE.lineup.forEach(p => {
+    if (!p) return;
+    if (p.dkStatus === 'O') exportWarnings.push(`${p.name}: Listed OUT by DraftKings`);
+    else if (p.injuryType === 'IL') exportWarnings.push(`${p.name}: On Injured List`);
+    else if (p.injuryFlag) exportWarnings.push(`${p.name}: ${p.injuryDesc || p.injuryType || 'Injury flag'}`);
+    if (!rp(p, 'P') && p.isConfirmed === false) exportWarnings.push(`${p.name}: Lineup not yet confirmed`);
+    if (p.isPostponed) exportWarnings.push(`${p.name}: Game postponed/cancelled`);
+  });
+  if (exportWarnings.length && !confirm('Export warning — review before uploading to DraftKings:\n\n' + exportWarnings.map(w => '• ' + w).join('\n') + '\n\nExport anyway?')) return;
+  const header = slots.map(s => s.label).join(',');
   const row = STATE.lineup.map(p => p.dkId).join(',');
   dlFile(header + '\n' + row, 'dk_upload.csv', 'text/csv');
 }
@@ -1047,7 +1520,12 @@ async function loadVegasWeatherData() {
     renderVegasPanel();
     await loadWindEffects();
     renderSlateEnvironment();
-  } catch (e) { console.error('Failed to load vegas/weather data:', e); }
+  } catch (e) {
+    console.error('Failed to load vegas/weather data:', e);
+    // Soft toast — load failures are recoverable (user can hit Refresh), but they
+    // should know the dashboard is showing stale or empty data.
+    showToast('Could not load Vegas/weather/park data: ' + (e.message || e) + '. Click Refresh to retry.', 'warn', 6000);
+  }
 }
 
 function renderVegasPanel() {
@@ -1058,6 +1536,32 @@ function renderVegasPanel() {
     vegasEl.innerHTML = '<div class="empty">Load player data first to enter Vegas lines.</div>';
     return;
   }
+
+  // ── Data quality warnings ────────────────────────────────────────────────
+  // Use lastFetchedAt (reset every refresh) not openAt (preserved for movement tracking).
+  const STALE_MS = 2 * 60 * 60 * 1000;  // 2 hours since last fetch
+  const INVALID_THRESHOLD = 1.5;         // sentinel for cancelled/postponed games
+  const now = Date.now();
+  const staleTeams = [], invalidTeams = [];
+  if (STATE.vegasData) {
+    Object.entries(STATE.vegasData).forEach(([team, d]) => {
+      if (teams.includes(team)) {
+        const fetchTs = d.lastFetchedAt || d.openAt;
+        if (fetchTs && (now - new Date(fetchTs).getTime()) > STALE_MS) staleTeams.push(team);
+        if (d.impliedTotal > 0 && d.impliedTotal < INVALID_THRESHOLD) invalidTeams.push(team);
+      }
+    });
+  }
+  const warnings = [];
+  if (staleTeams.length) {
+    warnings.push(`Lines for <strong>${staleTeams.join(', ')}</strong> are more than 2 hours old — refresh before generating.`);
+  }
+  if (invalidTeams.length) {
+    warnings.push(`<strong>${invalidTeams.join(', ')}</strong> implied total below 1.5 — likely a cancelled/postponed game. Engine will treat as neutral (no adjustment).`);
+  }
+  const warningBanner = warnings.length
+    ? `<div style="margin-bottom:10px;padding:8px 12px;background:rgba(255,180,0,0.12);border:1px solid var(--tw);border-radius:var(--r);font-size:11px;color:var(--tw)">${warnings.map(w => `<div>${w}</div>`).join('')}</div>`
+    : '';
 
   // Build game-based entry form
   const gameTeams = {};
@@ -1076,7 +1580,7 @@ function renderVegasPanel() {
     </span>`;
   }
 
-  let html = '<div style="display:grid;gap:8px">';
+  let html = warningBanner + '<div style="display:grid;gap:8px">';
   if (Object.keys(gameTeams).length) {
     Object.entries(gameTeams).forEach(([game, { away, home }]) => {
       const awayData = STATE.vegasData?.[away] || {};
@@ -1141,9 +1645,17 @@ function saveVegas() {
     const btn = document.getElementById('save-vegas-btn');
     btn.textContent = 'Saved!'; btn.className = 'btn-g';
     setTimeout(() => { btn.textContent = 'Save Vegas Lines'; btn.className = 'btn-p'; }, 1500);
-    // Recalculate leverage with vegas data
+    // Recalculate leverage with vegas data (mergePools also re-renders slate summary if tab is open)
     if (STATE.POOL.length) mergePools();
-  }).catch(e => console.error('Save vegas failed:', e));
+    else if (document.getElementById('panel-slate')?.classList.contains('active')) renderSlateSummary();
+  }).catch(e => {
+    // CRITICAL: previously silent — user saw "Save Vegas Lines" button restored but the
+    // data did not persist. On reload they'd lose all manual edits without knowing.
+    console.error('Save vegas failed:', e);
+    showToast('Failed to save Vegas lines: ' + (e.message || e) + '. Your edits will be lost on reload.', 'warn', 8000);
+    const btn = document.getElementById('save-vegas-btn');
+    if (btn) { btn.textContent = 'Save Failed — Retry'; btn.className = 'btn-p'; }
+  });
 }
 
 async function fetchOdds() {
@@ -1216,6 +1728,10 @@ function renderParkFactors() {
   }).join('')}</tbody></table></div>`;
 }
 
+// Weather request deduplication — avoids hitting wttr.in again if data is fresh (10 min TTL)
+const _weatherCache = new Map(); // team → { data, fetchedAt }
+const WEATHER_TTL_MS = 600_000;  // 10 minutes
+
 async function fetchWeather() {
   const el = document.getElementById('weather-display');
   if (!STATE.stadiumData) {
@@ -1234,12 +1750,19 @@ async function fetchWeather() {
   btn.textContent = 'Fetching...'; btn.disabled = true;
 
   try {
-    const res = await fetch('/api/weather/batch', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ teams })
-    });
-    if (!res.ok) throw new Error(`Server returned ${res.status}`);
-    STATE.weatherData = await res.json();
+    const now = Date.now();
+    const stale = teams.filter(t => { const c = _weatherCache.get(t); return !c || now - c.fetchedAt > WEATHER_TTL_MS; });
+    if (stale.length) {
+      const res = await fetch('/api/weather/batch', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ teams: stale })
+      });
+      if (!res.ok) throw new Error(`Server returned ${res.status}`);
+      const fresh = await res.json();
+      Object.entries(fresh).forEach(([t, d]) => _weatherCache.set(t, { data: d, fetchedAt: now }));
+    }
+    // Assemble result from cache (mix of fresh and previously-cached)
+    STATE.weatherData = Object.fromEntries(teams.map(t => [t, _weatherCache.get(t)?.data]).filter(([, d]) => d));
 
     // Warn if every city failed (API down, not just one bad city)
     const allFailed = Object.values(STATE.weatherData).every(w => w.error);
@@ -1386,12 +1909,14 @@ function renderExposureOverrides() {
       const ov = STATE.playerExposureOverrides[name];
       const p = STATE.POOL.find(pl => pl.name === name);
       const pos = p ? (p.dkPos || '—') : '—';
+      // Use data-name on each control so the player name is passed via dataset,
+      // avoiding the double-quote collision that breaks inline onclick/oninput handlers.
       return `<tr>
         <td style="padding:4px 6px"><strong>${esc(name)}</strong></td>
         <td style="padding:4px 6px"><span class="pill pi" style="font-size:10px">${esc(pos)}</span></td>
-        <td style="padding:4px 6px;text-align:center"><input type="number" min="0" max="100" step="5" value="${ov.min ?? ''}" placeholder="—" style="width:52px;font-size:11px;padding:2px 4px;border:0.5px solid var(--brd-s);border-radius:4px;background:var(--bp);color:var(--tp);text-align:center" oninput="updateExposureOverride(${JSON.stringify(name)},'min',this.value)"></td>
-        <td style="padding:4px 6px;text-align:center"><input type="number" min="0" max="100" step="5" value="${ov.max ?? ''}" placeholder="—" style="width:52px;font-size:11px;padding:2px 4px;border:0.5px solid var(--brd-s);border-radius:4px;background:var(--bp);color:var(--tp);text-align:center" oninput="updateExposureOverride(${JSON.stringify(name)},'max',this.value)"></td>
-        <td style="padding:4px 6px"><button class="btn" style="padding:2px 7px;font-size:10px;color:var(--td)" onclick="removeExposureOverride(${JSON.stringify(name)})">✕</button></td>
+        <td style="padding:4px 6px;text-align:center"><input type="number" min="0" max="100" step="5" value="${ov.min ?? ''}" placeholder="—" data-name="${escAttr(name)}" data-field="min" style="width:52px;font-size:11px;padding:2px 4px;border:0.5px solid var(--brd-s);border-radius:4px;background:var(--bp);color:var(--tp);text-align:center" oninput="updateExposureOverride(this.dataset.name,this.dataset.field,this.value)"></td>
+        <td style="padding:4px 6px;text-align:center"><input type="number" min="0" max="100" step="5" value="${ov.max ?? ''}" placeholder="—" data-name="${escAttr(name)}" data-field="max" style="width:52px;font-size:11px;padding:2px 4px;border:0.5px solid var(--brd-s);border-radius:4px;background:var(--bp);color:var(--tp);text-align:center" oninput="updateExposureOverride(this.dataset.name,this.dataset.field,this.value)"></td>
+        <td style="padding:4px 6px"><button class="btn" style="padding:2px 7px;font-size:10px;color:var(--td)" data-name="${escAttr(name)}" onclick="removeExposureOverride(this.dataset.name)">✕</button></td>
       </tr>`;
     }).join('')}</tbody>
   </table>`;
@@ -1500,6 +2025,190 @@ function toggleSimFilter() {
   if (opts) opts.style.display = on ? 'flex' : 'none';  // flex-direction:column set in HTML
 }
 
+function onPayoutTypeChange() {
+  const val = document.getElementById('port-payout-type')?.value;
+  const row = document.getElementById('custom-payout-row');
+  if (row) row.style.display = val === 'custom' ? '' : 'none';
+}
+
+// #11: Warn when Score Diversity is set to a GPP value but the user switched
+// to cash mode (GPP variance settings produce overly optimistic floors in cash sim).
+// Fires once per change to avoid spam.
+function onContestTypeChange() {
+  const ct = document.getElementById('port-contest-type')?.value;
+  if (ct !== 'cash') return;
+  const sd = parseFloat(document.getElementById('sim-diversity')?.value);
+  if (sd > 1.05) {
+    showToast(
+      `Score Diversity is ${sd.toFixed(1)}× (GPP setting). For cash floor accuracy, reset to 1.0× in the Simulator tab.`,
+      'warn', 6000
+    );
+  }
+}
+
+function toggleBringBackOptions() {
+  const enabled = document.getElementById('port-bb-enabled')?.checked;
+  const rows = ['bb-options-row', 'bb-target-row'];
+  rows.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.opacity = enabled ? '1' : '0.4';
+  });
+}
+
+async function loadPitcherHands() {
+  const btn = document.getElementById('fetch-hands-btn');
+  const statusEl = document.getElementById('lineups-status');
+  if (btn) { btn.textContent = 'Fetching…'; btn.disabled = true; }
+  try {
+    const res = await fetch('/api/pitcher-hands');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error || 'Unknown error');
+    const handsMap = data.hands; // { name: throwingHand, 'bat:name': battingHand }
+    const normName = name => (name || '').toLowerCase().replace(/[^a-z ]/g, '').replace(/\s+/g, ' ').trim();
+    let merged = 0;
+    STATE.POOL.forEach(p => {
+      const norm = normName(p.name);
+      const isPitcher = Engine.rp(p, 'P');
+      if (isPitcher) {
+        // Pitchers: store throwing hand so platoon logic can look them up
+        if (handsMap[norm]) { p.hand = handsMap[norm]; merged++; }
+      } else {
+        // Batters: store batting side (bat: prefix) for platoon split calculations
+        const batHand = handsMap[`bat:${norm}`];
+        if (batHand && !p.hand) { p.hand = batHand; merged++; }
+      }
+    });
+    // Also update ROO source pools so blended projections carry the hand data
+    STATE.ROO_SOURCES.forEach(src => {
+      if (!src) return;
+      src.data.forEach(p => {
+        const norm = normName(p.name);
+        const isPitcher = (p.pos || '').toUpperCase().includes('P');
+        if (isPitcher) {
+          if (handsMap[norm] && !p.hand) p.hand = handsMap[norm];
+        } else {
+          const batHand = handsMap[`bat:${norm}`];
+          if (batHand && !p.hand) p.hand = batHand;
+        }
+      });
+    });
+    if (statusEl) statusEl.innerHTML = `<span class="pill psu">Pitcher hands loaded — ${merged} players updated (${Object.keys(handsMap).length} total)</span>`;
+    showToast(`Pitcher handedness loaded — ${merged} pool players updated`, 'success');
+    renderPlayers();
+  } catch (e) {
+    if (statusEl) statusEl.innerHTML = `<span class="pill warn">Hands fetch failed: ${e.message}</span>`;
+    showToast('Pitcher hands fetch failed: ' + e.message, 'warn');
+  } finally {
+    if (btn) { btn.textContent = 'Fetch Pitcher Hands'; btn.disabled = false; }
+  }
+}
+
+// Fix 8: Apply recommended portfolio settings based on current slate size.
+// Reads game count from the loaded pool and calls Engine.getSlateDefaults().
+function applySlateDefaults() {
+  const gameCount = new Set(STATE.POOL.filter(p => p.game).map(p => p.game)).size || 8;
+  const defaults = Engine.getSlateDefaults(gameCount);
+
+  const set = (id, val) => {
+    const el = document.getElementById(id);
+    if (el) { el.value = val; el.dispatchEvent(new Event('change')); }
+  };
+
+  set('port-max-overlap', defaults.maxOverlap);
+  set('port-stack-pct5', defaults.stackPct5);
+  set('port-max-game-exposure', Math.round(defaults.maxGameExposure * 100));
+
+  showToast(`Slate defaults applied: ${defaults.label} (${gameCount} games) — overlap=${defaults.maxOverlap}, 5-man=${defaults.stackPct5}%, game cap=${Math.round(defaults.maxGameExposure * 100)}%`, 'info', 5000);
+  saveSession();
+}
+
+// ── Historical Score Benchmarks ───────────────────────────────────────────────
+let _cachedBenchmarks = null;
+
+async function loadHistoryBenchmarks() {
+  const el = document.getElementById('history-benchmarks');
+  if (!el) return;
+  el.style.display = 'block';
+  el.innerHTML = '<span style="color:var(--tt)">Loading…</span>';
+  try {
+    const data = await fetch('/api/history/score-benchmarks').then(r => r.json());
+    _cachedBenchmarks = data;
+    if (!data.sufficient) {
+      el.innerHTML = `<span style="color:var(--tw)">${esc(data.message)}</span>`;
+      return;
+    }
+    const p = data.scorePercentiles;
+    const cashColor = data.estCashLine ? 'var(--ti)' : 'var(--tt)';
+    const winColor  = data.estWinLine  ? 'var(--tsu)' : 'var(--tt)';
+    const divSug = data.simDiversitySuggestion;
+    const lam    = data.lambdaSuggestion;
+    el.innerHTML = `
+      <div style="margin-bottom:8px">
+        <span style="color:var(--tt);text-transform:uppercase;font-size:10px;letter-spacing:.05em">Your Score Distribution (${data.count} contests)</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:6px;margin-bottom:8px;text-align:center">
+        ${[['P10',p.p10],['P25',p.p25],['P50 (med)',p.p50],['P75',p.p75],['P90',p.p90],['P95',p.p95]].map(([l,v]) =>
+          `<div><div style="font-size:9px;color:var(--tt)">${l}</div><div style="font-weight:600;font-size:13px">${v}</div></div>`
+        ).join('')}
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+        <div style="background:var(--bp);border-radius:4px;padding:6px 8px">
+          <div style="font-size:9px;color:var(--tt);margin-bottom:2px" title="10th-percentile of cashing scores across contests with ≥100 entries. Robust to one-off disaster slates.">EST. CASH LINE (top 22% finishes, p10) <span style="cursor:help">ⓘ</span></div>
+          <div style="font-size:14px;font-weight:700;color:${cashColor}">${data.estCashLine ?? 'need more data'} pts</div>
+          ${data.benchmarkMeta?.cashSampleSize > 0 ? `<div style="font-size:9px;color:var(--tt);margin-top:2px">from ${data.benchmarkMeta.cashSampleSize} entries · median ${data.benchmarkMeta.cashMedian} · min observed ${data.benchmarkMeta.cashMinObserved}</div>` : ''}
+          <button class="btn" style="font-size:10px;padding:1px 6px;margin-top:4px" onclick="applyHistoryCashLine()">Set Cash Line</button>
+        </div>
+        <div style="background:var(--bp);border-radius:4px;padding:6px 8px">
+          <div style="font-size:9px;color:var(--tt);margin-bottom:2px" title="10th-percentile of top-5%-finish scores. Excludes contests under 100 entries.">EST. WIN LINE (top 5% finishes, p10) <span style="cursor:help">ⓘ</span></div>
+          <div style="font-size:14px;font-weight:700;color:${winColor}">${data.estWinLine ?? 'need more data'} pts</div>
+          ${data.benchmarkMeta?.winSampleSize > 0 ? `<div style="font-size:9px;color:var(--tt);margin-top:2px">from ${data.benchmarkMeta.winSampleSize} entries · median ${data.benchmarkMeta.winMedian} · min observed ${data.benchmarkMeta.winMinObserved}</div>` : ''}
+          <button class="btn" style="font-size:10px;padding:1px 6px;margin-top:4px" onclick="applyHistoryWinLine()">Set Win Line</button>
+        </div>
+      </div>
+      ${data.benchmarkMeta?.excludedSmallFields > 0 ? `<div style="font-size:10px;color:var(--tt);margin-bottom:8px;padding:4px 8px;background:var(--bs);border-radius:3px">Excluded ${data.benchmarkMeta.excludedSmallFields} small-field contests (&lt; ${data.benchmarkMeta.minContestSize} entries) — H2H, satellites, and beginner pools have score distributions that don't predict large-field cash lines.</div>` : ''}
+      ${divSug ? `<div style="margin-bottom:4px;padding:5px 8px;background:var(--bp);border-radius:4px">
+        <span style="color:var(--tt)">Sim Diversity: </span>
+        actual spread = <strong>${divSug.actStd}</strong> pts · projected spread = <strong>${divSug.projStd}</strong> pts ·
+        ratio <strong style="color:${Math.abs(divSug.ratio-1)<0.1?'var(--tsu)':'var(--tw)'}">${divSug.ratio.toFixed(2)}×</strong> →
+        suggested diversity <strong>${divSug.suggested.toFixed(2)}</strong>
+        <button class="btn" style="font-size:10px;padding:1px 6px;margin-left:6px" onclick="applyHistorySimDiversity()">Apply</button>
+      </div>` : ''}
+      ${lam ? `<div style="padding:5px 8px;background:var(--bp);border-radius:4px;font-size:11px">
+        <span style="color:var(--tt)">Ownership Lambda: </span>
+        cash rate <strong>${lam.cashRate}%</strong> vs break-even <strong>${lam.breakEvenPct}%</strong> →
+        <strong style="color:${lam.hint==='maintain'?'var(--tsu)':'var(--tw)'}">${lam.hint==='increase'?'↑ increase':lam.hint==='decrease'?'↓ decrease':'✓ maintain'} lambda</strong>
+      </div>` : ''}`;
+  } catch (e) {
+    el.innerHTML = `<span style="color:var(--tw)">Failed: ${esc(e.message)}</span>`;
+  }
+}
+
+function applyHistoryCashLine() {
+  const data = _cachedBenchmarks;
+  if (!data?.estCashLine) { showToast('Load Historical Benchmarks first, or not enough top-finish data yet', 'warn'); return; }
+  const el = document.getElementById('port-cash-line');
+  if (el) { el.value = data.estCashLine; saveSession(); }
+  showToast(`Cash line set to ${data.estCashLine} pts (from your top-22%-finish contests)`, 'info');
+}
+
+function applyHistoryWinLine() {
+  const data = _cachedBenchmarks;
+  if (!data?.estWinLine) { showToast('Load Historical Benchmarks first, or not enough top-5%-finish data yet', 'warn'); return; }
+  const el = document.getElementById('port-win-line');
+  if (el) { el.value = data.estWinLine; saveSession(); }
+  showToast(`Win line set to ${data.estWinLine} pts (from your top-5%-finish contests)`, 'info');
+}
+
+function applyHistorySimDiversity() {
+  const data = _cachedBenchmarks;
+  const sug = data?.simDiversitySuggestion;
+  if (!sug) { showToast('No sim diversity data — need saved lineups with both projected and actual scores', 'warn'); return; }
+  const el = document.getElementById('sim-diversity');
+  if (el) { el.value = sug.suggested.toFixed(2); el.dispatchEvent(new Event('input')); saveSession(); }
+  showToast(`Sim diversity set to ${sug.suggested.toFixed(2)} (actual/projected spread ratio = ${sug.ratio.toFixed(2)}×)`, 'info');
+}
+
 function validatePortfolioSettings() {
   const warningsEl = document.getElementById('port-warnings');
   const warnings = [];
@@ -1515,6 +2224,17 @@ function validatePortfolioSettings() {
   const maxPitcherAppearances = Math.ceil(viablePitchers * pitcherMaxPct * numLineups);
   if (viablePitchers > 0 && maxPitcherAppearances < neededPitcherAppearances) {
     warnings.push(`<strong>Pitcher exposure too low:</strong> ${viablePitchers} viable pitchers at ${Math.round(pitcherMaxPct * 100)}% max = ~${maxPitcherAppearances} total appearances, but ${neededPitcherAppearances} are needed (${numLineups} lineups × 2 P slots). Some pitchers will exceed their cap or lineups will fail. Raise pitcher exposure or reduce lineup count.`);
+  }
+
+  // Warn when 5-man only is selected but not enough 5-man stacks are loaded
+  const stackSizeValV = document.getElementById('port-stack-size')?.value;
+  if (stackSizeValV === '5') {
+    const avail5 = STATE.STACKS5.filter(s => !bannedTeams.includes(s.team)).length;
+    if (avail5 === 0) {
+      warnings.push(`<strong>No 5-man stacks loaded:</strong> Stack Size is set to 5-man only but no 5-man stacks file has been uploaded. Upload a 5-man stacks CSV or switch Stack Size to Mix or 3-man.`);
+    } else if (avail5 < Math.ceil(numLineups / 5)) {
+      warnings.push(`<strong>Low 5-man stack variety:</strong> Only ${avail5} 5-man stacks loaded for ${numLineups} lineups — the engine may fall short of ${numLineups}. Consider loading more 5-man stack combinations (aim for at least ${Math.ceil(numLineups / 4)}) or reducing the lineup count.`);
+    }
   }
 
   // Warn if a locked team has no stack in the stacks files
@@ -1544,6 +2264,86 @@ function validatePortfolioSettings() {
   }
 }
 
+// ── Portfolio Web Worker ──────────────────────────────────────────────────────
+// Offloads Engine.buildPortfolio (and its internal sim-filter pass) to a
+// background thread so the UI stays responsive during 60s+ generation runs.
+let _activePortfolioWorker = null;
+
+function buildPortfolioWorker(pool, opts, onProgress, simControls = null) {
+  return new Promise((resolve, reject) => {
+    if (_activePortfolioWorker) {
+      _activePortfolioWorker.terminate();
+      _activePortfolioWorker = null;
+    }
+    const worker = new Worker('sim-worker.js');
+    _activePortfolioWorker = worker;
+    worker.onmessage = ({ data }) => {
+      if (data.type === 'progress') {
+        if (onProgress) onProgress(data.built, data.target);
+      } else if (data.type === 'result') {
+        worker.terminate();
+        _activePortfolioWorker = null;
+        resolve(data.result);
+      } else if (data.type === 'error') {
+        worker.terminate();
+        _activePortfolioWorker = null;
+        reject(new Error(data.message));
+      }
+    };
+    worker.onerror = (e) => {
+      worker.terminate();
+      _activePortfolioWorker = null;
+      reject(new Error(e.message || 'Portfolio worker error'));
+    };
+    const controls = simControls || { corrScale: 1.0, simDiversity: 1.0 };
+    worker.postMessage({
+      type: 'buildPortfolio',
+      payload: {
+        pool,
+        opts,
+        corrScale: controls.corrScale,
+        simDiversity: controls.simDiversity,
+      }
+    });
+  });
+}
+
+function simulatePortfolioWorker(lineups, pool, numSims, contestType, manualCashLine, manualWinLine, payoutType, contestSize, customPayoutConfig = null, simControls = null) {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker('sim-worker.js');
+    worker.onmessage = ({ data }) => {
+      if (data.type === 'result') {
+        worker.terminate();
+        resolve(data.results);
+      } else if (data.type === 'error') {
+        worker.terminate();
+        reject(new Error(data.message));
+      }
+    };
+    worker.onerror = (e) => {
+      worker.terminate();
+      reject(new Error(e.message || 'Sim worker error'));
+    };
+    const controls = simControls || { corrScale: 1.0, simDiversity: 1.0 };
+    worker.postMessage({
+      type: 'simulatePortfolio',
+      payload: {
+        lineups,
+        pool,
+        numSims,
+        contestType,
+        manualCashLine,
+        manualWinLine,
+        payoutType,
+        contestSize,
+        customPayoutConfig,
+        corrScale: controls.corrScale,
+        simDiversity: controls.simDiversity,
+      }
+    });
+  });
+}
+
 function generatePortfolio() {
   if (!STATE.POOL.length) return;
   const numLineups = parseInt(document.getElementById('port-num-lineups').value) || 20;
@@ -1561,12 +2361,33 @@ function generatePortfolio() {
   const bannedTeams = getCheckedTeams('port-ban-teams');
   const simFilter = document.getElementById('port-sim-filter')?.checked || false;
   const simFilterPct = parseInt(document.getElementById('port-sim-filter-pct')?.value) || 50;
-  const simFilterSims = parseInt(document.getElementById('port-sim-filter-sims')?.value) || 500;
+  const simFilterSims = parseInt(document.getElementById('port-sim-filter-sims')?.value) || 1500;
   const simROIMinRaw = document.getElementById('port-sim-roi-min')?.value;
   const simROIMaxRaw = document.getElementById('port-sim-roi-max')?.value;
   const simROIMin = simFilter && simROIMinRaw !== '' && simROIMinRaw != null ? parseFloat(simROIMinRaw) : null;
   const simROIMax = simFilter && simROIMaxRaw !== '' && simROIMaxRaw != null ? parseFloat(simROIMaxRaw) : null;
   const payoutType = document.getElementById('port-payout-type')?.value || 'top20';
+
+  // Bring-back settings
+  const bbEnabled = document.getElementById('port-bb-enabled')?.checked !== false;
+  const bbMinOppImplied = parseFloat(document.getElementById('port-bb-min-implied')?.value) || 4.0;
+  const bbTargetRaw = document.getElementById('port-bb-target')?.value || 'auto';
+  const bbTarget = bbTargetRaw === 'auto' ? null : parseInt(bbTargetRaw);
+
+  // Ownership controls
+  const ownershipLambda = parseFloat(document.getElementById('port-own-lambda')?.value || '4') / 100;
+  const maxAvgOwnership = parseFloat(document.getElementById('port-max-avg-own')?.value) || 0;
+
+  // Custom payout config (only when payoutType === 'custom')
+  let customPayoutConfig = null;
+  if (payoutType === 'custom') {
+    const cashPct = parseFloat(document.getElementById('custom-cash-pct')?.value || '20') / 100;
+    const cashMult = parseFloat(document.getElementById('custom-cash-mult')?.value || '2.5');
+    const winPct = parseFloat(document.getElementById('custom-win-pct')?.value || '0.5') / 100;
+    const winMult = parseFloat(document.getElementById('custom-win-mult')?.value || '15');
+    customPayoutConfig = { cashPct, cashMult, winPct, winMult };
+  }
+
   // Convert playerExposureOverrides from % to 0-1 ratios for engine
   const playerOverrides = {};
   Object.entries(STATE.playerExposureOverrides).forEach(([name, ov]) => {
@@ -1589,8 +2410,51 @@ function generatePortfolio() {
     if (teamOverrides[team].max == null) delete teamOverrides[team].max;
   });
 
-  // Run validation warnings before generating
-  validatePortfolioSettings();
+  // Run validation warnings before generating (classic only)
+  if (!isShowdown()) validatePortfolioSettings();
+
+  // Constraint snapshot — diagnostic for tracing portfolio shortfalls.
+  // Gated behind debug mode since it fires every portfolio build (chatty in normal use).
+  // Run window.toggleDebug() in the console to see this.
+  dgroup('[Portfolio] Active constraints', () => {
+    console.log('Lineups requested:', numLineups);
+    console.log('Stack mode:', stackSizeVal, '| 5-man %:', stackPct5 ?? 'n/a');
+    console.log('Locked teams:', lockedTeams.length ? lockedTeams.join(', ') : 'none');
+    console.log('Banned teams:', bannedTeams.length ? bannedTeams.join(', ') : 'none');
+    console.log('Sim filter:', simFilter ? `ON (top ${simFilterPct}% of ${simFilterSims} sims, ROI ${simROIMin ?? '–'}–${simROIMax ?? '–'})` : 'OFF');
+    const teamOvSummary = Object.entries(STATE.teamExposureOverrides)
+      .map(([t, ov]) => `${t}: min=${ov.min ?? '–'}% max=${ov.max ?? '–'}%`).join(', ');
+    console.log('Team overrides:', teamOvSummary || 'none');
+    const playerOvSummary = Object.entries(STATE.playerExposureOverrides)
+      .map(([n, ov]) => `${n}: min=${ov.min ?? '–'}% max=${ov.max ?? '–'}%`).join(', ');
+    console.log('Player overrides:', playerOvSummary || 'none');
+  });
+
+  // Data staleness check — warn before building if Vegas/lineup data is stale.
+  // Threshold matches the Vegas tab (2 hours) so users aren't double-warned.
+  (() => {
+    const warnings = [];
+    if (!STATE.vegasData || !Object.keys(STATE.vegasData).length) {
+      warnings.push('No Vegas data loaded — implied totals will default to 4.5 for all teams');
+    } else {
+      const times = Object.values(STATE.vegasData)
+        .map(d => d.lastFetchedAt ? new Date(d.lastFetchedAt).getTime() : 0)
+        .filter(t => t > 0);
+      if (times.length === 0) {
+        warnings.push('Vegas data has no fetch timestamp — may be stale');
+      } else {
+        const ageMin = Math.round((Date.now() - Math.max(...times)) / 60000);
+        if (ageMin > 120) warnings.push(`Vegas data is ${ageMin}min old — consider refreshing`);
+      }
+    }
+    const hasConfirmed = STATE.POOL.some(p => p.isConfirmed === true);
+    if (!hasConfirmed && STATE.POOL.length > 0) {
+      warnings.push('Batting orders not yet confirmed — unconfirmed multiplier will not apply');
+    }
+    if (warnings.length) {
+      showToast('⚠ ' + warnings.join(' · '), 'warn', 7000);
+    }
+  })();
 
   const btn = document.getElementById('gen-portfolio-btn');
   btn.textContent = 'Generating...'; btn.disabled = true;
@@ -1600,11 +2464,54 @@ function generatePortfolio() {
     try {
       const ctx = getEngineContext();
       ctx.contestSize = portContestSize;
+
+      // ── Showdown portfolio path ────────────────────────────────────────────
+      if (isShowdown()) {
+        // Guard: verify pool actually has Showdown flags; fall back to classic if not
+        const calibratedPool = getCalibratedPool();
+        const hasCpt = calibratedPool.some(p => p.isCpt);
+        if (!hasCpt) {
+          console.warn('[Portfolio] isShowdown() is true but pool has no CPT players — falling back to classic builder.');
+          STATE.slateType = 'classic';
+          updateShowdownIndicator();
+          // Fall through to classic path below
+        } else {
+          ctx.minImpliedTotal = 0; ctx.minGameTotal = 0;
+          const sdResult = await Engine.buildShowdownPortfolio(calibratedPool, {
+            numLineups, maxExposure, contestType,
+            maxOverlap: maxOverlapVal,
+            playerExposureOverrides: playerOverrides,
+            context: ctx,
+          }, pct => { btn.textContent = `Generating... ${Math.round(pct * 100)}%`; });
+          STATE.portfolioLineups = sdResult.lineups;
+          const total = sdResult.lineups.length || 1;
+          const playerExposure = {};
+          Object.entries(sdResult.exposureCounts).forEach(([name, count]) => {
+            const player = STATE.POOL.find(p => p.name === name);
+            playerExposure[name] = {
+              count,
+              pct: parseFloat((count / total * 100).toFixed(1)),
+              cptCount: sdResult.cptCounts[name] || 0,
+              flexCount: sdResult.flexCounts[name] || 0,
+              isPitcher: player ? Engine.rp(player, 'P') : false,
+            };
+          });
+          STATE.portfolioExposure = playerExposure;
+          renderPortfolioResults({ lineups: sdResult.lineups, playerExposure, totalLineups: sdResult.lineups.length });
+          return;
+        }
+      }
+
+      // ── Classic portfolio path ─────────────────────────────────────────────
       ctx.minImpliedTotal = parseFloat(document.getElementById('port-min-implied')?.value) || 0;
       ctx.minGameTotal = parseFloat(document.getElementById('port-min-game-total')?.value) || 0;
       ctx.maxOppK9 = parseFloat(document.getElementById('port-max-opp-k9')?.value) || 0;
       ctx.blockNegWeather = document.getElementById('port-block-neg-weather')?.checked || false;
-      const result = await Engine.buildPortfolio(getCalibratedPool(), {
+      // Fix 3/8: read maxGameExposure from UI field (falls back to engine default 0.65)
+      const maxGameExposure = parseFloat(document.getElementById('port-max-game-exposure')?.value) || 0.65;
+      const minSalaryRaw = document.getElementById('port-min-salary')?.value;
+      const minSalary = minSalaryRaw !== '' && minSalaryRaw != null ? parseFloat(minSalaryRaw) : 0;
+      const result = await buildPortfolioWorker(getCalibratedPool(), {
         numLineups, maxExposure, maxExposurePitcher, contestType, contestSize: portContestSize,
         maxOverlap: maxOverlapVal,
         allowBvP,
@@ -1613,10 +2520,21 @@ function generatePortfolio() {
         lockedTeams, bannedTeams,
         context: ctx, iterations: OPTIMIZER_ITERATIONS,
         simFilter, simFilterPct, simFilterSims, payoutType, simROIMin, simROIMax,
-      }, (done, total, built) => {
-        const phase = simFilter && built >= numLineups ? 'Filtering by Sim ROI…' : `${done}/${total} (${built} built)`;
+        maxGameExposure, minSalary,
+        bbEnabled, bbMinOppImplied, bbTarget,
+        ownershipLambda, maxAvgOwnership,
+        customPayoutConfig,
+      }, (built, target) => {
+        let phase;
+        if (built < 0) {
+          phase = `Filtering ${-built}/${target} lineups…`;
+        } else if (simFilter && built >= numLineups) {
+          phase = 'Filtering by Sim ROI…';
+        } else {
+          phase = `${built}/${target}`;
+        }
         btn.textContent = `Generating... ${phase}`;
-      });
+      }, { corrScale: 1.0, simDiversity: 1.0 });
       STATE.portfolioLineups = result.lineups;
       STATE.portfolioExposure = result.playerExposure;
       renderPortfolioResults(result);
@@ -1630,9 +2548,28 @@ function generatePortfolio() {
 }
 
 function renderPortfolioResults(result) {
+  // Persist full result so applySwap can re-render with all diagnostic fields intact
+  STATE.lastPortfolioResult = result;
   const el = document.getElementById('portfolio-results');
   if (!result.lineups.length) {
-    el.innerHTML = '<div class="ib warn">No valid lineups generated. Check your player pool and settings — pitcher exposure cap may be too low for the slate size.</div>';
+    const d = result._diag || {};
+    const diagParts = [];
+    if (d.nullLu) diagParts.push(`${d.nullLu} null (stack placement failed)`);
+    if (d.incompleteLu) diagParts.push(`${d.incompleteLu} incomplete (empty roster slots)`);
+    if (d.stackSizeFail) diagParts.push(`${d.stackSizeFail} wrong stack size`);
+    if (d.dupFail) diagParts.push(`${d.dupFail} duplicates`);
+    if (d.overlapFail) diagParts.push(`${d.overlapFail} too similar`);
+    if (d.gameCapFail) diagParts.push(`${d.gameCapFail} game cap hits${d.gameCapRelaxed ? ` (relaxed to ${d.gameCapRelaxed}%)` : ''}`);
+    const diagStr = diagParts.length ? `<br><span style="font-size:11px;color:var(--tt)">Rejection breakdown: ${diagParts.join(' · ')}</span>` : '';
+    const simBandActive = document.getElementById('port-sim-filter')?.checked
+      && ((document.getElementById('port-sim-roi-min')?.value || '') !== '' || (document.getElementById('port-sim-roi-max')?.value || '') !== '');
+    const simBandHint = simBandActive
+      ? '<br><span style="font-size:11px;color:var(--tt)">Sim ROI band is enabled. If the band is too tight, widen ROI min/max (or clear one bound) and regenerate.</span>'
+      : '';
+    const msg = isShowdown()
+      ? 'No valid showdown lineups generated. Ensure the DK showdown salary file is loaded (CPT/FLEX players). Check the browser console for details.'
+      : 'No valid lineups generated. Check your player pool and settings — pitcher exposure cap may be too low for the slate size.';
+    el.innerHTML = `<div class="ib warn">${msg}${diagStr}${simBandHint}</div>`;
     return;
   }
 
@@ -1641,8 +2578,101 @@ function renderPortfolioResults(result) {
 
   let html = '';
 
+  // Warn when fewer lineups were built than requested
+  if (result.requested && result.lineups.length < result.requested) {
+    const d = result._diag || {};
+    const parts = [];
+    if (d.overlapFail) parts.push(`${d.overlapFail} too similar (raise Max Overlap)`);
+    if (d.nullLu) parts.push(`${d.nullLu} stack placement failed`);
+    if (d.stackSizeFail) parts.push(`${d.stackSizeFail} wrong stack size`);
+    if (d.dupFail) parts.push(`${d.dupFail} duplicates${d.exhausted ? ' (space exhausted)' : ''}`);
+    if (d.incompleteLu) parts.push(`${d.incompleteLu} incomplete`);
+    if (d.gameCapFail) parts.push(`${d.gameCapFail} game cap hits${d.gameCapRelaxed ? ` (auto-relaxed to ${d.gameCapRelaxed}%)` : ' (raise Max Game Exposure)'}`);
+    const why = parts.length ? ` — rejections: ${parts.join(', ')}` : '';
+    html += `<div class="ib warn" style="margin-bottom:8px"><strong>Only ${result.lineups.length} of ${result.requested} lineups generated${why}.</strong></div>`;
+
+    // Context-aware "how to fix it" tips
+    const tipsList = [];
+    const stackSizeOpt = result.stackSize; // 3 | 4 | 5 | null
+    const avail5 = STATE.STACKS5.length;
+    const avail3 = STATE.STACKS3.length;
+    const short = result.requested - result.lineups.length;
+
+    if (stackSizeOpt === 5) {
+      if (avail5 < result.requested) {
+        const minNeeded = Math.ceil(result.requested / 4);
+        tipsList.push(`<strong>Load more 5-man stacks</strong> — you have ${avail5} but ideally need at least ${minNeeded} stacks to generate ${result.requested} unique lineups. Add more team/player combinations to your 5-man stacks file.`);
+      }
+      if (d.stackSizeFail > 5) {
+        tipsList.push(`${d.stackSizeFail} attempts produced a stack smaller than 5-man. Make sure every row in your 5-man stacks file has 5 distinct batters that exist in the player CSV.`);
+      }
+    } else if (stackSizeOpt === 3 && d.stackSizeFail > 5) {
+      tipsList.push(`${d.stackSizeFail} attempts produced a stack smaller than 3-man — verify your 3-man stacks file (${avail3} loaded) and that all named players are in the CSV.`);
+    }
+
+    if (d.overlapFail > 20) {
+      const curOverlap = parseInt(document.getElementById('port-max-overlap')?.value) || 0;
+      const suggested = curOverlap === 0 ? 5 : Math.min(9, curOverlap + 2);
+      const autoNote = d.overlapRelaxed ? ` (auto-raised to ${d.overlapRelaxed} during generation)` : '';
+      tipsList.push(`<strong>Raise Max Overlap</strong> — ${d.overlapFail} lineups were rejected for too many shared players${autoNote}. Try setting it to ${suggested}.`);
+    }
+
+    if (d.dupFail > 10 && !d.exhausted) {
+      const curExp = parseInt(document.getElementById('port-max-exposure')?.value) || 60;
+      const suggested = Math.min(100, curExp + 10);
+      tipsList.push(`<strong>Raise Max Exposure %</strong> — ${d.dupFail} exact-duplicate lineups were rejected because players hit their cap too early. Try raising exposure to ${suggested}%.`);
+    }
+
+    if (d.nullLu > result.requested && stackSizeOpt != null) {
+      tipsList.push(`${d.nullLu} stack placement attempts returned null — verify that the player names in your ${stackSizeOpt}-man stacks file exactly match names in the player CSV.`);
+    }
+
+    if (d.gameCapFail > 5 && !d.gameCapRelaxed) {
+      const curGE = parseFloat(document.getElementById('port-max-game-exposure')?.value) / 100 || 0.65;
+      const suggested = Math.min(1.0, curGE + 0.15);
+      tipsList.push(`<strong>Raise Max Game Exposure</strong> — ${d.gameCapFail} lineups were blocked by the game cap (${Math.round(curGE * 100)}%). Other games don't have enough valid lineups to fill the slate. Try raising it to ${Math.round(suggested * 100)}%.`);
+    } else if (d.gameCapFail > 5 && d.gameCapRelaxed) {
+      tipsList.push(`Game cap was automatically relaxed to ${d.gameCapRelaxed}% to reach the lineup target — other games couldn't supply enough unique lineups. Consider raising Max Game Exposure manually.`);
+    }
+
+    if (d.exhausted) {
+      tipsList.push(`<strong>Unique lineup space exhausted</strong> — the engine found all ${result.lineups.length} valid combinations given your current stacks and exposure settings. To generate more: add more stacks entries, raise Max Exposure %, or (if using forced stack size) try 3-man instead of 5-man stacks.`);
+    }
+
+    const curExpMain = parseInt(document.getElementById('port-max-exposure')?.value) || 60;
+    if (!d.exhausted && curExpMain < 40 && short > 3) {
+      tipsList.push(`Max Exposure is set to ${curExpMain}% — this is quite restrictive for ${result.requested} lineups. Raising it to 50–60% gives the engine more valid combinations.`);
+    }
+
+    if (result.simFilterStats?.inBand === 0) {
+      tipsList.push('<strong>0 candidates met your ROI band</strong> — final lineups were fully backfilled from outside the band. Widen ROI bounds (or clear one bound) and/or increase Overflow %.');
+    }
+
+    if (tipsList.length) {
+      html += `<div class="ib blue" style="margin-bottom:8px;font-size:12px"><strong>To reach ${result.requested} lineups, try:</strong><ul style="margin:6px 0 2px 18px;padding:0">${tipsList.map(t => `<li style="margin-bottom:4px">${t}</li>`).join('')}</ul></div>`;
+    }
+  }
+
   // Post-generation warnings (virtual stacks, pitcher cap overruns)
   const postWarnings = [];
+  if (result.exposureRelaxUsed > 0) {
+    const relaxPct = Math.round(result.exposureRelaxUsed / (result.requested || 20) * 100);
+    let breachStr = '';
+    if (Array.isArray(result.exposureCapBreached) && result.exposureCapBreached.length > 0) {
+      const top = result.exposureCapBreached.slice(0, 5).map(b =>
+        `<strong>${esc(b.name)}</strong> ${b.pct}% (cap ${b.originalCapPct}%)`
+      ).join(', ');
+      const extra = result.exposureCapBreached.length > 5 ? ` +${result.exposureCapBreached.length - 5} more` : '';
+      breachStr = `<br><span style="font-size:11px">Players over stated cap: ${top}${extra}.</span>`;
+    }
+    postWarnings.push(`<strong>Exposure caps were relaxed by ${result.exposureRelaxUsed} appearance${result.exposureRelaxUsed > 1 ? 's' : ''} (+${relaxPct}%) to fill all lineups.</strong>${breachStr}<br><span style="font-size:11px">To avoid this: add more stacks, raise Max Exposure %, or reduce lineup count.</span>`);
+  }
+  if (result._diag?.overlapRelaxed && !postWarnings.some(w => w.includes('Overlap'))) {
+    postWarnings.push(`<strong>Overlap cap auto-raised to ${result._diag.overlapRelaxed}.</strong> The engine raised the per-pair overlap limit during generation to break a deadlock — some lineups share more players than your stated max. Raise Max Overlap manually to silence this warning.`);
+  }
+  if (result._diag?.gameCapRelaxed) {
+    postWarnings.push(`<strong>Game exposure cap auto-raised to ${result._diag.gameCapRelaxed}%.</strong> Other games couldn't supply enough unique lineups. To avoid this, lower lineup count or raise Max Game Exposure manually.`);
+  }
   if (result.virtualStackTeams?.length) {
     postWarnings.push(`<strong>Virtual stacks used for:</strong> ${result.virtualStackTeams.map(t => esc(t)).join(', ')} — no stacks file entry found; top batters were auto-selected.`);
   }
@@ -1662,6 +2692,29 @@ function renderPortfolioResults(result) {
     html += postWarnings.map(w => `<div class="ib blue" style="margin-bottom:6px;font-size:12px">${w}</div>`).join('');
   }
 
+  // Sim filter transparency block — shows how many lineups hit the band vs were backfilled
+  if (result.simFilterStats) {
+    const sf = result.simFilterStats;
+    const bandSet = sf.inBand != null;
+    const backfillPct = sf.generated > 0 ? Math.round(sf.backfilled / result.totalLineups * 100) : 0;
+    const bandColor = sf.backfilled === 0 ? 'var(--tsu)' : sf.backfilled < result.totalLineups * 0.25 ? 'var(--ti)' : 'var(--tw)';
+    const roiRange = (sf.simROIMin != null && sf.simROIMax != null)
+      ? ` · ROI range: ${sf.simROIMin >= 0 ? '+' : ''}${sf.simROIMin}% to ${sf.simROIMax >= 0 ? '+' : ''}${sf.simROIMax}%`
+      : '';
+    const meanStr = sf.simROIMean != null ? ` · avg ${sf.simROIMean >= 0 ? '+' : ''}${sf.simROIMean}%` : '';
+    const bandStr = bandSet
+      ? `${sf.inBand} of ${sf.generated} candidates met band · <strong style="color:${bandColor}">${sf.backfilled} backfilled</strong> (${backfillPct}%)`
+      : `Top ${result.totalLineups} of ${sf.generated} candidates by sim ROI`;
+    const zeroBandWarn = bandSet && sf.inBand === 0
+      ? '<br><span style="color:var(--tw)">⚠ 0 candidates met your ROI band. All selected lineups were backfilled from outside the band — widen ROI bounds or increase Overflow %.</span>'
+      : '';
+    html += `<div class="ib" style="margin-bottom:6px;font-size:12px;border-color:var(--brd-s)">
+      <strong>Sim ROI Filter:</strong> ${bandStr}${roiRange}${meanStr}
+      ${zeroBandWarn}
+      ${sf.backfilled > result.totalLineups * 0.25 ? '<br><span style="color:var(--tw)">⚠ More than 25% of lineups were backfilled outside your ROI band — consider widening the band or increasing Overflow %.</span>' : ''}
+    </div>`;
+  }
+
   const div = result.diversity || Engine.computePortfolioDiversity(result.lineups);
   const divColor = div.score >= 50 ? 'var(--tsu)' : div.score >= 35 ? 'var(--tw)' : 'var(--td)';
   const ovlpColor = div.maxOverlap > 7 ? 'var(--tw)' : 'var(--tsu)';
@@ -1679,6 +2732,12 @@ function renderPortfolioResults(result) {
     </div>`;
   }).join('');
 
+  const maxGamePct = Math.round((div.maxGameExposurePct || 0) * 100);
+  const maxGameColor = maxGamePct >= 70 ? 'var(--td)' : maxGamePct >= 55 ? 'var(--tw)' : 'var(--tsu)';
+  // Most-exposed game label: find the game key with highest count
+  const topGameEntry = Object.entries(div.gameExposure || {}).sort((a, b) => b[1] - a[1])[0];
+  const topGameLabel = topGameEntry ? esc(topGameEntry[0]) : '—';
+
   html += `<div class="mc-row">
     <div class="mc"><div class="mc-l">Lineups</div><div class="mc-v">${result.totalLineups}</div></div>
     <div class="mc"><div class="mc-l">Avg Salary</div><div class="mc-v">$${Math.round(avgSalary).toLocaleString()}</div></div>
@@ -1694,10 +2753,16 @@ function renderPortfolioResults(result) {
       <div class="mc-v" style="color:${ovlpColor}">${div.maxOverlap}</div>
       <div class="mc-s">players</div>
     </div>
+    <div class="mc" title="% of lineups whose primary stack is concentrated in the single most-used game. Above 70% means over-exposure to one game outcome.">
+      <div class="mc-l">Game Conc.</div>
+      <div class="mc-v" style="color:${maxGameColor}">${maxGamePct}%</div>
+      <div class="mc-s">${topGameLabel}</div>
+    </div>
   </div>
   <div style="margin:8px 0 4px;font-size:10px;color:var(--tt);letter-spacing:.05em">OVERLAP DISTRIBUTION (shared players per lineup pair)</div>
   <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">${divBars}</div>
-  ${div.score < 35 ? `<div class="ib warn" style="font-size:11px;margin-bottom:8px">Low diversity (${div.score}%) — consider lowering Max Lineup Overlap below ${div.maxOverlap} to spread variance across your portfolio.</div>` : ''}`;
+  ${div.score < 35 ? `<div class="ib warn" style="font-size:11px;margin-bottom:8px">Low diversity (${div.score}%) — consider lowering Max Lineup Overlap below ${div.maxOverlap} to spread variance across your portfolio.</div>` : ''}
+  ${maxGamePct >= 70 ? `<div class="ib warn" style="font-size:11px;margin-bottom:8px">High game concentration (${maxGamePct}% in ${topGameLabel}) — if this game is rained out or goes low-scoring, most of your portfolio is at risk. Consider locking a second game's stack.</div>` : ''}`;
 
   // Separate pitcher and batter exposure tables
   const allEntries = Object.entries(result.playerExposure).sort((a, b) => b[1].count - a[1].count);
@@ -1714,22 +2779,48 @@ function renderPortfolioResults(result) {
   const pitcherCap = parseInt(document.getElementById('port-max-pitcher')?.value) || 60;
   const batterCap = parseInt(document.getElementById('port-max-exposure')?.value) || 60;
 
+  // Detect showdown from actual result data: check if any lineup has a CPT player in slot 0.
+  // This prevents stale isShowdown() state from showing the wrong exposure columns.
+  const resultIsShowdown = isShowdown() && result.lineups.length > 0 &&
+    result.lineups[0]?.[0]?.isCpt === true;
+
   html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px">`;
 
-  html += `<div><div class="sec-label">Pitcher Exposure <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:10px">(cap: ${pitcherCap}%)</span></div>
-  <div style="max-height:220px;overflow-y:auto"><table><thead><tr><th>Pitcher</th><th>#</th><th>Exp%</th></tr></thead><tbody>
-  ${pitcherEntries.length ? renderExposureRows(pitcherEntries, pitcherCap) : '<tr><td colspan="3" style="color:var(--tt)">No pitcher data</td></tr>'}
-  </tbody></table></div></div>`;
-
-  html += `<div><div class="sec-label">Batter Exposure <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:10px">(cap: ${batterCap}%)</span></div>
-  <div style="max-height:220px;overflow-y:auto"><table><thead><tr><th>Batter</th><th>#</th><th>Exp%</th></tr></thead><tbody>
-  ${batterEntries.length ? renderExposureRows(batterEntries, batterCap) : '<tr><td colspan="3" style="color:var(--tt)">No batter data</td></tr>'}
-  </tbody></table></div></div>`;
+  if (resultIsShowdown) {
+    // Showdown: CPT column = players that appeared in slot 0; FLEX = players in slots 1-5.
+    // Use dedicated cptCount/flexCount so the same player doesn't show in both tables.
+    const total = result.totalLineups || result.lineups.length || 1;
+    const cptEntries = Object.entries(result.playerExposure)
+      .filter(([, d]) => (d.cptCount || 0) > 0)
+      .map(([name, d]) => [name, { count: d.cptCount, pct: parseFloat((d.cptCount / total * 100).toFixed(1)) }])
+      .sort((a, b) => b[1].count - a[1].count);
+    const flexEntries = Object.entries(result.playerExposure)
+      .filter(([, d]) => (d.flexCount || 0) > 0)
+      .map(([name, d]) => [name, { count: d.flexCount, pct: parseFloat((d.flexCount / total * 100).toFixed(1)) }])
+      .sort((a, b) => b[1].count - a[1].count);
+    html += `<div><div class="sec-label">Captain (CPT) Exposure <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:10px">(cap: ${batterCap}%)</span></div>
+    <div style="max-height:220px;overflow-y:auto"><table><thead><tr><th>Player</th><th>#</th><th>Exp%</th></tr></thead><tbody>
+    ${cptEntries.length ? renderExposureRows(cptEntries, batterCap) : '<tr><td colspan="3" style="color:var(--tt)">No CPT data</td></tr>'}
+    </tbody></table></div></div>`;
+    html += `<div><div class="sec-label">FLEX Exposure <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:10px">(cap: ${batterCap}%)</span></div>
+    <div style="max-height:220px;overflow-y:auto"><table><thead><tr><th>Player</th><th>#</th><th>Exp%</th></tr></thead><tbody>
+    ${flexEntries.length ? renderExposureRows(flexEntries, batterCap) : '<tr><td colspan="3" style="color:var(--tt)">No FLEX data</td></tr>'}
+    </tbody></table></div></div>`;
+  } else {
+    html += `<div><div class="sec-label">Pitcher Exposure <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:10px">(cap: ${pitcherCap}%)</span></div>
+    <div style="max-height:220px;overflow-y:auto"><table><thead><tr><th>Pitcher</th><th>#</th><th>Exp%</th></tr></thead><tbody>
+    ${pitcherEntries.length ? renderExposureRows(pitcherEntries, pitcherCap) : '<tr><td colspan="3" style="color:var(--tt)">No pitcher data</td></tr>'}
+    </tbody></table></div></div>`;
+    html += `<div><div class="sec-label">Batter Exposure <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:10px">(cap: ${batterCap}%)</span></div>
+    <div style="max-height:220px;overflow-y:auto"><table><thead><tr><th>Batter</th><th>#</th><th>Exp%</th></tr></thead><tbody>
+    ${batterEntries.length ? renderExposureRows(batterEntries, batterCap) : '<tr><td colspan="3" style="color:var(--tt)">No batter data</td></tr>'}
+    </tbody></table></div></div>`;
+  }
 
   html += `</div>`;
 
-  // Team stack exposure
-  if (Object.keys(result.teamExposure).length) {
+  // Team stack exposure (classic only)
+  if (!resultIsShowdown && result.teamExposure && Object.keys(result.teamExposure).length) {
     html += `<div class="sec-label" style="margin-top:12px">Stack Exposure (3+ batters)</div>
     <div class="chips">${Object.entries(result.teamExposure).sort((a, b) => b[1] - a[1]).map(([team, count]) => {
       const isLocked = result.lockedTeams?.includes(team);
@@ -1737,7 +2828,22 @@ function renderPortfolioResults(result) {
     }).join('')}</div>`;
   }
 
+  // CPT exposure (showdown only)
+  if (resultIsShowdown) {
+    const cptCounts = {};
+    result.lineups.forEach(lu => { if (lu[0]) cptCounts[lu[0].name] = (cptCounts[lu[0].name] || 0) + 1; });
+    if (Object.keys(cptCounts).length) {
+      const total = result.totalLineups || result.lineups.length;
+      html += `<div class="sec-label" style="margin-top:12px">Captain Usage</div>
+      <div class="chips">${Object.entries(cptCounts).sort((a, b) => b[1] - a[1]).map(([name, count]) =>
+        `<span class="chip" style="border-color:rgba(59,130,246,.4)">${esc(name)}: ${count}/${total} (${Math.round(count / total * 100)}%)</span>`
+      ).join('')}</div>`;
+    }
+  }
+
   // Individual lineups (collapsible)
+  const sdMode = isShowdown();
+  const luSlots = activeSlots();
   html += `<div class="sec-label" style="margin-top:12px">Lineups <button class="btn" style="font-size:10px;padding:2px 8px" onclick="togglePortfolioLineups()">Show/Hide</button></div>
   <div id="portfolio-lineup-list" style="display:none;max-height:400px;overflow-y:auto">`;
   result.lineups.forEach((lu, idx) => {
@@ -1749,7 +2855,13 @@ function renderPortfolioResults(result) {
         <strong style="font-size:12px">Lineup #${idx + 1}</strong>
         <span style="font-size:11px;color:var(--ts)">$${analysis?.salary?.toLocaleString() || '?'} / Med: ${analysis?.medianPts?.toFixed(1) || '?'} / Ceil: ${analysis?.ceilingPts?.toFixed(1) || '?'}${lockedHit.length ? ` / 🔒 ${lockedHit.join(',')}` : ''}</span>
       </div>
-      <div class="chips">${lu.map(p => p ? `<span class="chip">${esc(p.name)} (${esc(p.dkPos)})</span>` : '').join('')}</div>
+      <div class="chips">${lu.map((p, i) => {
+        if (!p) return '';
+        const slotKey = luSlots[i]?.key || '';
+        const isCpt = sdMode && slotKey === 'CPT';
+        const label = isCpt ? `<strong style="color:#60a5fa">CPT</strong> ` : (sdMode ? '' : `(${esc(p.dkPos)}) `);
+        return `<span class="chip" style="${isCpt ? 'border-color:rgba(59,130,246,.5)' : ''}">${label}${esc(p.name)}</span>`;
+      }).join('')}</div>
     </div>`;
   });
   html += '</div>';
@@ -1904,7 +3016,14 @@ function applySwap(oldName, newName) {
     const total = STATE.portfolioLineups.length;
     Object.keys(exp).forEach(name => { exp[name].pct = (exp[name].count / total * 100).toFixed(1) + '%'; });
     STATE.portfolioExposure = exp;
-    renderPortfolioResults({ lineups: STATE.portfolioLineups, playerExposure: STATE.portfolioExposure, teamExposure: {}, totalLineups: total });
+    // Spread the full last result to preserve all warning/diagnostic fields; override only what changed
+    renderPortfolioResults({
+      ...(STATE.lastPortfolioResult || {}),
+      lineups: STATE.portfolioLineups,
+      playerExposure: STATE.portfolioExposure,
+      totalLineups: total,
+      diversity: null, // recomputed lazily by renderPortfolioResults
+    });
     scanLateSwaps(); // Re-scan to update results
   } else {
     showToast(`Could not swap — salary cap exceeded in all lineups`, 'warn', 3000);
@@ -1916,71 +3035,572 @@ function runPortfolioSim() {
   const btn = document.getElementById('port-sim-btn');
   const out = document.getElementById('port-sim-results');
   if (!btn || !out) return;
+  // Reuse the UI sims-per-lineup control so portfolio re-sim count matches user intent.
+  const portfolioSimCount = parseInt(document.getElementById('port-sim-filter-sims')?.value) || 2000;
   btn.textContent = 'Simulating…'; btn.disabled = true;
-  out.innerHTML = '<div class="ib blue" style="font-size:12px">Running 2,000 simulations per lineup against a synthetic ownership-weighted field…</div>';
+  out.innerHTML = `<div class="ib blue" style="font-size:12px">Running ${portfolioSimCount.toLocaleString()} simulations per lineup against a synthetic ownership-weighted field…</div>`;
 
-  setTimeout(() => {
-    const contestType = document.getElementById('port-contest-type')?.value || 'gpp';
-    const manualCashLine = parseFloat(document.getElementById('port-cash-line')?.value) || null;
-    const manualWinLine = parseFloat(document.getElementById('port-win-line')?.value) || null;
-    const payoutType = document.getElementById('port-payout-type')?.value || 'top20';
-    const pool = getCalibratedPool();
-    const simResults = Engine.simulatePortfolio(STATE.portfolioLineups, pool, 2000, contestType, manualCashLine, manualWinLine, payoutType);
+  setTimeout(async () => {
+    try {
+      const contestType = document.getElementById('port-contest-type')?.value || 'gpp';
+      const manualCashLine = parseFloat(document.getElementById('port-cash-line')?.value) || null;
+      const manualWinLine = parseFloat(document.getElementById('port-win-line')?.value) || null;
+      const payoutType = document.getElementById('port-payout-type')?.value || 'top20';
+      let simCustomPayoutConfig = null;
+      if (payoutType === 'custom') {
+        const cashPct = parseFloat(document.getElementById('custom-cash-pct')?.value || '20') / 100;
+        const cashMult = parseFloat(document.getElementById('custom-cash-mult')?.value || '2.5');
+        const winPct = parseFloat(document.getElementById('custom-win-pct')?.value || '0.5') / 100;
+        const winMult = parseFloat(document.getElementById('custom-win-mult')?.value || '15');
+        simCustomPayoutConfig = { cashPct, cashMult, winPct, winMult };
+      }
+      const pool = getCalibratedPool();
+      const portContestSize = parseInt(document.getElementById('port-contest-size')?.value) || 1000;
+      const simResults = await simulatePortfolioWorker(
+        STATE.portfolioLineups,
+        pool,
+        portfolioSimCount,
+        contestType,
+        manualCashLine,
+        manualWinLine,
+        payoutType,
+        portContestSize,
+        simCustomPayoutConfig,
+        { corrScale: 1.0, simDiversity: 1.0 }
+      );
 
-    if (!simResults.length) {
-      out.innerHTML = '<div class="ib warn">Simulation failed — ensure players have projection data.</div>';
+      if (!simResults.length) {
+        out.innerHTML = '<div class="ib warn">Simulation failed — ensure players have projection data.</div>';
+        return;
+      }
+
+      // Hand off to the state-driven table renderer. All sort/filter/expand/compare
+      // logic lives there; this function's job is just to fetch and stage results.
+      _simState.setResults(simResults, {
+        isCash: contestType === 'cash',
+        portfolioLineups: STATE.portfolioLineups,
+      });
+      renderSimTable();
+    } catch (e) {
+      console.error('Portfolio simulation failed:', e);
+      out.innerHTML = `<div class="ib warn">Simulation error: ${e.message}</div>`;
+    } finally {
       btn.textContent = 'Simulate Portfolio (Sim ROI)'; btn.disabled = false;
-      return;
     }
-
-    const isCash = contestType === 'cash';
-    const avgROI = simResults.reduce((s, r) => s + r.simROI, 0) / simResults.length;
-    const avgCash = simResults.reduce((s, r) => s + r.cashRate, 0) / simResults.length;
-    const cashLine = simResults[0].cashLine;
-
-    let html = `<div class="ib blue" style="font-size:12px;margin-bottom:8px">
-      Sim results vs. ownership-weighted field. Cash line ≈ <strong>${cashLine}</strong> pts.
-      Portfolio avg cash rate: <strong>${avgCash.toFixed(1)}%</strong> · Avg Sim ROI: <strong style="color:${avgROI >= 0 ? 'var(--tsu)' : 'var(--td)'}">
-      ${avgROI >= 0 ? '+' : ''}${avgROI.toFixed(1)}%</strong>
-    </div>`;
-
-    html += `<div style="overflow-x:auto"><table style="width:100%;font-size:11px">
-      <thead><tr>
-        <th style="text-align:left">Lineup</th>
-        <th>P50</th><th>P10</th><th>P90</th>
-        <th>Cash%</th>${isCash ? '' : '<th>Win%</th>'}
-        <th style="font-weight:600">Sim ROI</th>
-        <th>Stack</th>
-      </tr></thead>
-      <tbody>`;
-
-    // Map sim results back to original lineup index
-    const luIndexMap = new Map(STATE.portfolioLineups.map((lu, i) => [lu, i]));
-    simResults.forEach(r => {
-      const origIdx = luIndexMap.get(r.lu);
-      const label = origIdx != null ? `#${origIdx + 1}` : '?';
-      const roi = r.simROI;
-      const roiColor = roi >= 10 ? 'var(--tsu)' : roi >= 0 ? 'var(--ti)' : 'var(--td)';
-      const teamCts = {};
-      r.lu.forEach(p => { if (p && !rp(p, 'P')) teamCts[p.team] = (teamCts[p.team] || 0) + 1; });
-      const stackTeam = Object.entries(teamCts).sort((a, b) => b[1] - a[1])[0];
-      const stackBadge = stackTeam ? `<span class="pill pi" style="font-size:9px">${esc(stackTeam[0])} ${stackTeam[1]}</span>` : '—';
-      html += `<tr>
-        <td><strong>${label}</strong></td>
-        <td>${r.p50.toFixed(1)}</td>
-        <td style="color:var(--ts)">${r.p10.toFixed(1)}</td>
-        <td style="color:var(--tsu)">${r.p90.toFixed(1)}</td>
-        <td>${r.cashRate}%</td>
-        ${isCash ? '' : `<td>${r.winRate}%</td>`}
-        <td style="font-weight:600;color:${roiColor}">${roi >= 0 ? '+' : ''}${roi}%</td>
-        <td>${stackBadge}</td>
-      </tr>`;
-    });
-    html += '</tbody></table></div>';
-    out.innerHTML = html;
-    btn.textContent = 'Simulate Portfolio (Sim ROI)'; btn.disabled = false;
   }, 30);
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Sim Table — state-driven drill-down view for portfolio sim results
+//
+// Features:
+//  A. Expandable rows showing full roster + ownership/salary/median per player
+//  B. Sortable columns (click headers to sort asc/desc)
+//  C. Rich stack signature: "NYY 5 + ATL 2 (BB)" instead of just "NYY 4"
+//  D. Stable 2-char fingerprint hash per lineup so users can identify lineups
+//     across sim re-runs (and reorder operations)
+//  E. Filter chips: stack team + ROI band
+//  F. Color-coded top-3/bottom-3 ROI rows + ⭐ for top-3 P90 (ceiling)
+//  G. Compare panel: check 2-4 rows → side-by-side diff modal
+//  H. Ownership shown inline when row is expanded (no need to cross-reference)
+//  I. Export filtered subset to DK CSV (top-N by current sort)
+//  J. Per-lineup contest fit suggestion (Cash / Small GPP / Large GPP / Skip)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Module-level state — persisted across renders so re-sorts/filters don't re-run the sim
+const _simState = {
+  results: [],            // simResults array, sorted by simROI_lb on intake
+  isCash: false,
+  cashLine: 0,
+  portfolioLineups: [],   // reference to STATE.portfolioLineups at sim time
+  origIdxByLu: new Map(), // lu → original portfolio index (1-based label = idx + 1)
+  origSimRank: new Map(), // lu → 1-based rank when results first arrived (by simROI_lb)
+  fingerprints: new Map(), // lu → 'K7' style hash
+  sigCache: new Map(),    // lu → { primary, secondary, bringBack }
+  fitCache: new Map(),    // lu → { tier, label, color }
+
+  sortCol: 'simROI',
+  sortDir: -1,
+  filterStack: 'ALL',
+  filterROI: 'ALL',       // 'ALL' | 'positive' | 'top10' | 'negative'
+  expanded: new Set(),    // luIdx ids (original portfolio index)
+  selected: new Set(),    // luIdx ids (original portfolio index)
+
+  setResults(simResults, opts) {
+    this.results = simResults;
+    this.isCash = !!opts.isCash;
+    this.cashLine = simResults[0]?.cashLine || 0;
+    this.portfolioLineups = opts.portfolioLineups;
+    this.origIdxByLu.clear();
+    this.origSimRank.clear();
+    this.fingerprints.clear();
+    this.sigCache.clear();
+    this.fitCache.clear();
+    this.expanded.clear();
+    this.selected.clear();
+
+    // CRITICAL: results come back through a Web Worker which structurally clones the
+    // lineup arrays — so r.lu is a NEW array, not reference-equal to portfolioLineups[i].
+    // Match by content instead (sorted player names form a stable identity key).
+    const contentKey = lu => lu.filter(Boolean).map(p => p.name).sort().join('|');
+    const portfolioByKey = new Map();
+    opts.portfolioLineups.forEach((lu, i) => portfolioByKey.set(contentKey(lu), i));
+
+    // simResults arrives sorted by simROI_lb desc — store that as the "original" rank
+    simResults.forEach((r, i) => {
+      const idx = portfolioByKey.get(contentKey(r.lu));
+      if (idx !== undefined) this.origIdxByLu.set(r.lu, idx);
+      this.origSimRank.set(r.lu, i + 1);
+      this.fingerprints.set(r.lu, _simFingerprint(r.lu));
+      this.sigCache.set(r.lu, _simStackSig(r.lu));
+      this.fitCache.set(r.lu, _simContestFit(r));
+    });
+  },
+
+  origIdx(lu) { return this.origIdxByLu.get(lu); },
+};
+
+// Stable 2-char alphanumeric fingerprint for a lineup. Uses FNV-1a over sorted
+// player names, then maps low 10 bits to two chars from a 32-char alphabet that
+// skips 0/1/I/O to stay legible at 10px.
+function _simFingerprint(lu) {
+  const names = lu.filter(Boolean).map(p => p.name).sort().join('|');
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < names.length; i++) {
+    h ^= names.charCodeAt(i);
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // 32 chars
+  return chars[h & 31] + chars[(h >>> 5) & 31];
+}
+
+// Stack signature: identifies a lineup's batter construction at a glance.
+// Returns the primary team count, optional secondary mini-stack (2+), and
+// flags whether the secondary is the opponent (bring-back game stack).
+function _simStackSig(lu) {
+  const teamCts = {};
+  lu.forEach(p => { if (p && !rp(p, 'P')) teamCts[p.team] = (teamCts[p.team] || 0) + 1; });
+  const sorted = Object.entries(teamCts).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  const primary = sorted[0] ? { team: sorted[0][0], count: sorted[0][1] } : null;
+  const secondary = sorted[1] && sorted[1][1] >= 2 ? { team: sorted[1][0], count: sorted[1][1] } : null;
+  let bringBack = false;
+  if (primary && secondary) {
+    const primaryPlayer = lu.find(p => p && p.team === primary.team);
+    if (primaryPlayer && primaryPlayer.opp === secondary.team) bringBack = true;
+  }
+  return { primary, secondary, bringBack };
+}
+
+// Contest fit classifier. Uses score distribution shape + ownership profile.
+//   Cash: high floor (P10), low variance, high cash rate
+//   Large GPP: high ceiling (P90), low average ownership
+//   Small GPP: solid median + acceptable ROI
+//   Skip: neither — projection probably weak or construction wrong
+function _simContestFit(r) {
+  if (!r.p50 || r.p50 <= 0) return null;
+  const players = r.lu.filter(Boolean);
+  const avgOwn = players.length ? players.reduce((s, p) => s + (p.own || 0), 0) / players.length : 0;
+  const spread = (r.p90 - r.p10) / r.p50;
+  if (r.p10 >= 100 && spread < 0.65 && r.cashRate >= 45) {
+    return { tier: 'Cash', label: 'Cash', color: 'var(--tsu)' };
+  }
+  if (r.p90 >= 195 && avgOwn < 15) {
+    return { tier: 'Large GPP', label: 'Lg GPP', color: 'var(--ti)' };
+  }
+  if (r.p50 >= 130 && r.simROI > -12) {
+    return { tier: 'Small GPP', label: 'Sm GPP', color: 'var(--tw)' };
+  }
+  return { tier: 'Skip', label: 'Skip', color: 'var(--tt)' };
+}
+
+// Apply current sort + filters and return the visible subset of sim results.
+function _simVisibleResults() {
+  let rows = _simState.results.slice();
+
+  if (_simState.filterStack !== 'ALL') {
+    rows = rows.filter(r => {
+      const sig = _simState.sigCache.get(r.lu);
+      return sig?.primary?.team === _simState.filterStack;
+    });
+  }
+
+  if (_simState.filterROI !== 'ALL') {
+    rows = rows.filter(r => {
+      if (_simState.filterROI === 'positive') return r.simROI >= 0;
+      if (_simState.filterROI === 'negative') return r.simROI < 0;
+      if (_simState.filterROI === '+5plus') return r.simROI >= 5;
+      return true;
+    });
+  }
+
+  const col = _simState.sortCol;
+  const dir = _simState.sortDir;
+  rows.sort((a, b) => {
+    let av, bv;
+    switch (col) {
+      case 'origIdx': av = _simState.origIdx(a.lu); bv = _simState.origIdx(b.lu); break;
+      case 'fp':      av = _simState.fingerprints.get(a.lu); bv = _simState.fingerprints.get(b.lu); break;
+      case 'stack':
+        av = _simState.sigCache.get(a.lu)?.primary?.team || '';
+        bv = _simState.sigCache.get(b.lu)?.primary?.team || '';
+        break;
+      case 'fit':
+        av = _simState.fitCache.get(a.lu)?.tier || '';
+        bv = _simState.fitCache.get(b.lu)?.tier || '';
+        break;
+      default: av = a[col] ?? 0; bv = b[col] ?? 0;
+    }
+    if (av < bv) return -1 * dir;
+    if (av > bv) return  1 * dir;
+    return 0;
+  });
+
+  // Top-3 ROI = top 3 in current visible set ordered by simROI desc (for highlighting).
+  // P90 stars: top 3 by ceiling. Computed once over the visible set so they update with filters.
+  const byROI = rows.slice().sort((a, b) => b.simROI - a.simROI);
+  const top3ROI = new Set(byROI.slice(0, 3).map(r => r.lu));
+  const bot3ROI = new Set(byROI.slice(-3).map(r => r.lu));
+  const byP90 = rows.slice().sort((a, b) => b.p90 - a.p90);
+  const top3P90 = new Set(byP90.slice(0, 3).map(r => r.lu));
+
+  return { rows, top3ROI, bot3ROI, top3P90 };
+}
+
+// Render the entire sim results panel. Called on intake AND after every sort/filter/expand.
+function renderSimTable() {
+  const out = document.getElementById('port-sim-results');
+  if (!out) return;
+  if (!_simState.results.length) { out.innerHTML = ''; return; }
+
+  const isCash = _simState.isCash;
+  const allResults = _simState.results;
+  const avgROI    = allResults.reduce((s, r) => s + r.simROI,       0) / allResults.length;
+  const avgCash   = allResults.reduce((s, r) => s + r.cashRate,     0) / allResults.length;
+  const avgROISE  = allResults.reduce((s, r) => s + (r.simROI_se || 0), 0) / allResults.length;
+
+  let html = `<div class="ib blue" style="font-size:12px;margin-bottom:8px">
+    Sim results vs. ownership-weighted field. Cash line ≈ <strong>${_simState.cashLine}</strong> pts.
+    Portfolio avg cash rate: <strong>${avgCash.toFixed(1)}%</strong> · Avg Sim ROI: <strong style="color:${avgROI >= 0 ? 'var(--tsu)' : 'var(--td)'}">${avgROI >= 0 ? '+' : ''}${avgROI.toFixed(1)}%</strong>${avgROISE > 0 ? ` <span style="color:var(--tt);font-weight:400">± ${avgROISE.toFixed(1)}%</span>` : ''}
+  </div>`;
+
+  // Paradox alert (GPP, high cash rate + negative ROI) — unchanged logic
+  if (!isCash && avgCash > 27 && avgROI < -15) {
+    const expSorted = Object.entries(STATE.portfolioExposure || {})
+      .map(([name, e]) => ({ name, ...e, count: e.count ?? 0 }))
+      .filter(e => e.count > 0);
+    const topTeamStack = STATE.lastPortfolioResult?.teamStackCounts
+      ? Object.entries(STATE.lastPortfolioResult.teamStackCounts)
+          .map(([team, count]) => ({ team, count, pct: count / STATE.portfolioLineups.length * 100 }))
+          .sort((a, b) => b.count - a.count)[0]
+      : null;
+    const topPitcher = expSorted.filter(e => e.isPitcher).sort((a, b) => b.count - a.count)[0];
+    const teamMsg = topTeamStack && topTeamStack.pct > 50
+      ? `Top stack: <strong>${esc(topTeamStack.team)}</strong> in ${topTeamStack.pct.toFixed(0)}% of lineups. Cap to 40-45% via Team Exposure override.`
+      : '';
+    const pitcherMsg = topPitcher && topPitcher.count / STATE.portfolioLineups.length > 0.60
+      ? `Top pitcher: <strong>${esc(topPitcher.name)}</strong> in ${(topPitcher.count / STATE.portfolioLineups.length * 100).toFixed(0)}% of lineups. Pivot to a lower-owned arm in 40% of lineups.`
+      : '';
+    html += `<div class="ib warn" style="margin-bottom:8px;font-size:12px">
+      <strong>⚠ Cash-rate / Sim-ROI paradox detected</strong> — high cash rate (${avgCash.toFixed(1)}%) with negative ROI (${avgROI.toFixed(1)}%).<br>
+      <span style="font-size:11px">Your projection model is working, but construction is too field-correlated. Your lineups cash when chalk cashes, so finish position never reaches the top.</span>
+      ${teamMsg ? `<br><span style="font-size:11px">→ ${teamMsg}</span>` : ''}
+      ${pitcherMsg ? `<br><span style="font-size:11px">→ ${pitcherMsg}</span>` : ''}
+      <br><span style="font-size:11px">→ Other fixes: raise 5-man stack %, tighten Max Overlap, increase ownershipLambda.</span>
+    </div>`;
+  }
+  if (avgROISE > 2.0) {
+    html += `<div class="ib blue" style="margin-bottom:6px;font-size:11px">⚠ Sim noise: average ROI uncertainty is ±${avgROISE.toFixed(1)}%. Consider running more sims for tighter intervals.</div>`;
+  }
+
+  // Build filter toolbar
+  const stackTeams = [...new Set(allResults.map(r => _simState.sigCache.get(r.lu)?.primary?.team).filter(Boolean))].sort();
+  const visible = _simVisibleResults();
+
+  const filterChip = (label, key, val, active) =>
+    `<button class="chip${active ? ' selected' : ''}" style="font-size:10px;padding:2px 8px" onclick="simSetFilter('${key}','${val}')">${esc(label)}</button>`;
+  const stackOptions = ['ALL', ...stackTeams].map(t =>
+    `<option value="${esc(t)}"${_simState.filterStack === t ? ' selected' : ''}>${esc(t === 'ALL' ? 'All stacks' : t)}</option>`
+  ).join('');
+
+  html += `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0 8px;padding:8px;background:var(--bs);border:0.5px solid var(--brd-s);border-radius:4px;font-size:11px">
+    <span style="color:var(--tt);font-weight:600">FILTERS:</span>
+    <label style="display:flex;align-items:center;gap:4px;color:var(--ts)">
+      Stack:
+      <select onchange="simSetFilter('stack', this.value)" style="font-size:11px;padding:2px 4px;background:var(--bp);color:var(--tp);border:0.5px solid var(--brd-s);border-radius:3px">${stackOptions}</select>
+    </label>
+    <div style="display:flex;gap:4px;align-items:center">
+      <span style="color:var(--ts)">ROI:</span>
+      ${filterChip('All',   'roi', 'ALL',      _simState.filterROI === 'ALL')}
+      ${filterChip('+',     'roi', 'positive', _simState.filterROI === 'positive')}
+      ${filterChip('+5%↑',  'roi', '+5plus',   _simState.filterROI === '+5plus')}
+      ${filterChip('−',     'roi', 'negative', _simState.filterROI === 'negative')}
+    </div>
+    <span style="color:var(--tt);margin-left:auto">Showing ${visible.rows.length} / ${allResults.length}</span>
+    ${_simState.selected.size >= 2 ? `<button class="btn-g" style="font-size:11px;padding:3px 10px" onclick="simShowCompare()">Compare (${_simState.selected.size})</button>` : ''}
+    ${_simState.selected.size > 0 ? `<button class="btn" style="font-size:11px;padding:3px 10px" onclick="simClearSelection()">Clear sel.</button>` : ''}
+    <button class="btn-p" style="font-size:11px;padding:3px 10px" onclick="simExportFiltered()" title="Export the currently filtered/sorted lineups to a DK-format CSV.">Export ${visible.rows.length} to DK CSV</button>
+  </div>`;
+
+  // Table
+  const sortArrow = col => _simState.sortCol === col ? (_simState.sortDir === -1 ? ' ▼' : ' ▲') : '';
+  const sh = (col, label, title) =>
+    `<th style="cursor:pointer;user-select:none" title="${esc(title || 'Click to sort')}" onclick="simSort('${col}')">${esc(label)}${sortArrow(col)}</th>`;
+
+  html += `<div style="overflow-x:auto"><table style="width:100%;font-size:11px">
+    <thead><tr>
+      <th style="width:24px"></th>
+      ${sh('origIdx', '#', 'Original portfolio number')}
+      ${sh('fp', 'ID', 'Stable lineup fingerprint — same lineup gets same ID across sim runs')}
+      ${sh('p50', 'P50', 'Median simulated score')}
+      ${sh('p10', 'P10', 'Floor — 10th percentile')}
+      ${sh('p90', 'P90', 'Ceiling — 90th percentile')}
+      ${sh('cashRate', 'Cash%', 'Sim cash rate vs. field')}
+      ${isCash ? '' : sh('winRate', 'Win%', 'Sim top-1% rate')}
+      ${sh('simROI', 'Sim ROI', 'Expected ROI vs. ownership-weighted field')}
+      ${sh('fit', 'Fit', 'Best contest type based on score distribution + ownership')}
+      ${sh('stack', 'Stack', 'Primary + secondary stack signature')}
+    </tr></thead>
+    <tbody>`;
+
+  visible.rows.forEach(r => {
+    const origIdx = _simState.origIdx(r.lu);
+    // Fallback: if content-key match failed (worker dropped an entry, custom build
+    // workflow, etc.) use the sim rank as a stable identity so labels and the
+    // expand/select Sets still work — never produce `#NaN` or collide with key `undefined`.
+    const luKey = origIdx ?? (_simState.origSimRank.get(r.lu) - 1 + 10000); // offset to avoid collision with real origIdx
+    const labelNum = origIdx != null ? (origIdx + 1) : `S${_simState.origSimRank.get(r.lu)}`;
+    const fp = _simState.fingerprints.get(r.lu);
+    const sig = _simState.sigCache.get(r.lu);
+    const fit = _simState.fitCache.get(r.lu);
+    const roi = r.simROI;
+    const roiColor = roi >= 10 ? 'var(--tsu)' : roi >= 0 ? 'var(--ti)' : 'var(--td)';
+    const seStr = r.simROI_se > 0 ? ` <span style="color:var(--tt);font-weight:400;font-size:10px">±${r.simROI_se.toFixed(1)}</span>` : '';
+
+    // Stack signature pill
+    const primaryPill = sig.primary
+      ? `<span class="pill ${sig.primary.count >= 5 ? 'psu' : sig.primary.count >= 4 ? 'pi' : 'pw'}" style="font-size:9px">${esc(sig.primary.team)} ${sig.primary.count}</span>`
+      : '—';
+    const secondaryPill = sig.secondary
+      ? ` <span class="pill ${sig.bringBack ? 'pi' : 'pw'}" style="font-size:9px">${sig.bringBack ? '↩ ' : '+ '}${esc(sig.secondary.team)} ${sig.secondary.count}</span>`
+      : '';
+
+    // F: row highlighting based on visible-set ranking
+    const isTop3 = visible.top3ROI.has(r.lu);
+    const isBot3 = visible.bot3ROI.has(r.lu);
+    const isTopP90 = visible.top3P90.has(r.lu);
+    const rowBg = isTop3 ? 'background:rgba(34,197,94,.07)' : isBot3 ? 'background:rgba(239,68,68,.07)' : '';
+
+    const isExpanded = _simState.expanded.has(luKey);
+    const isSelected = _simState.selected.has(luKey);
+    const expandIcon = isExpanded ? '▾' : '▸';
+
+    html += `<tr style="${rowBg};cursor:pointer" onclick="simToggleExpand(${luKey})">
+      <td onclick="event.stopPropagation();simToggleSelect(${luKey})" style="text-align:center;cursor:pointer" title="Select for compare">
+        <input type="checkbox" ${isSelected ? 'checked' : ''} style="cursor:pointer;width:13px;height:13px" onclick="event.stopPropagation();simToggleSelect(${luKey})">
+      </td>
+      <td><span style="color:var(--ts)">${expandIcon}</span> <strong>#${labelNum}</strong>${isTopP90 ? ' <span title="Top-3 ceiling">⭐</span>' : ''}</td>
+      <td><span class="pill" style="font-size:10px;font-family:monospace;background:var(--bs);border:0.5px solid var(--brd-s);color:var(--ts)">${fp}</span></td>
+      <td>${r.p50.toFixed(1)}</td>
+      <td style="color:var(--ts)">${r.p10.toFixed(1)}</td>
+      <td style="color:var(--tsu)">${r.p90.toFixed(1)}</td>
+      <td>${r.cashRate}%</td>
+      ${isCash ? '' : `<td>${r.winRate}%</td>`}
+      <td style="font-weight:600;color:${roiColor}">${roi >= 0 ? '+' : ''}${roi}%${seStr}</td>
+      <td>${fit ? `<span style="color:${fit.color};font-weight:600;font-size:10px">${esc(fit.label)}</span>` : '—'}</td>
+      <td>${primaryPill}${secondaryPill}</td>
+    </tr>`;
+
+    if (isExpanded) {
+      html += `<tr style="${rowBg}"><td colspan="${isCash ? 10 : 11}" style="padding:8px 12px;background:rgba(0,0,0,.15)">
+        ${_simExpandedRoster(r)}
+      </td></tr>`;
+    }
+  });
+
+  if (!visible.rows.length) {
+    html += `<tr><td colspan="${isCash ? 10 : 11}" style="text-align:center;color:var(--tt);padding:14px">No lineups match the current filters.</td></tr>`;
+  }
+
+  html += '</tbody></table></div>';
+  out.innerHTML = html;
+}
+
+// Expanded-row content: full roster with position, ownership, salary, projection.
+// Ownership shown inline so the user doesn't have to cross-reference the exposure table
+// to understand why a lineup is chalk-heavy or contrarian.
+function _simExpandedRoster(r) {
+  const players = r.lu.filter(Boolean);
+  const totalSal = players.reduce((s, p) => s + (p.salary || 0), 0);
+  const totalMed = players.reduce((s, p) => s + (p.median || 0), 0);
+  const avgOwn = players.length ? players.reduce((s, p) => s + (p.own || 0), 0) / players.length : 0;
+  const slots = activeSlots();
+  // Portfolio-level exposure for context (H — ownership overlay shows both projected own
+  // and what % of YOUR portfolio this player is in, so you can spot leverage drains).
+  const exp = STATE.portfolioExposure || {};
+
+  const chips = r.lu.map((p, i) => {
+    if (!p) return '';
+    const slot = slots[i]?.key || '';
+    const ownStr = p.own > 0 ? `${p.own.toFixed(0)}%` : '—';
+    const ownColor = p.own > 30 ? 'var(--td)' : p.own > 18 ? 'var(--tw)' : p.own > 8 ? 'var(--ti)' : 'var(--tsu)';
+    const portExp = exp[p.name];
+    const portStr = portExp ? ` <span style="color:${parseFloat(portExp.pct) > 60 ? 'var(--td)' : 'var(--tt)'};font-size:9px">port ${portExp.pct}%</span>` : '';
+    return `<div style="display:inline-flex;flex-direction:column;align-items:flex-start;background:var(--bp);border:0.5px solid var(--brd-s);border-radius:4px;padding:4px 8px;margin:2px;min-width:160px">
+      <div style="font-size:9px;color:var(--tt);text-transform:uppercase;letter-spacing:.04em">${esc(slot)}</div>
+      <div style="font-size:12px;font-weight:600;color:var(--tp)">${esc(p.name)}</div>
+      <div style="font-size:10px;color:var(--ts);display:flex;gap:6px;flex-wrap:wrap">
+        <span>${esc(p.team || '')}${p.order > 0 ? ' #' + p.order : ''}</span>
+        <span>$${(p.salary || 0).toLocaleString()}</span>
+        <span>${(p.median || 0).toFixed(1)} med</span>
+        <span style="color:${ownColor}">own ${ownStr}</span>
+        ${portStr}
+      </div>
+    </div>`;
+  }).join('');
+
+  return `<div style="display:flex;flex-wrap:wrap;gap:0;align-items:stretch">${chips}</div>
+    <div style="margin-top:6px;font-size:11px;color:var(--ts);display:flex;gap:14px;flex-wrap:wrap">
+      <span>Salary: <strong>$${totalSal.toLocaleString()}</strong></span>
+      <span>Proj. Median: <strong>${totalMed.toFixed(1)}</strong></span>
+      <span>Avg Own: <strong style="color:${avgOwn > 18 ? 'var(--td)' : avgOwn > 12 ? 'var(--tw)' : 'var(--tsu)'}">${avgOwn.toFixed(1)}%</strong></span>
+      <span style="color:var(--tt)">Original sim rank: <strong>${_simState.origSimRank.get(r.lu) || '?'}</strong></span>
+    </div>`;
+}
+
+// ── Sim table action handlers (called from inline onclick) ─────────────────────
+
+window.simSort = function(col) {
+  if (_simState.sortCol === col) _simState.sortDir = -_simState.sortDir;
+  else { _simState.sortCol = col; _simState.sortDir = -1; }
+  renderSimTable();
+};
+
+window.simSetFilter = function(key, val) {
+  if (key === 'stack') _simState.filterStack = val;
+  else if (key === 'roi') _simState.filterROI = val;
+  renderSimTable();
+};
+
+window.simToggleExpand = function(luIdx) {
+  if (_simState.expanded.has(luIdx)) _simState.expanded.delete(luIdx);
+  else _simState.expanded.add(luIdx);
+  renderSimTable();
+};
+
+window.simToggleSelect = function(luIdx) {
+  if (_simState.selected.has(luIdx)) _simState.selected.delete(luIdx);
+  else if (_simState.selected.size < 4) _simState.selected.add(luIdx);
+  else showToast('Compare limited to 4 lineups at a time. Deselect one to add another.', 'warn', 3000);
+  renderSimTable();
+};
+
+window.simClearSelection = function() {
+  _simState.selected.clear();
+  renderSimTable();
+};
+
+// G: side-by-side compare modal showing shared/unique players + delta stats
+window.simShowCompare = function() {
+  if (_simState.selected.size < 2) return;
+  // Resolve selected luIdx → sim results. Lookup is by origIdx (not reference equality)
+  // because the worker round-trip clones the lineup arrays.
+  const picked = [..._simState.selected].sort((a, b) => a - b).map(idx => {
+    return _simState.results.find(r => _simState.origIdx(r.lu) === idx);
+  }).filter(Boolean);
+
+  // Compute intersection of player names across all picked lineups
+  const allNames = picked.map(r => new Set(r.lu.filter(Boolean).map(p => p.name)));
+  const shared = [...allNames[0]].filter(name => allNames.every(s => s.has(name)));
+  const uniquePerLineup = picked.map((r, i) =>
+    r.lu.filter(p => p && !allNames.every(s => s.has(p.name))).map(p => p.name)
+  );
+
+  const colHtml = picked.map((r, i) => {
+    const origIdx = _simState.origIdx(r.lu);
+    const fp = _simState.fingerprints.get(r.lu);
+    const fit = _simState.fitCache.get(r.lu);
+    const sig = _simState.sigCache.get(r.lu);
+    const sigStr = sig.primary
+      ? `${sig.primary.team} ${sig.primary.count}${sig.secondary ? (sig.bringBack ? ' ↩ ' : ' + ') + sig.secondary.team + ' ' + sig.secondary.count : ''}`
+      : '—';
+    const sal = r.lu.reduce((s, p) => s + (p?.salary || 0), 0);
+    const avgOwn = r.lu.filter(Boolean).reduce((s, p) => s + (p.own || 0), 0) / r.lu.filter(Boolean).length;
+    return `<div style="flex:1;min-width:200px;padding:8px;background:var(--bs);border:0.5px solid var(--brd-s);border-radius:4px">
+      <div style="font-size:12px;font-weight:600;margin-bottom:6px">#${origIdx + 1} <span style="font-family:monospace;color:var(--ts);font-size:10px">${fp}</span></div>
+      <div style="font-size:10px;color:var(--ts);line-height:1.6">
+        Stack: <strong>${esc(sigStr)}</strong><br>
+        Fit: <strong style="color:${fit?.color || 'var(--tt)'}">${esc(fit?.label || '—')}</strong><br>
+        Salary: <strong>$${sal.toLocaleString()}</strong><br>
+        P50 / P90: <strong>${r.p50.toFixed(1)}</strong> / <strong style="color:var(--tsu)">${r.p90.toFixed(1)}</strong><br>
+        Cash: <strong>${r.cashRate}%</strong> · ROI: <strong style="color:${r.simROI >= 0 ? 'var(--tsu)' : 'var(--td)'}">${r.simROI >= 0 ? '+' : ''}${r.simROI}%</strong><br>
+        Avg own: <strong>${avgOwn.toFixed(1)}%</strong>
+      </div>
+      <div style="margin-top:8px;font-size:10px;color:var(--tt);text-transform:uppercase">Unique players</div>
+      <div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:4px">
+        ${uniquePerLineup[i].map(n => `<span class="chip" style="font-size:10px">${esc(n)}</span>`).join('') || '<span style="color:var(--tt);font-size:10px">(all shared)</span>'}
+      </div>
+    </div>`;
+  }).join('');
+
+  const sharedChips = shared.length
+    ? shared.map(n => `<span class="chip" style="font-size:10px">${esc(n)}</span>`).join('')
+    : '<span style="color:var(--tt);font-size:11px">(none — totally distinct constructions)</span>';
+
+  const modal = document.createElement('div');
+  modal.id = 'sim-compare-modal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+  modal.innerHTML = `<div style="background:var(--bp);border:1px solid var(--brd-s);border-radius:6px;padding:18px;max-width:1100px;width:100%;max-height:88vh;overflow-y:auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <div style="font-size:14px;font-weight:600">Compare ${picked.length} Lineups</div>
+      <button class="btn" style="font-size:11px;padding:3px 10px" onclick="simHideCompare()">Close ✕</button>
+    </div>
+    <div style="margin-bottom:10px;font-size:11px;color:var(--ts)">
+      <strong>Shared players (${shared.length}):</strong>
+      <div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:4px">${sharedChips}</div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">${colHtml}</div>
+  </div>`;
+  modal.addEventListener('click', e => { if (e.target === modal) window.simHideCompare(); });
+  document.body.appendChild(modal);
+};
+
+window.simHideCompare = function() {
+  const m = document.getElementById('sim-compare-modal');
+  if (m) m.remove();
+};
+
+// I: Export the currently filtered+sorted lineup subset to DK-format CSV.
+// Same validation as exportPortfolio but works on the visible rows so the user
+// can ship only their best N (e.g. top 10 by ROI after sort).
+window.simExportFiltered = function() {
+  const visible = _simVisibleResults();
+  if (!visible.rows.length) { showToast('No lineups match the current filters.', 'warn', 3000); return; }
+
+  const lineups = visible.rows.map(r => r.lu);
+  const invalidLineups = [];
+  const overCap = [];
+  const cap = activeSalaryCap();
+  lineups.forEach((lu, idx) => {
+    if (!lu.every(Boolean)) invalidLineups.push(idx + 1);
+    const sal = lu.reduce((s, p) => s + (p?.salary || 0), 0);
+    if (sal > cap) overCap.push(`#${idx + 1} ($${sal.toLocaleString()})`);
+  });
+  if (invalidLineups.length) { alert(`${invalidLineups.length} lineup(s) have empty slots. Regenerate the portfolio.`); return; }
+  if (overCap.length) { alert(`${overCap.length} lineup(s) exceed $${cap.toLocaleString()} cap: ${overCap.slice(0, 5).join(', ')}.`); return; }
+
+  const missing = lineups.flat().filter(p => p && !p.dkId);
+  if (missing.length) {
+    const unique = [...new Set(missing.map(p => p.name))];
+    alert('Missing DK IDs for: ' + unique.slice(0, 5).join(', ') + '\nUpload your DK Salaries CSV first.');
+    return;
+  }
+
+  const slots = activeSlots();
+  const header = slots.map(s => s.label).join(',');
+  const rows = lineups.map(lu => lu.map(p => p.dkId).join(','));
+  dlFile(header + '\n' + rows.join('\n'), `portfolio_filtered_${lineups.length}lus.csv`, 'text/csv');
+  showToast(`Exported ${lineups.length} lineups to DK CSV.`, 'success', 3000);
+};
 
 async function savePortfolioToHistory() {
   if (!STATE.portfolioLineups.length) return;
@@ -1990,6 +3610,16 @@ async function savePortfolioToHistory() {
 
   const btn = document.querySelector('[onclick="savePortfolioToHistory()"]');
   if (btn) { btn.textContent = 'Saving...'; btn.disabled = true; }
+
+  // Capture pool snapshot and active calibration once — shared across all lineups.
+  // Previously omitted, causing poolSnapshot: [] for every portfolio entry and breaking
+  // the projection accuracy calibration (which needs full slate data, not just 10 players).
+  const activeCal = Engine.getCalibration();
+  const poolSnapshot = STATE.POOL.map(p => ({
+    name: p.name, team: p.team, pos: p.dkPos, salary: p.salary,
+    median: p.median || 0, floor: p.floor || 0, ceiling: p.ceiling || 0,
+    own: p.own || 0, order: p.order || 0
+  }));
 
   let saved = 0, failed = 0;
   for (const lu of STATE.portfolioLineups) {
@@ -2008,7 +3638,10 @@ async function savePortfolioToHistory() {
           projectedPts: players.reduce((s, p) => s + (p.median || 0), 0),
           projectedOwn: players.reduce((s, p) => s + (p.own || 0), 0),
           salary: players.reduce((s, p) => s + p.salary, 0),
-          lineup: lineupSnapshot
+          lineup: lineupSnapshot,
+          poolSnapshot,
+          calibBatterScale: activeCal.batterScale || 1.0,
+          calibPitcherScale: activeCal.pitcherScale || 1.0
         })
       });
       saved++;
@@ -2028,17 +3661,19 @@ function exportPortfolio() {
   // Validate every lineup: fully filled, under cap, has DK IDs
   const invalidLineups = [];
   const overCap = [];
+  const activeCap = activeSalaryCap();
   STATE.portfolioLineups.forEach((lu, idx) => {
     if (!lu.every(Boolean)) invalidLineups.push(idx + 1);
     const sal = lu.reduce((s, p) => s + (p?.salary || 0), 0);
-    if (sal > 50000) overCap.push(`#${idx + 1} ($${sal.toLocaleString()})`);
+    if (sal > activeCap) overCap.push(`#${idx + 1} ($${sal.toLocaleString()})`);
   });
   if (invalidLineups.length) {
     alert(`${invalidLineups.length} lineup(s) have empty slots (lineup ${invalidLineups.slice(0,5).join(', ')}). Regenerate the portfolio.`);
     return;
   }
+  const cap = activeSalaryCap();
   if (overCap.length) {
-    alert(`${overCap.length} lineup(s) exceed the $50,000 cap: ${overCap.slice(0,5).join(', ')}.`);
+    alert(`${overCap.length} lineup(s) exceed the $${cap.toLocaleString()} cap: ${overCap.slice(0,5).join(', ')}.`);
     return;
   }
   const allPlayers = STATE.portfolioLineups.flat().filter(Boolean);
@@ -2048,7 +3683,27 @@ function exportPortfolio() {
     alert('Missing DK IDs for: ' + unique.slice(0, 5).join(', ') + (unique.length > 5 ? '...' : '') + '\nUpload your DK Salaries CSV first.');
     return;
   }
-  const header = DK_SLOTS.map(s => s.label).join(',');
+  // Warn on injured, unconfirmed, or postponed players across the portfolio
+  const poolMap = new Map(STATE.POOL.map(p => [p.name, p]));
+  const warnNames = new Map();
+  allPlayers.forEach(p => {
+    if (!p || warnNames.has(p.name)) return;
+    const pp = poolMap.get(p.name) || p;
+    const warns = [];
+    if (pp.dkStatus === 'O') warns.push('OUT (DK)');
+    else if (pp.injuryType === 'IL') warns.push('On IL');
+    else if (pp.injuryFlag) warns.push(pp.injuryDesc || pp.injuryType || 'Injured');
+    if (!rp(pp, 'P') && pp.isConfirmed === false) warns.push('Unconfirmed');
+    if (pp.isPostponed) warns.push('Game postponed');
+    if (warns.length) warnNames.set(p.name, warns);
+  });
+  if (warnNames.size) {
+    const msgs = [...warnNames.entries()].slice(0, 10).map(([name, warns]) => `• ${name}: ${warns.join(', ')}`);
+    if (warnNames.size > 10) msgs.push(`  (+ ${warnNames.size - 10} more)`);
+    if (!confirm(`Portfolio export warning:\n\n${msgs.join('\n')}\n\nExport ${STATE.portfolioLineups.length} lineups anyway?`)) return;
+  }
+  const slots = activeSlots();
+  const header = slots.map(s => s.label).join(',');
   const rows = STATE.portfolioLineups.map(lu => lu.map(p => p.dkId).join(','));
   dlFile(header + '\n' + rows.join('\n'), 'portfolio_lineups.csv', 'text/csv');
 }
@@ -2062,7 +3717,13 @@ function runSimulation() {
     document.getElementById('sim-results').innerHTML = '<div class="ib warn">Add at least 5 players to your lineup to simulate.</div>';
     return;
   }
-  const numSims = parseInt(document.getElementById('sim-count').value) || 10000;
+  const numSims = parseInt(document.getElementById('sim-count')?.value) || 10000;
+  // Always sync runtime engine knobs from UI before sim so limits/values are honored
+  // even after restore or programmatic updates that may not fire input events.
+  const corrScale = parseFloat(document.getElementById('sim-corr-scale')?.value);
+  const simDiversity = parseFloat(document.getElementById('sim-diversity')?.value);
+  if (!Number.isNaN(corrScale)) Engine.setCorrScale(corrScale);
+  if (!Number.isNaN(simDiversity)) Engine.setSimDiversity(simDiversity);
   const btn = document.getElementById('run-sim-btn');
   btn.textContent = 'Simulating...'; btn.disabled = true;
 
@@ -2078,9 +3739,14 @@ function runSimulation() {
   }
 
   setTimeout(() => {
-    const result = Engine.simulateLineup(STATE.lineup, numSims);
-    renderSimResults(result);
-    btn.textContent = 'Run Simulation'; btn.disabled = false;
+    try {
+      const result = Engine.simulateLineup(STATE.lineup, numSims);
+      renderSimResults(result);
+    } catch (err) {
+      document.getElementById('sim-results').innerHTML = `<div class="ib warn">Simulation error: ${err.message}</div>`;
+    } finally {
+      btn.textContent = 'Run Simulation'; btn.disabled = false;
+    }
   }, 50);
 }
 
@@ -2091,13 +3757,22 @@ function renderSimResults(result) {
   // Summary stats
   // meanSE / p50SE are bootstrap standard errors — they quantify how much the
   // estimate would shift if you re-ran the simulation (pure sampling noise).
+  // Thresholds are relative (SE / mean) so they scale with lineup magnitude:
+  //   < 0.5% — stable
+  //   0.5–2% — moderate (no banner)
+  //   > 2%   — noisy, suggest more sims
+  // Suggests roughly how many sims would halve the SE (SE scales 1/sqrt(N)).
   const meanCIStr = result.meanCI ? ` <span style="font-size:10px;color:var(--ts)" title="95% CI from 20-group bootstrap — run more sims to narrow this">[${result.meanCI[0]}–${result.meanCI[1]}]</span>` : '';
   const p50CIStr  = result.p50CI  ? ` <span style="font-size:10px;color:var(--ts)" title="95% CI from 20-group bootstrap">[${result.p50CI[0]}–${result.p50CI[1]}]</span>` : '';
-  const stabilityNote = result.meanSE > 1.5
-    ? `<div class="ib warn" style="margin-bottom:8px;font-size:12px">Simulation noise is high (SE=${result.meanSE.toFixed(2)}) — increase sim count for more stable estimates.</div>`
-    : result.meanSE <= 0.5
-      ? `<div class="ib" style="margin-bottom:8px;font-size:12px;color:var(--tsu)">Estimates are stable (SE=${result.meanSE.toFixed(2)}).</div>`
-      : '';
+  const relSE = result.mean > 0 ? result.meanSE / result.mean : 0;
+  let stabilityNote = '';
+  if (relSE > 0.02) {
+    // Sim count to halve SE: SE ~ 1/sqrt(N), so to halve we need 4× sims.
+    const suggested = Math.min(50000, Math.max(5000, (result.numSims || 10000) * 4));
+    stabilityNote = `<div class="ib warn" style="margin-bottom:8px;font-size:12px">Simulation noise is moderate-to-high: SE=${result.meanSE.toFixed(2)} on mean ${result.mean.toFixed(1)} (${(relSE * 100).toFixed(1)}% relative). To halve the SE, increase sim count to ~${suggested.toLocaleString()}.</div>`;
+  } else if (relSE < 0.005 && result.meanSE > 0) {
+    stabilityNote = `<div class="ib" style="margin-bottom:8px;font-size:12px;color:var(--tsu)">Estimates are stable (SE=${result.meanSE.toFixed(2)}, ${(relSE * 100).toFixed(2)}% of mean).</div>`;
+  }
   let html = stabilityNote + `<div class="mc-row">
     <div class="mc"><div class="mc-l">Mean</div><div class="mc-v">${result.mean.toFixed(1)}${meanCIStr}</div></div>
     <div class="mc"><div class="mc-l">Std Dev</div><div class="mc-v">${result.std.toFixed(1)}</div></div>
@@ -2152,7 +3827,10 @@ async function loadHistory() {
       Engine.buildPairCorrelations(withActuals);
     }
     renderBacktestPanel(history, summary);
-  } catch (e) { console.error('Failed to load history:', e); }
+  } catch (e) {
+    console.error('Failed to load history:', e);
+    showToast('Could not load lineup history: ' + (e.message || e), 'warn', 5000);
+  }
 }
 
 function renderBacktestPanel(history, summary) {
@@ -2195,10 +3873,66 @@ function renderBacktestPanel(history, summary) {
     <button class="btn-g" onclick="saveLineupToHistory()">Save Current Lineup</button>
   </div>`;
 
+  // ── Bulk slate results entry ────────────────────────────────────────────────
+  // Group history entries by slate date to show what's missing results data.
+  const slateDates = [...new Set(history.map(h => h.slateDate || '').filter(Boolean))].sort().reverse();
+  const slateStats = {};
+  slateDates.forEach(d => {
+    const entries = history.filter(h => h.slateDate === d);
+    slateStats[d] = {
+      total: entries.length,
+      missingBuyin: entries.filter(h => !h.buyin).length,
+      missingWinnings: entries.filter(h => h.winnings === null).length,
+    };
+  });
+  const bulkHtml = slateDates.length ? `
+  <div style="margin-bottom:14px;padding:12px 14px;background:var(--bs);border-radius:var(--rl)">
+    <div class="sec-label" style="margin-bottom:8px">Quick Slate Results Entry</div>
+    <div style="font-size:11px;color:var(--tt);margin-bottom:8px">Set buy-in and/or winnings for all lineups on a slate at once.</div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <select id="bulk-slate-date" style="font-size:12px;padding:5px 8px;border-radius:var(--r);border:0.5px solid var(--brd-s);background:var(--bp);color:var(--tp)">
+        ${slateDates.map(d => {
+          const s = slateStats[d];
+          const warn = s.missingBuyin > 0 ? ` — ${s.missingBuyin} missing buy-in` : '';
+          return `<option value="${escAttr(d)}">${esc(d)} (${s.total} entries${warn})</option>`;
+        }).join('')}
+      </select>
+      <label style="font-size:12px;color:var(--ts);display:flex;align-items:center;gap:4px">
+        Buy-in $
+        <input type="number" id="bulk-buyin" step="0.01" min="0" placeholder="e.g. 1.00"
+          style="width:80px;font-size:12px;padding:5px 8px;border-radius:var(--r);border:0.5px solid var(--brd-s);background:var(--bp);color:var(--tp)">
+      </label>
+      <label style="font-size:12px;color:var(--ts);display:flex;align-items:center;gap:4px">
+        Total won $
+        <input type="number" id="bulk-winnings" step="0.01" min="0" placeholder="0 if none"
+          style="width:80px;font-size:12px;padding:5px 8px;border-radius:var(--r);border:0.5px solid var(--brd-s);background:var(--bp);color:var(--tp)"
+          title="Leave blank to only update buy-ins. Set to 0 to record a losing slate.">
+      </label>
+      <button class="btn-g" onclick="applyBulkSlateResults()">Apply to Slate</button>
+    </div>
+    <div id="bulk-result-msg" style="margin-top:6px;font-size:11px;color:var(--tsu)"></div>
+  </div>` : '';
+
+  // ── DK Contest CSV Import ───────────────────────────────────────────────────────────────────
+  const importHtml = `
+  <div style="margin-bottom:14px;padding:12px 14px;background:var(--bs);border-radius:var(--rl)">
+    <div class="sec-label" style="margin-bottom:6px">Import DraftKings Contest History</div>
+    <div style="font-size:11px;color:var(--tt);margin-bottom:8px">
+      Download from DraftKings: <strong>Account → My Contests → Past → Export CSV</strong>.
+      Matches each row to a saved lineup by date + score, then fills in placement, payout, and contest ID.
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <input type="file" id="dk-contest-csv-input" accept=".csv" style="font-size:12px;color:var(--ts)">
+      <button class="btn-g" onclick="importDKContestCSV()">Import CSV</button>
+      <button class="btn" onclick="fetchAllContestDetails()" title="Fetch contest metadata and winning scores from DraftKings for all entries with a Contest ID">Fetch DK Details</button>
+    </div>
+    <div id="dk-contest-status" style="margin-top:6px;font-size:11px;min-height:16px"></div>
+  </div>`;
+
   // History list
   let histHtml = '';
   if (history.length) {
-    histHtml = `<div style="max-height:500px;overflow-y:auto"><table><thead><tr><th>Date</th><th>Contest</th><th>Proj</th><th>Actual</th><th>Accuracy</th><th>Buy-in</th><th>Won</th><th>ROI</th><th></th></tr></thead><tbody>
+    histHtml = `<div style="max-height:500px;overflow-y:auto"><table><thead><tr><th>Date</th><th>Contest</th><th>Proj</th><th>Actual</th><th>Accuracy</th><th>Place</th><th>Field</th><th>Buy-in</th><th>Won</th><th>ROI</th><th></th></tr></thead><tbody>
     ${history.slice(0, 50).map(h => {
       const roi = h.buyin && h.winnings !== null ? ((h.winnings - h.buyin) / h.buyin * 100).toFixed(0) + '%' : '\u2014';
       const roiColor = h.winnings > h.buyin ? 'var(--tsu)' : h.winnings < h.buyin ? 'var(--td)' : 'var(--ts)';
@@ -2207,13 +3941,25 @@ function renderBacktestPanel(history, summary) {
       const hasPlayerActuals = h.playerActuals && Object.keys(h.playerActuals).length > 0;
       const playerActualsBadge = hasPlayerActuals ? `<span class="pill psu" style="font-size:9px;margin-left:4px" title="${Object.keys(h.playerActuals).length} player scores loaded">✓ ${Object.keys(h.playerActuals).length}p</span>` : '';
       const displayDate = h.slateDate || new Date(h.date).toLocaleDateString();
+      // Finish percentile
+      const finishPct = h.finish && h.entries ? (h.finish / h.entries * 100).toFixed(1) : null;
+      const finishColor = finishPct != null ? (parseFloat(finishPct) <= 5 ? 'var(--tsu)' : parseFloat(finishPct) <= 20 ? 'var(--tw)' : 'var(--td)') : 'var(--ts)';
+      const finishDisplay = h.finish
+        ? `<span style="color:${finishColor};font-weight:500">${h.finish}</span>${finishPct != null ? `<span style="font-size:9px;color:var(--tt);margin-left:2px">(${finishPct}%)</span>` : ''}`
+        : `<input type="number" step="1" value="" placeholder="—" style="width:52px;font-size:11px;padding:2px 4px;border-radius:4px;border:0.5px solid var(--brd-s);background:var(--bp);color:var(--tp)" onchange="updateHistoryField('${h.id}','finish',this.value)">`;
+      const fieldDisplay = h.entries ? `<span style="font-size:11px;color:var(--ts)">${h.entries.toLocaleString()}</span>` : '—';
+      const contestBadge = h.contestId
+        ? `<span class="pill" style="font-size:9px;background:var(--bs);color:var(--tt);cursor:pointer;margin-left:2px" onclick="fetchContestDetails('${escAttr(h.contestId)}','${h.id}')" title="Fetch contest details from DraftKings">#${esc(h.contestId)}</span>`
+        : '';
       return `<tr>
-        <td style="font-size:11px">${esc(displayDate)}${playerActualsBadge}</td>
-        <td><span class="pill pg">${esc(h.contest)}</span></td>
+        <td style="font-size:11px">${esc(displayDate)}${playerActualsBadge}${contestBadge ? '<br>'+contestBadge : ''}</td>
+        <td><span class="pill pg">${esc(h.contest)}</span>${h.contestTitle ? `<div style="font-size:9px;color:var(--tt);max-width:120px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${escAttr(h.contestTitle)}">${esc(h.contestTitle)}</div>` : ''}</td>
         <td>${h.projectedPts?.toFixed(1) || '\u2014'}</td>
         <td><input type="number" step="0.1" value="${h.actualPts || ''}" placeholder="\u2014" style="width:60px;font-size:11px;padding:2px 4px;border-radius:4px;border:0.5px solid var(--brd-s);background:var(--bp);color:var(--tp)" onchange="updateHistoryField('${h.id}','actualPts',this.value)"></td>
         <td style="color:${accColor};font-size:11px">${accuracy}</td>
-        <td>$${h.buyin || 0}</td>
+        <td style="white-space:nowrap">${finishDisplay}</td>
+        <td>${fieldDisplay}</td>
+        <td><input type="number" step="0.01" value="${h.buyin || ''}" placeholder="—" style="width:55px;font-size:11px;padding:2px 4px;border-radius:4px;border:0.5px solid var(--brd-s);background:var(--bp);color:var(--tp)" onchange="updateHistoryField('${h.id}','buyin',this.value)"></td>
         <td><input type="number" step="0.01" value="${h.winnings || ''}" placeholder="\u2014" style="width:70px;font-size:11px;padding:2px 4px;border-radius:4px;border:0.5px solid var(--brd-s);background:var(--bp);color:var(--tp)" onchange="updateHistoryField('${h.id}','winnings',this.value)"></td>
         <td style="color:${roiColor};font-weight:500">${roi}</td>
         <td style="white-space:nowrap">
@@ -2222,8 +3968,8 @@ function renderBacktestPanel(history, summary) {
           <button class="btn" style="padding:2px 6px;font-size:10px;color:var(--td)" onclick="deleteHistoryEntry('${h.id}')">x</button>
         </td>
       </tr>
-      <tr id="attr-row-${h.id}" style="display:none"><td colspan="9"><div id="attr-content-${h.id}" style="padding:6px 8px;background:var(--bs);border-radius:var(--r);font-size:11px;color:var(--tt)">Loading...</div></td></tr>
-      <tr id="own-row-${h.id}" style="display:none"><td colspan="9">
+      <tr id="attr-row-${h.id}" style="display:none"><td colspan="11"><div id="attr-content-${h.id}" style="padding:6px 8px;background:var(--bs);border-radius:var(--r);font-size:11px;color:var(--tt)">Loading...</div></td></tr>
+      <tr id="own-row-${h.id}" style="display:none"><td colspan="11">
         <div style="padding:6px 8px;background:var(--bs);border-radius:var(--r);font-size:11px">
           <strong style="color:var(--tt)">Actual Ownership %</strong>
           <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">
@@ -2263,7 +4009,7 @@ function renderBacktestPanel(history, summary) {
     </div>
   </div>`;
 
-  historyEl.innerHTML = saveHtml + histHtml + mgmtHtml;
+  historyEl.innerHTML = saveHtml + importHtml + bulkHtml + histHtml + mgmtHtml;
 }
 
 async function saveHistorySettings() {
@@ -2287,6 +4033,127 @@ async function pruneHistoryNow() {
     showToast(`Pruned ${d.removed} entries (${d.before} → ${d.after})`, 'success');
     loadHistory();
   } catch (e) { showToast('Prune failed', 'error'); }
+}
+
+// ── DK Contest CSV Import ─────────────────────────────────────────────────────
+
+async function importDKContestCSV() {
+  const input = document.getElementById('dk-contest-csv-input');
+  const statusEl = document.getElementById('dk-contest-status');
+  if (!input?.files?.length) { showToast('Select a CSV file first', 'error'); return; }
+  const file = input.files[0];
+  const csv = await file.text();
+  if (statusEl) statusEl.textContent = 'Importing…';
+  try {
+    const r = await fetch('/api/contests/import-csv', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ csv }),
+    });
+    const d = await r.json();
+    if (!r.ok) { showToast(d.error || 'Import failed', 'error'); if (statusEl) statusEl.textContent = d.error || 'Import failed'; return; }
+    const msg = `Imported ${d.rowsParsed} rows — ${d.matched} matched to saved lineups, ${d.created} new stub entries${d.skipped ? ', ' + d.skipped + ' skipped' : ''}.`;
+    if (statusEl) statusEl.textContent = msg;
+    showToast(msg, 'success');
+    loadHistory();
+
+    // #5: Auto-update contest size to the most recently imported value so the
+    // ownership leverage / simROI calculations match the field the user actually plays in.
+    if (d.suggestedContestSize && d.suggestedContestSize > 1) {
+      const portInput = document.getElementById('port-contest-size');
+      const prevSize = portInput ? parseInt(portInput.value) : STATE.contestSize;
+      if (prevSize !== d.suggestedContestSize) {
+        if (portInput) portInput.value = d.suggestedContestSize;
+        STATE.contestSize = d.suggestedContestSize;
+        saveSession();
+        showToast(`Contest size auto-updated to ${d.suggestedContestSize.toLocaleString()} (from imported contest ${d.suggestedContestDate || ''}).`, 'info', 5000);
+      }
+    }
+  } catch (e) {
+    showToast('Import error: ' + e.message, 'error');
+    if (statusEl) statusEl.textContent = 'Error: ' + e.message;
+  }
+}
+
+// Fetch DK contest metadata for a single entry (called from the contestId badge in the history table)
+async function fetchContestDetails(contestId, entryId) {
+  const statusEl = document.getElementById('dk-contest-status') || document.getElementById('dk-import-status');
+  if (statusEl) statusEl.textContent = `Fetching contest ${contestId}…`;
+  try {
+    const r = await fetch(`/api/contests/${encodeURIComponent(contestId)}`);
+    const d = await r.json();
+    if (!r.ok) { showToast(d.error || 'Fetch failed', 'error'); return; }
+    if (!d.fetched) { showToast('DraftKings did not return contest data for #' + contestId, 'error'); return; }
+
+    // Patch the history entry with fetched data
+    const patch = {};
+    if (d.entries && !patch.entries) patch.entries = d.entries;
+    if (d.winningScore)  patch.contestWinScore  = d.winningScore;
+    if (d.cashLineScore) patch.contestCashScore = d.cashLineScore;
+    if (d.title)         patch.contestTitle      = d.title;
+    if (d.prizePool)     patch.contestPrizePool  = d.prizePool;
+
+    if (Object.keys(patch).length && entryId) {
+      await fetch(`/api/history/${encodeURIComponent(entryId)}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      });
+    }
+
+    let msg = `Contest #${contestId}`;
+    if (d.title) msg += `: ${d.title}`;
+    if (d.entries) msg += ` · ${d.entries.toLocaleString()} entries`;
+    if (d.winningScore) msg += ` · Winner: ${d.winningScore.toFixed(1)} pts`;
+    if (d.cashLineScore) msg += ` · Cash line ~${d.cashLineScore.toFixed(1)} pts`;
+
+    if (statusEl) statusEl.textContent = msg;
+    showToast(msg, 'success');
+    loadHistory();
+  } catch (e) {
+    showToast('Fetch error: ' + e.message, 'error');
+    if (statusEl) statusEl.textContent = 'Error: ' + e.message;
+  }
+}
+
+// Fetch DK contest details for ALL history entries that have a contestId
+async function fetchAllContestDetails() {
+  const statusEl = document.getElementById('dk-contest-status') || document.getElementById('dk-import-status');
+  const history = STATE.historyData || [];
+  const ids = [...new Set(history.filter(h => h.contestId).map(h => h.contestId))];
+  if (!ids.length) { showToast('No contest IDs found — import your DK CSV first', 'error'); return; }
+  if (statusEl) statusEl.textContent = `Fetching details for ${ids.length} contest(s)…`;
+
+  let done = 0, succeeded = 0;
+  for (const contestId of ids) {
+    const entry = history.find(h => h.contestId === contestId);
+    try {
+      const r = await fetch(`/api/contests/${encodeURIComponent(contestId)}`);
+      const d = await r.json();
+      if (d.fetched) {
+        const patch = {};
+        if (d.entries)       patch.entries           = d.entries;
+        if (d.winningScore)  patch.contestWinScore   = d.winningScore;
+        if (d.cashLineScore) patch.contestCashScore  = d.cashLineScore;
+        if (d.title)         patch.contestTitle       = d.title;
+        if (d.prizePool)     patch.contestPrizePool   = d.prizePool;
+        if (Object.keys(patch).length && entry) {
+          await fetch(`/api/history/${encodeURIComponent(entry.id)}`, {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(patch),
+          });
+        }
+        succeeded++;
+      }
+    } catch (e) { /* skip failed contest */ }
+    done++;
+    if (statusEl) statusEl.textContent = `Fetching… ${done}/${ids.length} contests`;
+    // Small delay to avoid hammering DK
+    await new Promise(res => setTimeout(res, 300));
+  }
+
+  const msg = `Fetched details for ${succeeded}/${ids.length} contests.`;
+  if (statusEl) statusEl.textContent = msg;
+  showToast(msg, 'success');
+  loadHistory();
 }
 
 function deriveSlateDate() {
@@ -2313,6 +4180,10 @@ async function saveLineupToHistory() {
   const projectedOwn = players.reduce((s, p) => s + (p.own || 0), 0);
   const salary = players.reduce((s, p) => s + p.salary, 0);
   const slateDate = document.getElementById('bt-slate-date')?.value || deriveSlateDate();
+
+  // Capture active calibration at save time so the analysis endpoint can
+  // normalize medians back to raw ROO values for an apples-to-apples comparison.
+  const activeCal = Engine.getCalibration();
 
   // Per-player snapshot includes all projection components for Phase 3 analysis
   const lineupSnapshot = players.map(p => ({
@@ -2347,11 +4218,17 @@ async function saveLineupToHistory() {
         contest, buyin, finish, entries, projectedPts, projectedOwn, salary, slateDate,
         lineup: lineupSnapshot,
         poolSnapshot,
-        sources: sourcesSnapshot
+        sources: sourcesSnapshot,
+        calibBatterScale: activeCal.batterScale || 1.0,
+        calibPitcherScale: activeCal.pitcherScale || 1.0
       })
     });
     loadHistory();
-  } catch (e) { console.error('Save history failed:', e); }
+  } catch (e) {
+    console.error('Save history failed:', e);
+    // CRITICAL: silent failure here means the user's lineup wasn't saved for future calibration.
+    showToast('Failed to save lineup to history: ' + (e.message || e) + '. Click Save to History to retry.', 'warn', 7000);
+  }
 }
 
 async function updateHistoryField(id, field, value) {
@@ -2363,7 +4240,327 @@ async function updateHistoryField(id, field, value) {
       body: JSON.stringify(body)
     });
     loadHistory();
-  } catch (e) { console.error('Update history failed:', e); }
+  } catch (e) {
+    console.error('Update history failed:', e);
+    showToast('Failed to update history entry: ' + (e.message || e), 'warn', 5000);
+  }
+}
+
+// Bulk-set buy-in (and optionally winnings) for all entries on a slate date.
+// Winnings are distributed evenly across entries for the entered total.
+async function applyBulkSlateResults() {
+  const date = document.getElementById('bulk-slate-date')?.value;
+  const buyin = parseFloat(document.getElementById('bulk-buyin')?.value);
+  const winningsRaw = document.getElementById('bulk-winnings')?.value.trim();
+  const msgEl = document.getElementById('bulk-result-msg');
+
+  if (!date) { if (msgEl) msgEl.textContent = 'Select a slate date.'; return; }
+  if (!buyin && winningsRaw === '') { if (msgEl) msgEl.textContent = 'Enter a buy-in amount or winnings (or both).'; return; }
+
+  const history = STATE.historyData || [];
+  const targets = history.filter(h => (h.slateDate || '') === date);
+  if (!targets.length) { if (msgEl) msgEl.textContent = 'No entries found for that date.'; return; }
+
+  if (msgEl) msgEl.textContent = `Updating ${targets.length} entries...`;
+
+  // Distribute total winnings evenly across entries (e.g. $20 total / 20 entries = $1 each).
+  // If winnings field is blank, only update buy-in.
+  const hasWinnings = winningsRaw !== '';
+  const totalWinnings = hasWinnings ? (parseFloat(winningsRaw) || 0) : null;
+  const perEntryWinnings = hasWinnings ? parseFloat((totalWinnings / targets.length).toFixed(4)) : null;
+
+  try {
+    await Promise.all(targets.map(entry => {
+      const body = {};
+      if (buyin) body.buyin = buyin;
+      if (hasWinnings) body.winnings = perEntryWinnings;
+      return fetch(`/api/history/${entry.id}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+    }));
+    const wMsg = hasWinnings ? `, $${totalWinnings.toFixed(2)} total won ($${perEntryWinnings?.toFixed(2)} each)` : '';
+    if (msgEl) { msgEl.style.color = 'var(--tsu)'; msgEl.textContent = `Updated ${targets.length} entries — buy-in $${buyin || '—'}${wMsg}`; }
+    loadHistory();
+  } catch (e) {
+    if (msgEl) { msgEl.style.color = 'var(--td)'; msgEl.textContent = 'Failed to update entries.'; }
+  }
+}
+
+// ── DK Contest Results Import ─────────────────────────────────────────────────
+// Parses a DraftKings contest results CSV (My Contests → Export) and auto-populates
+// finish position, actual points, and winnings for matching saved lineups.
+//
+// Supported DK formats:
+//   Full entry export:    Entry Name, Entry ID, Contest Name, ..., Place, Points, Winnings, Lineup
+//   Contest results:      Rank, EntryId, EntryName, TimeRemaining, Points, Lineup
+//
+// Lineup column: "SP Max Scherzer  C Willson Contreras  1B Pete Alonso  ..."
+// Players matched by normalised name overlap (≥7/10).
+
+function parseDKResultsCSV(text) {
+  // Minimal CSV parser that handles quoted fields containing commas.
+  function parseCSVLine(line) {
+    const fields = [];
+    let cur = '', inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') { inQ = !inQ; continue; }
+      if (ch === ',' && !inQ) { fields.push(cur); cur = ''; continue; }
+      cur += ch;
+    }
+    fields.push(cur);
+    return fields.map(f => f.trim());
+  }
+
+  const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n').filter(l => l.trim());
+  if (lines.length < 2) return [];
+
+  const headers = parseCSVLine(lines[0]).map(h => h.toLowerCase().replace(/[^a-z0-9]/g, ''));
+
+  // Locate required columns by fuzzy header match
+  const col = name => {
+    const idx = headers.findIndex(h => h.includes(name));
+    return idx >= 0 ? idx : -1;
+  };
+
+  const colPlace      = col('place') >= 0 ? col('place') : col('rank');
+  const colPoints     = col('points');
+  const colWinnings   = col('winning');
+  const colLineup     = col('lineup');
+  const colContest    = col('contestname') >= 0 ? col('contestname') : col('contest');
+  const colDate       = col('conteststart') >= 0 ? col('conteststart') : col('datecreated');
+  const colContestId  = col('contestkey') >= 0 ? col('contestkey') : col('contestid') >= 0 ? col('contestid') : -1;
+  const colEntries    = col('entriesincontest') >= 0 ? col('entriesincontest') : col('totalentries') >= 0 ? col('totalentries') : -1;
+
+  if (colPoints < 0 || colLineup < 0) return []; // Can't do anything useful
+
+  const entries = [];
+  for (let i = 1; i < lines.length; i++) {
+    const row = parseCSVLine(lines[i]);
+    if (row.length < 3) continue;
+
+    const placeRaw    = colPlace >= 0      ? row[colPlace]      : '';
+    const pointsRaw   = colPoints >= 0     ? row[colPoints]     : '';
+    const winRaw      = colWinnings >= 0   ? row[colWinnings]   : '';
+    const lineupRaw   = colLineup >= 0     ? row[colLineup]     : '';
+    const contestRaw  = colContest >= 0    ? row[colContest]    : '';
+    const dateRaw     = colDate >= 0       ? row[colDate]       : '';
+    const contestId   = colContestId >= 0  ? (row[colContestId] || '').trim() : null;
+    const entriesRaw  = colEntries >= 0    ? row[colEntries]    : '';
+
+    // Parse place: "42/5000" → finish=42, total=5000; or just "42"
+    let finish = null, totalEntries = null;
+    if (placeRaw) {
+      const m = placeRaw.replace(/[^\d/]/g, '').match(/^(\d+)(?:\/(\d+))?$/);
+      if (m) { finish = parseInt(m[1]); if (m[2]) totalEntries = parseInt(m[2]); }
+    }
+    // Override totalEntries from dedicated column if available
+    if (!totalEntries && entriesRaw) {
+      const e = parseInt(entriesRaw.replace(/[^0-9]/g, ''));
+      if (e > 0) totalEntries = e;
+    }
+
+    const actualPts = pointsRaw ? parseFloat(pointsRaw.replace(/[^0-9.]/g, '')) || null : null;
+    const winnings  = winRaw    ? parseFloat(winRaw.replace(/[^0-9.]/g, '')) ?? null : null;
+
+    // Infer contest type from name
+    let contestType = null;
+    if (contestRaw) {
+      const cn = contestRaw.toLowerCase();
+      if (/thr|gpp|millionaire|giant|large|big|star/.test(cn)) contestType = 'GPP';
+      else if (/double|50.50|cash|h2h/.test(cn)) contestType = 'Cash';
+      else contestType = 'GPP'; // default assumption
+    }
+
+    // Parse slate date from contest start column ("Apr 15, 2026 7:05 PM" → "2026-04-15")
+    let slateDate = null;
+    if (dateRaw) {
+      const d = new Date(dateRaw);
+      if (!isNaN(d)) slateDate = d.toISOString().substring(0, 10);
+    }
+
+    const players = parseDKLineupStr(lineupRaw);
+    if (players.length < 3) continue; // skip empty/unparseable rows
+
+    entries.push({ finish, totalEntries, actualPts, winnings, contestType, slateDate, contestId, contestTitle: contestRaw || null, players });
+  }
+  return entries;
+}
+
+function parseDKLineupStr(lineupStr) {
+  if (!lineupStr) return [];
+  const DK_POS = new Set(['P','SP','RP','C','1B','2B','3B','SS','OF','DH','FLEX','CPT','UTIL','P/OF','SP/RP']);
+  const parts = lineupStr.trim().split(/\s{2,}/).map(p => p.trim()).filter(Boolean);
+  return parts.map(part => {
+    const tokens = part.split(/\s+/);
+    // Remove position token at start or end
+    let nameTokens;
+    if (tokens.length > 1 && DK_POS.has(tokens[0].toUpperCase())) {
+      nameTokens = tokens.slice(1);
+    } else if (tokens.length > 1 && DK_POS.has(tokens[tokens.length - 1].toUpperCase())) {
+      nameTokens = tokens.slice(0, -1);
+    } else {
+      nameTokens = tokens;
+    }
+    return nameTokens.join(' ').replace(/\(\d+\)/g, '').trim();
+  }).filter(n => n.length > 2);
+}
+
+function normDKName(name) {
+  return (name || '').toLowerCase()
+    .replace(/\s+(jr\.?|sr\.?|ii|iii|iv)$/i, '')
+    .replace(/[^a-z ]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+async function importDKResults(input) {
+  const statusEl = document.getElementById('dk-import-status');
+  const file = input.files[0];
+  if (!file) return;
+
+  statusEl.innerHTML = '<span style="color:var(--tt);font-size:11px">Parsing…</span>';
+
+  const text = await file.text();
+
+  // Auto-detect format by checking for a Lineup column in the header
+  const firstLine = text.split('\n')[0].toLowerCase();
+  if (!firstLine.includes('lineup')) {
+    // My Contests format — route to server-side importer
+    try {
+      const r = await fetch('/api/contests/import-csv', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ csv: text })
+      });
+      const result = await r.json();
+      if (!r.ok) throw new Error(result.error || r.statusText);
+      input.value = '';
+      loadHistory();
+      const color = result.matched > 0 ? 'var(--tsu)' : 'var(--tw)';
+      statusEl.innerHTML = `<div class="ib success" style="color:${color}">`
+        + `Detected My Contests format — ${result.rowsParsed} rows parsed, `
+        + `<strong>${result.matched}</strong> matched to saved lineups, `
+        + `${result.created} new entries created, ${result.skipped} skipped.</div>`;
+    } catch (e) {
+      statusEl.innerHTML = '<div class="ib warn">Import failed: ' + esc(e.message) + '</div>';
+      input.value = '';
+    }
+    return;
+  }
+
+  const parsed = parseDKResultsCSV(text);
+  if (!parsed.length) {
+    statusEl.innerHTML = '<div class="ib warn">Could not parse CSV — check that this is a DraftKings contest results export with a Lineup column.</div>';
+    input.value = '';
+    return;
+  }
+
+  // Load saved history
+  let history;
+  try {
+    history = await fetch('/api/history').then(r => r.json());
+  } catch (e) {
+    statusEl.innerHTML = '<div class="ib warn">Failed to load history: ' + esc(e.message) + '</div>';
+    input.value = '';
+    return;
+  }
+
+  if (!history.length) {
+    statusEl.innerHTML = '<div class="ib warn">No saved lineups in history to match against. Save lineups in the Backtest tab first.</div>';
+    input.value = '';
+    return;
+  }
+
+  let matched = 0, skipped = 0;
+  const updates = [];
+
+  for (const entry of parsed) {
+    const dkNorm = entry.players.map(normDKName);
+    const dkSet = new Set(dkNorm);
+
+    // Filter candidates by slate date if available
+    const candidates = entry.slateDate
+      ? history.filter(h => (h.slateDate || h.date?.substring(0, 10)) === entry.slateDate)
+      : history;
+
+    // Find best-matching saved lineup (≥7/10 players must match)
+    let bestEntry = null, bestScore = 0;
+    for (const h of candidates) {
+      const savedNames = (h.lineup || []).filter(Boolean).map(p => normDKName(p.name));
+      const overlap = savedNames.filter(n => dkSet.has(n)).length;
+      if (overlap > bestScore && overlap >= 7) { bestScore = overlap; bestEntry = h; }
+    }
+
+    if (!bestEntry) { skipped++; continue; }
+
+    const body = {};
+    if (entry.actualPts !== null && !bestEntry.actualPts)          body.actualPts    = entry.actualPts;
+    if (entry.winnings  !== null && bestEntry.winnings === null)    body.winnings     = entry.winnings;
+    if (entry.finish    !== null && !bestEntry.finish)              body.finish       = entry.finish;
+    if (entry.totalEntries !== null && !bestEntry.entries)          body.entries      = entry.totalEntries;
+    if (entry.contestId   && !bestEntry.contestId)                  body.contestId    = entry.contestId;
+    if (entry.contestTitle && !bestEntry.contestTitle)              body.contestTitle = entry.contestTitle;
+
+    if (Object.keys(body).length === 0) { skipped++; continue; } // already filled
+
+    updates.push(fetch('/api/history/' + bestEntry.id, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    }));
+    matched++;
+  }
+
+  if (updates.length) {
+    try {
+      await Promise.all(updates);
+      loadHistory();
+    } catch (e) { /* partial failure — history still reloads */ loadHistory(); }
+  }
+
+  const total = parsed.length;
+  const color = matched > 0 ? 'var(--tsu)' : 'var(--tw)';
+  statusEl.innerHTML = `<div class="ib success" style="color:${color}">`
+    + `Imported ${total} entries from CSV — `
+    + `<strong>${matched}</strong> matched &amp; updated, `
+    + `${skipped} skipped (already filled or no lineup match).`
+    + (skipped > matched ? ' Tip: save lineups with a matching slate date before importing.' : '')
+    + '</div>';
+  input.value = ''; // reset so the same file can be re-imported after fixing issues
+}
+
+async function importOwnershipCSV() {
+  const statusEl = document.getElementById('own-import-status');
+  const date = (document.getElementById('own-import-date')?.value || '').trim();
+  const csv = (document.getElementById('own-import-csv')?.value || '').trim();
+
+  if (!date) {
+    statusEl.textContent = 'Enter a slate date before importing.';
+    return;
+  }
+  if (!csv) {
+    statusEl.textContent = 'Paste ownership CSV data before importing.';
+    return;
+  }
+
+  statusEl.textContent = 'Importing…';
+  try {
+    const r = await fetch('/api/ownership/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date, csv })
+    });
+    const body = await r.json();
+    if (!r.ok) {
+      statusEl.textContent = body.error || 'Import failed.';
+      return;
+    }
+    statusEl.textContent = `Parsed ${body.parsedPlayers} players — ${body.playersMatched} matched, ${body.entriesUpdated} entries updated.`;
+    loadHistory();
+  } catch (e) {
+    statusEl.textContent = 'Import failed: ' + e.message;
+  }
 }
 
 function toggleOwnershipEntry(id) {
@@ -2480,7 +4677,10 @@ async function deleteHistoryEntry(id) {
   try {
     await fetch('/api/history/' + id, { method: 'DELETE' });
     loadHistory();
-  } catch (e) { console.error('Delete history failed:', e); }
+  } catch (e) {
+    console.error('Delete history failed:', e);
+    showToast('Failed to delete history entry: ' + (e.message || e), 'warn', 5000);
+  }
 }
 
 // ── Phase 1: Fetch & Apply Actual Scores ─────────────────────────────────────
@@ -2503,8 +4703,16 @@ async function fetchAndApplyActuals() {
     });
     const data = await res.json();
     if (!res.ok || data.error) throw new Error(data.error || 'Failed');
+    // Surface per-game failures — previously these were silently dropped and the user
+    // believed all games loaded. Reported counts now reflect the actual fetch outcome.
+    const failedNote = (data.failedGames && data.failedGames.length)
+      ? ` <span class="warn">⚠ ${data.failedGames.length} of ${data.gameCount} games failed to load (gamePks: ${data.failedGames.slice(0, 3).map(f => f.gamePk).join(', ')}${data.failedGames.length > 3 ? '…' : ''}). Retry in a few minutes if games are still in progress.</span>`
+      : '';
+    if (failedNote) {
+      showToast(`${data.failedGames.length} of ${data.gameCount} games failed to load actuals. Some players may show 0 pts.`, 'warn', 7000);
+    }
     if (data.updated > 0) {
-      statusEl.innerHTML = `<div class="ib success">${data.updated} lineup(s) updated — ${data.playerCount} players matched for ${dateStr}.</div>`;
+      statusEl.innerHTML = `<div class="ib success">${data.updated} lineup(s) updated — ${data.playerCount} players matched for ${dateStr} (${data.loadedGameCount ?? data.gameCount}/${data.gameCount} games).${failedNote}</div>`;
 
       // Refresh source quality using per-source snapshots saved at lineup creation time
       const history = await fetch('/api/history').then(r => r.json());
@@ -2551,9 +4759,15 @@ async function loadModelAnalysis() {
 }
 
 function renderModelAnalysis(data) {
+  // Stash for button handlers — avoids JSON.stringify inside onclick attributes
+  STATE._lastAnalysis = data;
   const el = document.getElementById('model-analysis');
   if (!data.sufficient) {
-    el.innerHTML = `<div class="ib blue" style="font-size:12px">${esc(data.message || 'Not enough data yet.')}<br>Apply actuals for completed slates using the "Load Actuals" section above.</div>`;
+    const sections = [];
+    sections.push(`<div class="ib blue" style="font-size:12px;margin-bottom:10px">${esc(data.message || 'Not enough data yet.')}</div>`);
+    if (data.lineupAnalysis) sections.push(renderLineupAnalysis(data.lineupAnalysis));
+    if (data.contestPerf)    sections.push(renderContestPerf(data.contestPerf));
+    el.innerHTML = sections.join('');
     return;
   }
 
@@ -2591,10 +4805,12 @@ function renderModelAnalysis(data) {
           ${Object.entries(data.byPosition).map(([pos, s]) => {
             const bColor = Math.abs(s.bias) < 0.05 ? 'var(--tsu)' : Math.abs(s.bias) < 0.15 ? 'var(--tw)' : 'var(--td)';
             const biasSign = s.bias > 0 ? '+' : '';
-            return `<div style="background:var(--bp);border-radius:4px;padding:5px 7px">
-              <div style="font-weight:600;color:var(--tp)">${pos} <span style="font-weight:400;color:var(--tt)">(${s.count})</span></div>
+            const lowSample = s.count < 10;
+            return `<div style="background:var(--bp);border-radius:4px;padding:5px 7px;${lowSample ? 'opacity:0.75' : ''}">
+              <div style="font-weight:600;color:var(--tp)">${esc(pos)} <span style="font-weight:400;color:var(--tt)">(${s.count}${lowSample ? ' ⚠' : ''})</span></div>
               <div style="color:${bColor}">${biasSign}${(s.bias*100).toFixed(1)}%</div>
               <div style="color:var(--tt)">scale: <strong>${s.calibrationFactor?.toFixed(3)}</strong></div>
+              ${lowSample ? `<div style="font-size:9px;color:var(--tw)">low sample</div>` : ''}
             </div>`;
           }).join('')}
         </div>
@@ -2611,9 +4827,9 @@ function renderModelAnalysis(data) {
 
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       ${data.byPosition && Object.keys(data.byPosition).length >= 4
-        ? `<button class="btn-g" onclick="applyCalibration(1.0, 1.0, ${JSON.stringify(data.suggestion.positionScales)})">Apply Position Scales</button>`
-        : `<button class="btn-g" onclick="applyCalibration(${data.suggestion.pitcherCalibration ?? 1}, ${data.suggestion.batterCalibration ?? 1})">Apply Calibration</button>`}
-      <button class="btn" onclick="applyCalibration(${data.suggestion.pitcherCalibration ?? 1}, ${data.suggestion.batterCalibration ?? 1})">Apply Blanket Scales</button>
+        ? `<button class="btn-g" onclick="applyPositionScalesFromLastAnalysis()">Apply Position Scales</button>`
+        : `<button class="btn-g" onclick="applyBlanketScalesFromLastAnalysis()">Apply Calibration</button>`}
+      <button class="btn" onclick="applyBlanketScalesFromLastAnalysis()">Apply Blanket Scales</button>
       <button class="btn" onclick="resetCalibration()">Reset to Default</button>
       <span id="cal-status" style="font-size:11px;color:var(--ts)"></span>
     </div>
@@ -2683,8 +4899,49 @@ function renderModelAnalysis(data) {
     ` : ''}
 
     <div id="active-calibration" style="margin-top:8px;font-size:11px;color:var(--tt)"></div>
+
+    ${data.lineupAnalysis ? renderLineupAnalysis(data.lineupAnalysis) : ''}
+    ${data.contestPerf    ? renderContestPerf(data.contestPerf)       : ''}
   `;
   renderActiveCalibration();
+}
+
+function renderLineupAnalysis(la) {
+  const biasSign  = la.bias > 0 ? '+' : '';
+  const biasColor = Math.abs(la.bias) < 0.05 ? 'var(--tsu)' : Math.abs(la.bias) < 0.15 ? 'var(--tw)' : 'var(--td)';
+  const rhoColor  = la.spearman > 0.5 ? 'var(--tsu)' : la.spearman > 0.3 ? 'var(--ti)' : 'var(--td)';
+  return `
+    <div class="sec-label" style="margin-top:10px">Lineup-Level Projection Accuracy</div>
+    <div style="background:var(--bs);border-radius:var(--r);padding:12px;margin-bottom:10px;font-size:12px">
+      <div style="color:var(--tt);margin-bottom:8px;font-size:11px">${la.count} saved lineups with both projected and actual totals</div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
+        <div><div style="color:var(--tt);font-size:10px;text-transform:uppercase">Avg Projected</div><div style="font-size:16px;font-weight:600">${la.avgProjected}</div><div style="font-size:10px;color:var(--tt)">pts</div></div>
+        <div><div style="color:var(--tt);font-size:10px;text-transform:uppercase">Avg Actual</div><div style="font-size:16px;font-weight:600">${la.avgActual}</div><div style="font-size:10px;color:var(--tt)">pts</div></div>
+        <div><div style="color:var(--tt);font-size:10px;text-transform:uppercase">Overall Bias</div><div style="font-size:16px;font-weight:600;color:${biasColor}">${biasSign}${(la.bias*100).toFixed(1)}%</div><div style="font-size:10px;color:var(--tt)">${la.bias > 0.02 ? 'under-projected' : la.bias < -0.02 ? 'over-projected' : 'well-calibrated'}</div></div>
+        <div><div style="color:var(--tt);font-size:10px;text-transform:uppercase">Rank Corr.</div><div style="font-size:16px;font-weight:600;color:${rhoColor}">${la.spearman.toFixed(3)}</div><div style="font-size:10px;color:var(--tt)">Spearman ρ</div></div>
+      </div>
+      <div style="margin-top:8px;font-size:11px;color:var(--tt)">Uniform calibration factor: <strong style="color:var(--tp)">${la.calibrationFactor.toFixed(3)}</strong> — applies equally to pitchers and batters. Load actuals for per-player breakdown.</div>
+    </div>`;
+}
+
+function renderContestPerf(cp) {
+  const roiColor = cp.roi == null ? 'var(--ts)' : cp.roi >= 0 ? 'var(--tsu)' : 'var(--td)';
+  const cashColor = cp.cashRate >= 50 ? 'var(--tsu)' : cp.cashRate >= 35 ? 'var(--tw)' : 'var(--td)';
+  return `
+    <div class="sec-label" style="margin-top:10px">Contest Performance (${cp.count} entries)</div>
+    <div style="background:var(--bs);border-radius:var(--r);padding:12px;margin-bottom:10px;font-size:12px">
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:8px">
+        <div><div style="color:var(--tt);font-size:10px;text-transform:uppercase">Cash Rate</div><div style="font-size:16px;font-weight:600;color:${cashColor}">${cp.cashRate}%</div><div style="font-size:10px;color:var(--tt)">entries in the money</div></div>
+        <div><div style="color:var(--tt);font-size:10px;text-transform:uppercase">Top 10%</div><div style="font-size:16px;font-weight:600">${cp.top10Rate}%</div><div style="font-size:10px;color:var(--tt)">of entries</div></div>
+        <div><div style="color:var(--tt);font-size:10px;text-transform:uppercase">Avg Finish</div><div style="font-size:16px;font-weight:600">${cp.avgFinishPct}%</div><div style="font-size:10px;color:var(--tt)">of field</div></div>
+        <div><div style="color:var(--tt);font-size:10px;text-transform:uppercase">Avg Score</div><div style="font-size:16px;font-weight:600">${cp.avgScore}</div><div style="font-size:10px;color:var(--tt)">DK pts</div></div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px">
+        <div><div style="color:var(--tt);font-size:10px;text-transform:uppercase">Score P25/P50/P75</div><div style="font-size:13px;font-weight:600">${cp.scoreP25} / ${cp.scoreP50} / ${cp.scoreP75}</div></div>
+        <div><div style="color:var(--tt);font-size:10px;text-transform:uppercase">Total Winnings</div><div style="font-size:13px;font-weight:600;color:var(--tsu)">$${cp.totalWinnings.toFixed(2)}</div></div>
+        ${cp.roi != null ? `<div><div style="color:var(--tt);font-size:10px;text-transform:uppercase">ROI</div><div style="font-size:13px;font-weight:600;color:${roiColor}">${cp.roi >= 0 ? '+' : ''}${cp.roi}%</div></div>` : '<div></div>'}
+      </div>
+    </div>`;
 }
 
 function runContestFlashback() {
@@ -2706,9 +4963,12 @@ function runContestFlashback() {
 
   el.innerHTML = '<div style="font-size:12px;color:var(--tt);padding:8px 0">Simulating…</div>';
 
-  setTimeout(() => {
-    // Build a pool from each entry's lineup + playerActuals for field simulation
-    const flashResults = eligible.map(h => {
+  setTimeout(async () => {
+    // Build a pool from each entry's lineup + playerActuals for field simulation.
+    // Process entries sequentially (await each) so simulatePortfolio can yield
+    // between sims and keep the UI thread responsive.
+    const flashResults = [];
+    for (const h of eligible) {
       // Reconstruct a pool-like array from the lineup snapshot with actual scores as "median"
       const pool = (h.lineup || []).map(p => ({
         ...p, median: h.playerActuals?.[p.name] ?? p.median ?? 0,
@@ -2716,7 +4976,7 @@ function runContestFlashback() {
         own: p.own || 0, salary: p.salary || 3000,
         rosterPos: p.pos || p.rosterPos || 'OF'
       })).filter(p => p.median > 0);
-      if (pool.length < 5) return null;
+      if (pool.length < 5) continue;
 
       // Build a lightweight "lineup array" aligned to DK_SLOTS
       const fullLineup = pool.slice(0, 10);
@@ -2726,11 +4986,11 @@ function runContestFlashback() {
       const contestType = isCash ? 'cash' : 'gpp';
 
       // Run 2000 sim portfolio (single lineup) — 500 had ±2.2% SE on cash rate, unreliable for ranking
-      const simResults = Engine.simulatePortfolio([fullLineup], pool, 2000, contestType);
-      if (!simResults.length) return null;
+      const simResults = await Engine.simulatePortfolio([fullLineup], pool, 2000, contestType);
+      if (!simResults.length) continue;
       const sr = simResults[0];
 
-      return {
+      flashResults.push({
         date: h.slateDate || new Date(h.date).toLocaleDateString(),
         contest: h.contest || 'GPP',
         buyin: h.buyin || 0,
@@ -2741,8 +5001,8 @@ function runContestFlashback() {
         winRate: sr.winRate,
         simROI: sr.simROI,
         actualROI: h.buyin && h.winnings != null ? parseFloat(((h.winnings - h.buyin) / h.buyin * 100).toFixed(1)) : null
-      };
-    }).filter(Boolean);
+      });
+    }
 
     if (!flashResults.length) {
       el.innerHTML = '<div class="ib warn">Could not simulate — ensure lineups have valid player data.</div>';
@@ -2792,17 +5052,174 @@ function runContestFlashback() {
   }, 30);
 }
 
+// Called by "Apply Position Scales" button — reads stashed analysis data so we
+// never embed JSON.stringify output inside an onclick HTML attribute.
+// Also passes the blanket pitcher/batter scales as fallback for any positions
+// that had fewer than 5 samples and are therefore absent from positionScales.
+// Returns true if the user has confirmed they want to apply low-confidence calibration.
+// Hard-blocks below 20 total actuals (suggestion is pure noise at that sample size).
+// Soft-prompts at 20-40 total actuals (medium confidence — usable but not yet reliable).
+// Returns true (no prompt) at 40+ actuals.
+function confirmCalibrationConfidence(data) {
+  const totalCount = data.totalCount || data.count || (data.pairs?.length ?? 0)
+    || Object.values(data.byPosition || {}).reduce((s, x) => s + (x.count || 0), 0);
+  if (totalCount >= 40) return true;
+  if (totalCount < 20) {
+    alert(
+      `Calibration is based on ${totalCount} player actuals — well below the minimum reliable sample size of 40.\n\n` +
+      `At this sample size, the suggested scales are dominated by noise rather than systematic bias. ` +
+      `Applying them now will likely degrade projection accuracy.\n\n` +
+      `Load actuals for more slates first, then re-run Analyze Projections.`
+    );
+    return false;
+  }
+  return confirm(
+    `Calibration is based on ${totalCount} player actuals (medium confidence).\n\n` +
+    `At this sample size, the suggested scales may still be noisy. The Bayesian shrinkage will reduce their magnitude, ` +
+    `but applying them may still affect projection accuracy in unexpected ways.\n\n` +
+    `Continue applying calibration?`
+  );
+}
+
+function applyPositionScalesFromLastAnalysis() {
+  const data = STATE._lastAnalysis;
+  if (!data?.suggestion?.positionScales) return;
+
+  if (!confirmCalibrationConfidence(data)) return;
+
+  // Bayesian shrinkage: blend the raw calibration factor toward 1.0 (neutral prior)
+  // based on sample size. This replaces the hard 0.70 floor in applyCalibration,
+  // which prevented the model from expressing well-supported large adjustments
+  // (3B and OF were hitting the floor on every slate due to systematic over-projection).
+  //
+  // Trust schedule: n=10 → 25% confidence; n=20 → 50%; n=40+ → 100%.
+  // At 40+ observations the correction is fully applied with no shrinkage.
+  const shrunkScales = {};
+  const rawScales = data.suggestion.positionScales;
+  Object.entries(rawScales).forEach(([pos, factor]) => {
+    const count = data.byPosition?.[pos]?.count || 0;
+    const trust = Math.min(1.0, count / 40);
+    shrunkScales[pos] = parseFloat((1.0 * (1 - trust) + factor * trust).toFixed(4));
+  });
+
+  // Show before/after preview, then apply if user confirms (#12 calibration impact preview)
+  if (!previewCalibrationImpact(data.suggestion.pitcherCalibration ?? 1.0, data.suggestion.batterCalibration ?? 1.0, shrunkScales)) {
+    return;
+  }
+
+  applyCalibration(
+    data.suggestion.pitcherCalibration ?? 1.0,
+    data.suggestion.batterCalibration ?? 1.0,
+    shrunkScales
+  );
+}
+
+function applyBlanketScalesFromLastAnalysis() {
+  const data = STATE._lastAnalysis;
+  if (!data?.suggestion) return;
+  if (!confirmCalibrationConfidence(data)) return;
+  if (!previewCalibrationImpact(data.suggestion.pitcherCalibration ?? 1.0, data.suggestion.batterCalibration ?? 1.0, {})) return;
+  applyCalibration(data.suggestion.pitcherCalibration ?? 1.0, data.suggestion.batterCalibration ?? 1.0);
+}
+
+// #12: Show before/after projection table for the top 20 players given proposed calibration.
+// Returns true if user confirms application, false otherwise.
+function previewCalibrationImpact(pitcherScale, batterScale, positionScales) {
+  if (!STATE.POOL || !STATE.POOL.length) return true; // no pool to preview against — let it through
+  // Find top 20 by median across batters + top 5 pitchers
+  const batters = STATE.POOL.filter(p => !Engine.rp(p, 'P') && p.median > 0)
+    .sort((a, b) => b.median - a.median).slice(0, 15);
+  const pitchers = STATE.POOL.filter(p => Engine.rp(p, 'P') && p.median > 0)
+    .sort((a, b) => b.median - a.median).slice(0, 5);
+  const sample = [...pitchers, ...batters];
+
+  const rows = sample.map(p => {
+    const isP = Engine.rp(p, 'P');
+    const rawPos = (p.dkPos || p.rosterPos || '').split('/')[0].trim();
+    const posScale = isP ? (positionScales['P'] ?? positionScales['SP'] ?? 1.0) : (positionScales[rawPos] ?? 1.0);
+    const blanketScale = isP ? pitcherScale : batterScale;
+    const totalScale = blanketScale * posScale;
+    const before = p.median;
+    const after = before * totalScale;
+    const delta = ((after - before) / before * 100);
+    return { name: p.name, pos: isP ? 'P' : rawPos, before, after, delta };
+  });
+
+  // Build a simple summary
+  const maxDelta = Math.max(...rows.map(r => Math.abs(r.delta)));
+  const summary = rows.map(r =>
+    `${r.name.padEnd(24)} ${r.pos.padEnd(3)}  ${r.before.toFixed(1).padStart(5)} → ${r.after.toFixed(1).padStart(5)}  (${r.delta >= 0 ? '+' : ''}${r.delta.toFixed(1)}%)`
+  ).join('\n');
+
+  const msg =
+    `Calibration preview — top 20 players will change as follows:\n` +
+    `(P×${pitcherScale.toFixed(3)}, B×${batterScale.toFixed(3)}` +
+    (Object.keys(positionScales).length ? `, position scales: ${Object.entries(positionScales).map(([k, v]) => `${k}×${v.toFixed(2)}`).join(', ')}` : '') +
+    `)\n\n` +
+    `Largest change: ±${maxDelta.toFixed(1)}%\n\n` +
+    summary + '\n\n' +
+    `Apply this calibration?`;
+
+  return confirm(msg);
+}
+
 async function applyCalibration(pitcherScale, batterScale, positionScales = {}) {
+  // ── Guard rail: clamp blanket scales to ±20% ─────────────────────────────
+  // Scales outside this range indicate either a sampling error (too few slates)
+  // or a data quality issue (broken projection source). Allow up to ±20% and
+  // warn loudly if the raw suggestion was more extreme.
+  const CAL_MIN = 0.80, CAL_MAX = 1.20;
+  const clampedBat = Math.max(CAL_MIN, Math.min(CAL_MAX, parseFloat(batterScale) || 1.0));
+  const clampedPit = Math.max(CAL_MIN, Math.min(CAL_MAX, parseFloat(pitcherScale) || 1.0));
+
+  const batClamped = Math.abs(clampedBat - batterScale) > 0.001;
+  const pitClamped = Math.abs(clampedPit - pitcherScale) > 0.001;
+
+  if (batClamped || pitClamped) {
+    const msgs = [];
+    if (batClamped) msgs.push(`batter ${(+batterScale).toFixed(3)} → ${clampedBat.toFixed(3)}`);
+    if (pitClamped) msgs.push(`pitcher ${(+pitcherScale).toFixed(3)} → ${clampedPit.toFixed(3)}`);
+    showToast(
+      `Calibration clamped to ±20% model limit (${msgs.join(', ')}). ` +
+      `Scale suggestions >20% likely reflect a data quality issue — re-run after more slates.`,
+      'warn', 8000
+    );
+  }
+
+  // Clamp per-position scales to ±40%. The Bayesian shrinkage in
+  // applyPositionScalesFromLastAnalysis already protects against low-sample extremes,
+  // so the hard floor here is only a last-resort safety rail, not the primary guard.
+  const clampedPositionScales = {};
+  Object.entries(positionScales || {}).forEach(([pos, s]) => {
+    clampedPositionScales[pos] = Math.max(0.60, Math.min(1.40, parseFloat(s) || 1.0));
+  });
+
   try {
     await fetch('/api/calibration', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pitcherScale, batterScale, positionScales })
+      body: JSON.stringify({ pitcherScale: clampedPit, batterScale: clampedBat, positionScales: clampedPositionScales })
     });
-    Engine.setCalibration({ pitcherScale, batterScale, positionScales });
+    Engine.setCalibration({ pitcherScale: clampedPit, batterScale: clampedBat, positionScales: clampedPositionScales });
     const st = document.getElementById('cal-status');
-    if (st) { st.textContent = 'Calibration applied — optimizer will use adjusted projections.'; st.style.color = 'var(--tsu)'; }
+    if (st) {
+      const posCount = Object.keys(clampedPositionScales).length;
+      const parts = [];
+      if (posCount > 0) parts.push(`${posCount} position scales`);
+      if (Math.abs(clampedPit - 1) > 0.001) parts.push(`P×${clampedPit.toFixed(3)}`);
+      if (Math.abs(clampedBat - 1) > 0.001) parts.push(`B×${clampedBat.toFixed(3)}`);
+      st.textContent = parts.length
+        ? `Applied: ${parts.join(', ')} — optimizer will use adjusted projections.`
+        : 'Calibration applied (no change from default).';
+      st.style.color = 'var(--tsu)';
+    }
     renderActiveCalibration();
-  } catch (e) { console.error('Apply calibration failed:', e); }
+  } catch (e) {
+    // CRITICAL: silent failure meant the calibration scales weren't persisted to disk —
+    // they'd apply in-memory until reload then revert to whatever was on disk, causing
+    // mysterious projection accuracy regressions on the next slate.
+    console.error('Apply calibration failed:', e);
+    showToast('Failed to save calibration to server: ' + (e.message || e) + '. Scales will reset on reload — retry Apply.', 'warn', 8000);
+  }
 }
 
 async function resetCalibration() {
@@ -2815,7 +5232,10 @@ async function resetCalibration() {
     const st = document.getElementById('cal-status');
     if (st) { st.textContent = 'Calibration reset to default (no adjustment).'; st.style.color = 'var(--ts)'; }
     renderActiveCalibration();
-  } catch (e) { console.error('Reset calibration failed:', e); }
+  } catch (e) {
+    console.error('Reset calibration failed:', e);
+    showToast('Failed to reset calibration: ' + (e.message || e), 'warn', 5000);
+  }
 }
 
 function renderActiveCalibration() {
@@ -2851,9 +5271,18 @@ async function loadConfirmedLineups() {
     STATE.confirmedLineups = {};
     (data.games || []).forEach(g => { STATE.confirmedLineups[g.gamePk] = g; });
     applyConfirmedToPool();
-    const confirmedCount = Object.values(STATE.confirmedLineups).filter(g => g.confirmed).length;
-    const totalGames = data.games?.length || 0;
-    if (el) el.innerHTML = `<div class="ib success">${confirmedCount}/${totalGames} batting orders confirmed. ${totalGames - confirmedCount} pending (pre-game).</div>`;
+    const poolTeams = new Set(STATE.POOL.map(p => p.team).filter(Boolean));
+    const slateGames = poolTeams.size > 0
+      ? (data.games || []).filter(g => poolTeams.has(g.homeTeam) || poolTeams.has(g.awayTeam))
+      : (data.games || []);
+    const confirmedCount = slateGames.filter(g => g.confirmed).length;
+    const partialCount   = slateGames.filter(g => g.partialConfirmed && !g.confirmed).length;
+    const totalGames = slateGames.length;
+    const pendingCount = totalGames - confirmedCount - partialCount;
+    const parts = [`${confirmedCount}/${totalGames} games fully confirmed`];
+    if (partialCount > 0) parts.push(`${partialCount} partial (1 side posted)`);
+    if (pendingCount > 0) parts.push(`${pendingCount} pending`);
+    if (el) el.innerHTML = `<div class="ib success">${parts.join(' · ')}</div>`;
     if (btn) { btn.textContent = 'Refresh Lineups'; btn.disabled = false; }
     renderPlayers();
   } catch (e) {
@@ -2876,7 +5305,11 @@ const _scratchMonitor = {
   // Snapshot of which players were confirmed IN a batting order at monitor-start.
   // We only alert for players who WERE confirmed and then disappear — not for
   // players who were never confirmed (pre-game starters not yet announced).
-  baselineConfirmed: new Set()
+  baselineConfirmed: new Set(),
+  // #13: Per-team baseline precip% at monitor-start. We alert when a team's
+  // current precip rises into the rain-risk band from a clearer baseline.
+  baselinePrecip: {},   // { teamAbbr: precipChance }
+  weatherAlerts: []     // { team, precipNow, precipBase, detectedAt }
 };
 
 function normForMonitor(name) {
@@ -2924,6 +5357,42 @@ async function pollScratchMonitor() {
     // Update baseline: if new players got confirmed, add them
     nowConfirmed.forEach(n => _scratchMonitor.baselineConfirmed.add(n));
 
+    // #13: Late-rain weather check — refetch weather for all teams in the pool and
+    // alert if precip% has risen meaningfully since baseline. Caught delayed convective
+    // storms that develop in the hour before first pitch (rain-outs cost full lineups).
+    try {
+      const teamsInPool = [...new Set(STATE.POOL.filter(p => p.game).map(p => p.team))];
+      if (teamsInPool.length) {
+        const wRes = await fetch('/api/weather/batch', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ teams: teamsInPool })
+        });
+        if (wRes.ok) {
+          const wData = await wRes.json();
+          Object.entries(wData).forEach(([team, w]) => {
+            if (!w || w.error || typeof w.precip_chance !== 'number') return;
+            const baseline = _scratchMonitor.baselinePrecip[team];
+            if (baseline == null) {
+              _scratchMonitor.baselinePrecip[team] = w.precip_chance;
+              return;
+            }
+            // Alert if precip jumped from <30% to ≥50% (rain-risk band)
+            const triggered = baseline < 30 && w.precip_chance >= 50;
+            if (triggered && !_scratchMonitor.weatherAlerts.some(a => a.team === team)) {
+              _scratchMonitor.weatherAlerts.push({
+                team, precipNow: w.precip_chance, precipBase: baseline,
+                detectedAt: new Date().toLocaleTimeString()
+              });
+            }
+            // Track the running baseline as the lowest seen value so a continuously
+            // worsening forecast still fires the threshold transition exactly once.
+            if (w.precip_chance < baseline) _scratchMonitor.baselinePrecip[team] = w.precip_chance;
+          });
+          STATE.weatherData = wData;
+        }
+      }
+    } catch (e) { /* weather poll failures are non-fatal — keep monitor running */ }
+
     _scratchMonitor.lastPollAt = new Date();
     _scratchMonitor.nextPollAt = new Date(Date.now() + _scratchMonitor.intervalMs);
     renderScratchMonitorStatus();
@@ -2951,20 +5420,42 @@ function renderScratchMonitorStatus() {
   if (btn) { btn.textContent = 'Stop Monitor'; btn.style.background = 'var(--red, #c0392b)'; }
 
   if (alertEl) {
-    if (_scratchMonitor.alerts.length === 0) {
+    const hasScratch = _scratchMonitor.alerts.length > 0;
+    const hasWeather = _scratchMonitor.weatherAlerts.length > 0;
+    if (!hasScratch && !hasWeather) {
       alertEl.innerHTML = '';
       return;
     }
-    alertEl.innerHTML = `<div style="margin-top:8px;padding:10px 12px;background:#4a1010;border:1px solid #c0392b;border-radius:var(--r)">
-      <div style="font-size:12px;font-weight:600;color:#ff6b6b;margin-bottom:6px">SCRATCH ALERT — Rostered Players Missing From Confirmed Lineups</div>
-      ${_scratchMonitor.alerts.map((a, idx) =>
-        `<div style="font-size:11px;color:#ffaaaa;padding:3px 0">
-          <strong>${esc(a.name)}</strong>${a.team ? ' (' + esc(a.team) + ')' : ''} — not in batting order as of ${esc(a.detectedAt)}
-          <button onclick="dismissScratchAlert(${idx})" style="margin-left:8px;font-size:10px;padding:1px 6px;background:#c0392b;color:#fff;border:none;border-radius:3px;cursor:pointer">Dismiss</button>
-        </div>`
-      ).join('')}
-    </div>`;
+    let html = '';
+    if (hasScratch) {
+      html += `<div style="margin-top:8px;padding:10px 12px;background:#4a1010;border:1px solid #c0392b;border-radius:var(--r)">
+        <div style="font-size:12px;font-weight:600;color:#ff6b6b;margin-bottom:6px">SCRATCH ALERT — Rostered Players Missing From Confirmed Lineups</div>
+        ${_scratchMonitor.alerts.map((a, idx) =>
+          `<div style="font-size:11px;color:#ffaaaa;padding:3px 0">
+            <strong>${esc(a.name)}</strong>${a.team ? ' (' + esc(a.team) + ')' : ''} — not in batting order as of ${esc(a.detectedAt)}
+            <button onclick="dismissScratchAlert(${idx})" style="margin-left:8px;font-size:10px;padding:1px 6px;background:#c0392b;color:#fff;border:none;border-radius:3px;cursor:pointer">Dismiss</button>
+          </div>`
+        ).join('')}
+      </div>`;
+    }
+    if (hasWeather) {
+      html += `<div style="margin-top:8px;padding:10px 12px;background:#3a2a05;border:1px solid #d4a017;border-radius:var(--r)">
+        <div style="font-size:12px;font-weight:600;color:#ffb74d;margin-bottom:6px">RAIN ALERT — Precip Rose Above 50% Since Monitor Started</div>
+        ${_scratchMonitor.weatherAlerts.map((a, idx) =>
+          `<div style="font-size:11px;color:#ffdfa5;padding:3px 0">
+            <strong>${esc(a.team)}</strong> — precip ${a.precipBase}% → ${a.precipNow}% at ${esc(a.detectedAt)}. Consider pivoting batters away from this game.
+            <button onclick="dismissWeatherAlert(${idx})" style="margin-left:8px;font-size:10px;padding:1px 6px;background:#d4a017;color:#000;border:none;border-radius:3px;cursor:pointer">Dismiss</button>
+          </div>`
+        ).join('')}
+      </div>`;
+    }
+    alertEl.innerHTML = html;
   }
+}
+
+function dismissWeatherAlert(idx) {
+  _scratchMonitor.weatherAlerts.splice(idx, 1);
+  renderScratchMonitorStatus();
 }
 
 function dismissScratchAlert(idx) {
@@ -2980,7 +5471,9 @@ function toggleScratchMonitor() {
     clearInterval(_scratchMonitor.countdownId);
     _scratchMonitor.timerId = null;
     _scratchMonitor.alerts = [];
+    _scratchMonitor.weatherAlerts = [];
     _scratchMonitor.baselineConfirmed.clear();
+    _scratchMonitor.baselinePrecip = {};
     renderScratchMonitorStatus();
   } else {
     // Start — snapshot current confirmed players as baseline
@@ -3000,6 +5493,57 @@ function toggleScratchMonitor() {
   }
 }
 
+async function checkPostponements() {
+  const btn = document.getElementById('check-postponed-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Checking...'; }
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    const res = await fetch(`/api/postponed/${today}`);
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error || 'Failed');
+
+    // Clear previous postponement flags before applying new results
+    STATE.POOL.forEach(p => { delete p.isPostponed; });
+
+    if (!data.postponed.length) {
+      if (btn) { btn.textContent = 'No Postponements ✓'; btn.className = 'btn-g'; }
+      setTimeout(() => { if (btn) { btn.textContent = 'Check Postponements'; btn.className = 'btn'; btn.disabled = false; } }, 2500);
+      return;
+    }
+
+    const postponedTeams = new Set(data.postponed.flatMap(g => [g.homeTeam, g.awayTeam]));
+    let affected = 0;
+    STATE.POOL.forEach(p => {
+      if (postponedTeams.has(p.team)) { p.isPostponed = true; affected++; }
+    });
+
+    const gameList = data.postponed.map(g => `${g.awayTeam}@${g.homeTeam}: ${g.status}`).join('\n');
+    alert(`${data.postponed.length} game(s) postponed/cancelled:\n\n${gameList}\n\n${affected} pool player(s) flagged with PPD badge.`);
+
+    if (btn) { btn.textContent = `${data.postponed.length} Postponed!`; }
+    invalidatePlayerRenderCache();
+    renderPlayers();
+  } catch (e) {
+    console.error('Postponement check failed:', e);
+    if (btn) { btn.textContent = 'Check failed'; }
+    setTimeout(() => { if (btn) { btn.textContent = 'Check Postponements'; } }, 2000);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+// Normalize a player name for confirmed-lineup matching: strip diacritics via NFD
+// decomposition (é→e, ó→o, ú→u, etc.) then remove all non-alpha chars.
+// Must mirror the key computation used on both sides of the lookup.
+function _normConfirmKey(name) {
+  return (name || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // é→e, ó→o, ñ→n, etc.
+    .toLowerCase()
+    .replace(/[^a-z ]/g, '')  // strip punctuation (dots, apostrophes, hyphens)
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function applyConfirmedToPool() {
   if (!Object.keys(STATE.confirmedLineups).length) return;
   const orderMap = {};
@@ -3007,7 +5551,7 @@ function applyConfirmedToPool() {
   Object.values(STATE.confirmedLineups).forEach(g => {
     const processOrder = (teamAbbr, orderArr) => {
       orderArr.forEach((name, i) => {
-        const key = name.toLowerCase().replace(/[^a-z ]/g, '').trim();
+        const key = _normConfirmKey(name);
         orderMap[key] = i + 1;
         confirmedNames.add(key);
       });
@@ -3018,20 +5562,56 @@ function applyConfirmedToPool() {
 
   const probablePitchers = new Set();
   Object.values(STATE.confirmedLineups).forEach(g => {
-    if (g.homeProbable) probablePitchers.add(g.homeProbable.toLowerCase().replace(/[^a-z ]/g, '').trim());
-    if (g.awayProbable) probablePitchers.add(g.awayProbable.toLowerCase().replace(/[^a-z ]/g, '').trim());
+    if (g.homeProbable) probablePitchers.add(_normConfirmKey(g.homeProbable));
+    if (g.awayProbable) probablePitchers.add(_normConfirmKey(g.awayProbable));
   });
 
+  // Aggregate order-mismatch reporting: collect all mismatches and emit ONE summary log.
+  // Previous behavior produced 5-15 console warnings per fetch (one per player), which
+  // drowned out real warnings. We now bucket by severity:
+  //   - sync: small shifts (1-2 spots) — normal lineup drift, always silent.
+  //   - shift: meaningful shifts (3-4 spots) — counted, summary-logged.
+  //   - extreme: 5+ spot shifts — usually a name-match bug; logged individually as warn.
+  const orderShifts = [];
+  const orderExtremes = [];
+
   STATE.POOL.forEach(p => {
-    const key = p.name.toLowerCase().replace(/[^a-z ]/g, '').trim();
+    const key = _normConfirmKey(p.name);
     if (confirmedNames.has(key) && orderMap[key]) {
+      if (p.order && p.order > 0 && p.order !== orderMap[key]) {
+        const delta = Math.abs(p.order - orderMap[key]);
+        if (delta >= 5) {
+          // Extreme shift — likely a name-resolution bug, not real lineup drift
+          orderExtremes.push({ name: p.name, csv: p.order, confirmed: orderMap[key] });
+        } else if (delta >= 3) {
+          orderShifts.push({ name: p.name, csv: p.order, confirmed: orderMap[key] });
+        }
+      }
       p.confirmedOrder = orderMap[key];
       p.isConfirmed = true;
-      if (p.order === 0 || !p.order) p.order = orderMap[key];
+      p.order = orderMap[key]; // always sync order to confirmed batting position on fetch/refresh
     } else if (rp(p, 'P') && probablePitchers.has(key)) {
       p.isConfirmed = true;
+    } else {
+      // Clear stale confirmed status on each refresh so scratched players don't persist
+      p.isConfirmed = false;
+      p.confirmedOrder = null;
     }
   });
+
+  // Emit aggregated order-shift report (replaces per-player console.warn spam).
+  // - Extreme shifts (≥5 spots) get individual warnings — they typically signal name-match bugs.
+  // - Moderate shifts (3-4 spots) get a single summary line.
+  // - Small shifts (1-2 spots) are silent — normal pre-game lineup adjustments.
+  if (orderExtremes.length > 0) {
+    orderExtremes.forEach(e => {
+      console.warn(`[OrderSync] Extreme shift for ${e.name}: CSV order=${e.csv}, confirmed=${e.confirmed} — verify the name matches the right player.`);
+    });
+  }
+  if (orderShifts.length > 0) {
+    dlog(`[OrderSync] ${orderShifts.length} players shifted 3-4 spots from CSV to confirmed order (PA multipliers updated).`,
+      orderShifts.slice(0, 5).map(s => `${s.name}: ${s.csv}→${s.confirmed}`).join(', ') + (orderShifts.length > 5 ? '…' : ''));
+  }
 }
 
 // ── Statcast Data ─────────────────────────────────────────────────────────────
@@ -3475,6 +6055,11 @@ function renderSlateEnvironment() {
       </tr>`;
     }).join('')}</tbody>
   </table></div>`;
+
+  // Auto-refresh Slate Summary if it's open — vegas/weather data just changed
+  if (document.getElementById('panel-slate')?.classList.contains('active')) {
+    renderSlateSummary();
+  }
 }
 
 // ── Value Scatter Plot (SVG) ───────────────────────────────────────────────────
@@ -3486,9 +6071,13 @@ function renderValueScatter() {
   const data = STATE.POOL.filter(p => p.salary > 0 && p.median > 0);
   if (data.length < 5) { el.innerHTML = '<div class="empty" style="padding:20px">Need salary + projection data for scatter.</div>'; return; }
 
-  const minSal = Math.min(...data.map(p => p.salary));
-  const maxSal = Math.max(...data.map(p => p.salary));
-  const maxMed = Math.max(...data.map(p => p.median));
+  // Use reduce instead of spread — avoid stack overflow risk on large pools (300+ players)
+  let minSal = Infinity, maxSal = 0, maxMed = 0;
+  for (const p of data) {
+    if (p.salary < minSal) minSal = p.salary;
+    if (p.salary > maxSal) maxSal = p.salary;
+    if (p.median > maxMed) maxMed = p.median;
+  }
   const posColors = { P:'#4a9de0', C:'#e0884a', '1B':'#4ae068', '2B':'#b44ae0', '3B':'#e04a4a', SS:'#e0c44a', OF:'#4ae0c4' };
 
   const scaleX = (s) => PAD.left + (s - minSal) / (maxSal - minSal) * (W - PAD.left - PAD.right);
@@ -3536,6 +6125,8 @@ function renderValueScatter() {
 function checkPositionScarcity() {
   const el = document.getElementById('position-scarcity');
   if (!el || !STATE.POOL.length) return;
+  // Showdown has no position requirements — scarcity warnings don't apply
+  if (isShowdown()) { el.style.display = 'none'; return; }
   const usedNames = new Set(STATE.lineup.filter(Boolean).map(p => p.name));
   const budget = CAP - getSalaryUsed();
   const warns = [];
@@ -3561,9 +6152,14 @@ function checkPositionScarcity() {
 }
 
 // ── Projection Blend UI ───────────────────────────────────────────────────────
-// Default weights: Statcast=100, Form=0 (disabled until validated), Platoon=0
-// (disabled — projection CSVs already price in matchup splits).
-const BLEND_DEFAULTS = { 'ROO': 100, 'Statcast': 100, 'Form (14d)': 0, 'Platoon': 0 };
+// Default weights: Statcast=100, Form Batters=0 (opt-in), Form Pitchers=0 (low signal
+// from 14-day pitcher ERA), Platoon=0 (CSVs already price in matchup splits).
+const BLEND_DEFAULTS = {
+  'ROO': 100, 'Statcast': 100,
+  'Form (14d) Batters': 0, 'Form (14d) Pitchers': 0,
+  // Legacy combined key — kept so old saved sessions don't lose the value.
+  'Form (14d)': 0, 'Platoon': 0
+};
 
 function renderBlendControls() {
   const el = document.getElementById('blend-controls');
@@ -3572,15 +6168,35 @@ function renderBlendControls() {
   const sources = [];
   if (STATE.ROO.length) sources.push({ name: 'ROO', count: STATE.ROO.length });
   if (STATE.statcastData && Object.keys(STATE.statcastData).length) sources.push({ name: 'Statcast', count: Object.keys(STATE.statcastData).length });
+  if (STATE.formData && Object.keys(STATE.formData).length) sources.push({ name: 'Form (14d) Batters', count: Object.keys(STATE.formData).length });
+  if (STATE.formData && Object.keys(STATE.formData).length) sources.push({ name: 'Form (14d) Pitchers', count: Object.keys(STATE.formData).length });
+
+  // Source-aware flags row — shown whenever ROO is loaded, regardless of source count.
+  // These tell the engine whether the projection CSV already prices in park/Vegas so
+  // those multipliers can be suppressed to prevent double-counting.
+  const srcFlagsHtml = STATE.ROO.length ? `
+    <div style="margin-bottom:8px;padding:8px;background:var(--bs);border-radius:4px;border:0.5px solid var(--brd-s)">
+      <div style="font-size:11px;color:var(--ts);margin-bottom:4px"><strong>Projection source already includes:</strong> <span style="color:var(--tt);font-weight:400">(uncheck if your source is raw — leaves park/Vegas multipliers active)</span></div>
+      <label style="font-size:11px;color:var(--ts);margin-right:14px;cursor:pointer">
+        <input type="checkbox" id="src-includes-park" ${STATE.sourceIncludesPark ? 'checked' : ''}
+          onchange="STATE.sourceIncludesPark=this.checked;saveSession();renderPlayers&&renderPlayers()"
+          style="vertical-align:middle"> Park factors
+      </label>
+      <label style="font-size:11px;color:var(--ts);cursor:pointer">
+        <input type="checkbox" id="src-includes-vegas" ${STATE.sourceIncludesVegas ? 'checked' : ''}
+          onchange="STATE.sourceIncludesVegas=this.checked;saveSession();renderPlayers&&renderPlayers()"
+          style="vertical-align:middle"> Vegas implied totals
+      </label>
+    </div>` : '';
 
   if (sources.length < 2) {
-    el.innerHTML = `<span style="font-size:11px;color:var(--tt)">
+    el.innerHTML = srcFlagsHtml + `<span style="font-size:11px;color:var(--tt)">
       ${STATE.ROO.length ? 'Load Statcast or 14-Day Form data above to enable blending.' : 'Upload a ROO projection file to begin.'}
     </span>`;
     return;
   }
 
-  el.innerHTML = `<div style="font-size:11px;color:var(--ts);margin-bottom:6px">Active data sources — adjust projection scoring weights:</div>
+  el.innerHTML = srcFlagsHtml + `<div style="font-size:11px;color:var(--ts);margin-bottom:6px">Active data sources — adjust projection scoring weights:</div>
   <div style="display:flex;flex-wrap:wrap;gap:12px">
     ${sources.map(s => {
       const wKey = 'blend-' + s.name.replace(/\W/g, '');
@@ -3652,8 +6268,15 @@ function saveSession() {
     const session = {
       blendWeights: STATE.blendWeights,
       contestSize: STATE.contestSize,
+      sourceIncludesPark: STATE.sourceIncludesPark,
+      sourceIncludesVegas: STATE.sourceIncludesVegas,
       lineup: STATE.lineup.map(p => p ? { name: p.name } : null),
       allowBvP: document.getElementById('allow-bvp')?.checked || false,
+      simulatorConfig: {
+        simCount: document.getElementById('sim-count')?.value,
+        corrScale: document.getElementById('sim-corr-scale')?.value,
+        simDiversity: document.getElementById('sim-diversity')?.value,
+      },
       portConfig: {
         numLineups: document.getElementById('port-num-lineups')?.value,
         maxExposure: document.getElementById('port-max-exposure')?.value,
@@ -3676,6 +6299,16 @@ function saveSession() {
         simFilterSims: document.getElementById('port-sim-filter-sims')?.value,
         simROIMin: document.getElementById('port-sim-roi-min')?.value,
         simROIMax: document.getElementById('port-sim-roi-max')?.value,
+        bbEnabled: document.getElementById('port-bb-enabled')?.checked !== false,
+        bbMinOppImplied: document.getElementById('port-bb-min-implied')?.value,
+        bbTarget: document.getElementById('port-bb-target')?.value,
+        ownLambda: document.getElementById('port-own-lambda')?.value,
+        maxAvgOwn: document.getElementById('port-max-avg-own')?.value,
+        customCashPct: document.getElementById('custom-cash-pct')?.value,
+        customCashMult: document.getElementById('custom-cash-mult')?.value,
+        customWinPct: document.getElementById('custom-win-pct')?.value,
+        customWinMult: document.getElementById('custom-win-mult')?.value,
+        maxGameExposure: document.getElementById('port-max-game-exposure')?.value,
       },
       playerExposureOverrides: STATE.playerExposureOverrides,
       teamExposureOverrides: STATE.teamExposureOverrides
@@ -3690,6 +6323,33 @@ function restoreSession() {
     if (!raw) return;
     const session = JSON.parse(raw);
 
+    // Restore simulator controls and sync labels/engine state.
+    const sc = session.simulatorConfig || {};
+    if (sc.simCount != null) {
+      const el = document.getElementById('sim-count');
+      if (el) el.value = sc.simCount;
+    }
+    if (sc.corrScale != null) {
+      const el = document.getElementById('sim-corr-scale');
+      if (el) {
+        el.value = sc.corrScale;
+        const label = document.getElementById('corr-scale-label');
+        if (label) label.textContent = parseFloat(sc.corrScale).toFixed(1) + '×';
+        const v = parseFloat(sc.corrScale);
+        if (!Number.isNaN(v)) Engine.setCorrScale(v);
+      }
+    }
+    if (sc.simDiversity != null) {
+      const el = document.getElementById('sim-diversity');
+      if (el) {
+        el.value = sc.simDiversity;
+        const label = document.getElementById('diversity-label');
+        if (label) label.textContent = parseFloat(sc.simDiversity).toFixed(1) + '×';
+        const v = parseFloat(sc.simDiversity);
+        if (!Number.isNaN(v)) Engine.setSimDiversity(v);
+      }
+    }
+
     // Restore blend weights
     if (session.blendWeights) {
       STATE.blendWeights = session.blendWeights;
@@ -3699,6 +6359,10 @@ function restoreSession() {
 
     // Restore contest size
     if (session.contestSize) STATE.contestSize = session.contestSize;
+
+    // Restore source-aware multiplier flags
+    if (typeof session.sourceIncludesPark === 'boolean') STATE.sourceIncludesPark = session.sourceIncludesPark;
+    if (typeof session.sourceIncludesVegas === 'boolean') STATE.sourceIncludesVegas = session.sourceIncludesVegas;
 
     // Restore portfolio config inputs
     const pc = session.portConfig || {};
@@ -3723,12 +6387,25 @@ function restoreSession() {
     if (pc.stackPct5 != null) { const el = document.getElementById('port-stack-pct5'); if (el) el.value = pc.stackPct5; }
     if (pc.cashLine) { const el = document.getElementById('port-cash-line'); if (el) el.value = pc.cashLine; }
     if (pc.winLine) { const el = document.getElementById('port-win-line'); if (el) el.value = pc.winLine; }
-    if (pc.payoutType) { const el = document.getElementById('port-payout-type'); if (el) el.value = pc.payoutType; }
     if (pc.simFilter != null) { const el = document.getElementById('port-sim-filter'); if (el) { el.checked = pc.simFilter; toggleSimFilter(); } }
     if (pc.simFilterPct != null) { const el = document.getElementById('port-sim-filter-pct'); if (el) el.value = pc.simFilterPct; }
     if (pc.simFilterSims != null) { const el = document.getElementById('port-sim-filter-sims'); if (el) el.value = pc.simFilterSims; }
     if (pc.simROIMin != null) { const el = document.getElementById('port-sim-roi-min'); if (el) el.value = pc.simROIMin; }
     if (pc.simROIMax != null) { const el = document.getElementById('port-sim-roi-max'); if (el) el.value = pc.simROIMax; }
+    if (pc.bbEnabled != null) { const el = document.getElementById('port-bb-enabled'); if (el) { el.checked = pc.bbEnabled; toggleBringBackOptions(); } }
+    if (pc.bbMinOppImplied != null) { const el = document.getElementById('port-bb-min-implied'); if (el) el.value = pc.bbMinOppImplied; }
+    if (pc.bbTarget != null) { const el = document.getElementById('port-bb-target'); if (el) el.value = pc.bbTarget; }
+    if (pc.ownLambda != null) {
+      const el = document.getElementById('port-own-lambda'); if (el) el.value = pc.ownLambda;
+      const lbl = document.getElementById('own-lambda-label'); if (lbl) lbl.textContent = (pc.ownLambda / 100).toFixed(2);
+    }
+    if (pc.maxAvgOwn != null) { const el = document.getElementById('port-max-avg-own'); if (el) el.value = pc.maxAvgOwn; }
+    if (pc.payoutType) { const el = document.getElementById('port-payout-type'); if (el) { el.value = pc.payoutType; onPayoutTypeChange(); } }
+    if (pc.customCashPct != null) { const el = document.getElementById('custom-cash-pct'); if (el) el.value = pc.customCashPct; }
+    if (pc.customCashMult != null) { const el = document.getElementById('custom-cash-mult'); if (el) el.value = pc.customCashMult; }
+    if (pc.customWinPct != null) { const el = document.getElementById('custom-win-pct'); if (el) el.value = pc.customWinPct; }
+    if (pc.customWinMult != null) { const el = document.getElementById('custom-win-mult'); if (el) el.value = pc.customWinMult; }
+    if (pc.maxGameExposure != null) { const el = document.getElementById('port-max-game-exposure'); if (el) el.value = pc.maxGameExposure; }
 
     // Restore player exposure overrides
     if (session.playerExposureOverrides) {
@@ -3799,13 +6476,662 @@ async function renderSourceQuality() {
   } catch (e) { /* quality data not yet available — hide panel */ }
 }
 
+// ══ BEST PLAYS ═════════════════════════════════════════════════════════════════
+
+function renderBestPlays() {
+  const panel  = document.getElementById('plays-content');
+  const empty  = document.getElementById('plays-empty');
+  if (!panel || !empty) return;
+
+  const pool = getCalibratedPool().filter(p => p.median > 0 || p.salary > 0);
+  if (!pool.length) {
+    panel.style.display = 'none';
+    empty.style.display = 'block';
+    return;
+  }
+  panel.style.display = 'block';
+  empty.style.display = 'none';
+
+  const ctx = getEngineContext();
+  const contestSize = parseInt(document.getElementById('port-contest-size')?.value) || STATE.contestSize || 1000;
+  const plays = Engine.getBestPlays(pool, ctx, contestSize);
+
+  // ── Helpers ──────────────────────────────────────────────────────────────────
+
+  function tagHtml(tags) {
+    return (tags || []).map(t =>
+      `<span class="bp-tag bp-tag-${t.type}">${esc(t.label)}</span>`
+    ).join('');
+  }
+
+  function playerRow(p, opts) {
+    opts = opts || {};
+    const isP = Engine.rp(p, 'P');
+    const pos = (p.rosterPos || p.dkPos || '').split('/')[0] || '?';
+    const orderBadge = (!isP && p.order > 0)
+      ? `<span class="bp-order">#${p.order}</span>` : '';
+    const ownClass = (p.own || 0) < 8 ? 'bp-own-low' : (p.own || 0) > 30 ? 'bp-own-high' : '';
+    const ownBadge = p.own > 0
+      ? `<span class="bp-own ${ownClass}">${p.own.toFixed(0)}%</span>` : '';
+    const medCeil = `<span class="bp-pts">${(p.median || 0).toFixed(1)}<span class="bp-ceil"> / ${(p.ceiling || 0).toFixed(1)}</span></span>`;
+    return `<div class="bp-player-row">
+      <div class="bp-player-left">
+        <span class="bp-pos">${esc(pos)}</span>
+        <span class="bp-name" onclick="addToLineupByName('${escAttr(p.name)}')" title="Add to lineup">${esc(p.name)}</span>
+        ${orderBadge}
+        <span class="bp-team">${esc(p.team)}</span>
+      </div>
+      <div class="bp-player-right">
+        ${tagHtml(opts.tags)}
+        <span class="bp-sal">$${(p.salary || 0).toLocaleString()}</span>
+        ${ownBadge}
+        ${medCeil}
+      </div>
+    </div>`;
+  }
+
+  function sectionHdr(title, sub) {
+    return `<div class="bp-section-hdr">${esc(title)}${sub ? `<span class="bp-subhdr">${esc(sub)}</span>` : ''}</div>`;
+  }
+
+  // ── SINGLE ENTRY column ───────────────────────────────────────────────────────
+  let seHtml = '';
+
+  // Pitcher Picks
+  if (plays.singleEntry.pitchers.length) {
+    seHtml += `<div class="bp-card">
+      ${sectionHdr('Pitcher Picks', 'K% · Matchup · Floor')}
+      <div class="bp-card-body">
+        ${plays.singleEntry.pitchers.map(({ p, tags }) => playerRow(p, { tags })).join('')}
+      </div>
+      <div class="bp-card-tip">Target: K% ≥ 22% · opp implied &lt; 4.0 · win prob &gt; 50%</div>
+    </div>`;
+  }
+
+  // Best Hitter Stack
+  const st = plays.singleEntry.stack;
+  if (st) {
+    const impliedTag = st.implied >= 5.0
+      ? [{ label: `${st.implied.toFixed(1)} implied (elite)`, type: 'good' }]
+      : st.implied >= 4.5
+        ? [{ label: `${st.implied.toFixed(1)} implied`, type: 'ok' }]
+        : st.implied > 0
+          ? [{ label: `${st.implied.toFixed(1)} implied`, type: 'bad' }]
+          : [];
+    seHtml += `<div class="bp-card">
+      ${sectionHdr(st.team + ' Stack', 'Order 1–5 · Floor-first')}
+      <div class="bp-section-meta">${tagHtml(impliedTag)}</div>
+      <div class="bp-card-body">
+        ${st.entries.map(({ p }) => playerRow(p)).join('')}
+      </div>
+      <div class="bp-card-tip">2–3 hitters, same team, spots 1–5 · OBP + contact profile ideal</div>
+    </div>`;
+  }
+
+  // Value Plays
+  if (plays.singleEntry.valuePlays.length) {
+    seHtml += `<div class="bp-card">
+      ${sectionHdr('Value Plays', 'Median ÷ Salary')}
+      <div class="bp-card-body">
+        ${plays.singleEntry.valuePlays.map(({ p, value }) => {
+          const tags = [{ label: `${value.toFixed(2)}× val`, type: value >= 5 ? 'good' : 'ok' }];
+          return playerRow(p, { tags });
+        }).join('')}
+      </div>
+      <div class="bp-card-tip">Salary efficiency frees cap for premium plays elsewhere</div>
+    </div>`;
+  }
+
+  // ── GPP column ────────────────────────────────────────────────────────────────
+  let gppHtml = '';
+
+  // Chalk Warning
+  if (plays.gpp.chalkStacks.length) {
+    const chalkList = plays.gpp.chalkStacks
+      .map(t => `<strong>${esc(t.team)}</strong> (${t.implied.toFixed(1)} R · ~${t.avgOwn.toFixed(0)}% avg own)`)
+      .join(' &nbsp;·&nbsp; ');
+    gppHtml += `<div class="bp-card bp-card-warn">
+      ${sectionHdr('Chalk Warning', 'Field favorites — everyone is here')}
+      <div class="bp-card-body" style="padding:4px 0">
+        <div class="bp-chalk-text">Field will be heavy on ${chalkList}. In single-entry GPP, consider pivoting away — if any hitter has an off night your lineup is dead. In multi-entry, you can run them alongside contrarian builds.</div>
+      </div>
+    </div>`;
+  }
+
+  // Contrarian Stack
+  const cs = plays.gpp.contrarianStack;
+  if (cs) {
+    const rankLabel = plays.gpp.contrarianRank ? `#${plays.gpp.contrarianRank} implied on slate` : '';
+    const csTags = [];
+    if (rankLabel) csTags.push({ label: rankLabel, type: 'ok' });
+    csTags.push({ label: `~${cs.avgOwn.toFixed(0)}% avg own`, type: cs.avgOwn < 15 ? 'good' : 'ok' });
+    if (cs.implied >= 5.0) csTags.push({ label: `${cs.implied.toFixed(1)} R implied`, type: 'good' });
+    else if (cs.implied >= 4.5) csTags.push({ label: `${cs.implied.toFixed(1)} R implied`, type: 'ok' });
+    csTags.push({ label: 'Field skews away → leverage', type: 'ok' });
+    gppHtml += `<div class="bp-card bp-card-feature">
+      ${sectionHdr(cs.team + ' Contrarian Stack', 'GPP Primary Stack Target')}
+      <div class="bp-section-meta">${tagHtml(csTags)}</div>
+      <div class="bp-card-body">
+        ${cs.top5.map(({ p }) => playerRow(p)).join('')}
+      </div>
+      <div class="bp-card-tip">4–5 man stack · spots 1–5 · builds field uniqueness when this team erupts</div>
+    </div>`;
+  }
+
+  // Bring-Back
+  const bb = plays.gpp.bringBack;
+  if (bb) {
+    const bbTags = [
+      { label: `${bb.implied.toFixed(1)} R implied`, type: bb.implied >= 4.5 ? 'good' : 'ok' },
+      { label: `~${bb.avgOwn.toFixed(0)}% avg own`, type: 'ok' },
+    ];
+    gppHtml += `<div class="bp-card">
+      ${sectionHdr(bb.team + ' Bring-Back', 'Game-Stack Correlation')}
+      <div class="bp-section-meta">${tagHtml(bbTags)}</div>
+      <div class="bp-card-body">
+        ${bb.entries.map(({ p }) => playerRow(p)).join('')}
+      </div>
+      <div class="bp-card-tip">Add 2–3 from the opposing team — both offenses benefit from a high-scoring game</div>
+    </div>`;
+  }
+
+  // Leverage Plays
+  if (plays.gpp.leveragePlays.length) {
+    gppHtml += `<div class="bp-card">
+      ${sectionHdr('Top Leverage Plays', 'Ceiling ÷ Ownership')}
+      <div class="bp-card-body">
+        ${plays.gpp.leveragePlays.slice(0, 6).map(({ p, levScore }) => {
+          const tags = [
+            { label: `Lev ${levScore.toFixed(1)}`, type: levScore > 6 ? 'good' : 'ok' },
+            { label: `${(p.own || 0).toFixed(0)}% own`, type: (p.own || 0) < 8 ? 'good' : 'ok' }
+          ];
+          return playerRow(p, { tags });
+        }).join('')}
+      </div>
+      <div class="bp-card-tip">Low-owned plays where the ceiling justifies the risk — wins tournaments when they pop</div>
+    </div>`;
+  }
+
+  // Boom/Bust
+  if (plays.gpp.boomBust.length) {
+    gppHtml += `<div class="bp-card">
+      ${sectionHdr('Boom/Bust Candidates', 'HR Upside · &lt;12% Own')}
+      <div class="bp-card-body">
+        ${plays.gpp.boomBust.map(({ p, upside }) => {
+          const tags = [
+            { label: `${upside.toFixed(1)}× ceiling`, type: upside >= 2.5 ? 'good' : 'ok' },
+            { label: `${(p.own || 0).toFixed(0)}% own`, type: 'ok' }
+          ];
+          return playerRow(p, { tags });
+        }).join('')}
+      </div>
+      <div class="bp-card-tip">The one-off HR play · unique · must have power upside (ISO + launch angle)</div>
+    </div>`;
+  }
+
+  panel.innerHTML = `
+    <div class="bp-columns">
+      <div class="bp-col">
+        <div class="bp-col-hdr">
+          <div class="bp-col-title">Single Entry</div>
+          <div class="bp-col-sub">50/50 · H2H · Floor first</div>
+        </div>
+        ${seHtml || '<div class="empty" style="padding:20px 0">No projections loaded.</div>'}
+      </div>
+      <div class="bp-col">
+        <div class="bp-col-hdr bp-col-hdr-gpp">
+          <div class="bp-col-title">GPP Tournament</div>
+          <div class="bp-col-sub">Large field · Leverage · Ceiling</div>
+        </div>
+        ${gppHtml || '<div class="empty" style="padding:20px 0">Load Vegas + ownership for GPP analysis.</div>'}
+      </div>
+    </div>`;
+}
+
+// ══ SLATE SUMMARY ══════════════════════════════════════════════════════════════
+
+function renderSlateSummary() {
+  const content = document.getElementById('slate-content');
+  const empty = document.getElementById('slate-empty');
+  if (!content || !empty) return;
+
+  const pool = STATE.POOL.filter(p => p.median > 0 || p.salary > 0);
+  if (!pool.length) {
+    content.style.display = 'none';
+    empty.style.display = 'block';
+    return;
+  }
+  content.style.display = 'block';
+  empty.style.display = 'none';
+
+  // ── Build game objects ─────────────────────────────────────────────────────
+  const gameKeys = [...new Set(pool.map(p => p.game).filter(Boolean))];
+  const games = gameKeys.map(game => {
+    const [away, home] = game.split('@');
+    const homeVD = STATE.vegasData?.[home] || {};
+    const awayVD = STATE.vegasData?.[away] || {};
+    const homeImplied = homeVD.impliedTotal || 0;
+    const awayImplied = awayVD.impliedTotal || 0;
+    const ou = homeImplied + awayImplied;
+    const pf = STATE.parkFactors?.[home] || { overall: 1.0, run: 1.0, hr: 1.0 };
+    const isDome = STATE.stadiumData?.domes?.includes(home);
+    const weather = (!isDome && STATE.weatherData?.[home] && !STATE.weatherData[home].error)
+      ? STATE.weatherData[home] : null;
+    const wm = weather ? Engine.weatherMultiplier(weather) : { hitting: 1.0, pitching: 1.0, label: '', risk: 'none' };
+    const we = STATE.windEffects?.[home] || 0;
+    const windLabel = we > 0.3 ? 'OUT' : we < -0.3 ? 'IN' : '—';
+    const homeMvt = homeImplied && homeVD.openTotal ? +(homeImplied - homeVD.openTotal).toFixed(1) : 0;
+    const awayMvt = awayImplied && awayVD.openTotal ? +(awayImplied - awayVD.openTotal).toFixed(1) : 0;
+    const envScore = ou > 0 ? ou * (pf.overall || 1.0) * wm.hitting : 0;
+    return { game, away, home, homeImplied, awayImplied, ou, pf, isDome, weather, wm, we, windLabel, homeMvt, awayMvt, envScore };
+  }).sort((a, b) => b.envScore - a.envScore);
+
+  const gameMap = {};
+  games.forEach(g => { gameMap[g.game] = g; });
+
+  // ── Per-team batter grouping ───────────────────────────────────────────────
+  const teamBatters = {};
+  pool.filter(p => !rp(p, 'P') && p.median > 0).forEach(p => {
+    if (!teamBatters[p.team]) teamBatters[p.team] = { team: p.team, game: p.game || '', opp: p.opp || '', players: [] };
+    teamBatters[p.team].players.push(p);
+  });
+
+  // ── Stack target scores ────────────────────────────────────────────────────
+  const stackTargets = Object.values(teamBatters).map(t => {
+    const sorted = [...t.players].sort((a, b) => b.median - a.median);
+    const top5 = sorted.slice(0, 5);
+    const g = gameMap[t.game] || {};
+    const implied = STATE.vegasData?.[t.team]?.impliedTotal || 0;
+    const pfVal = g.pf?.overall || 1.0;
+    const wHit = g.wm?.hitting || 1.0;
+    const avgMed5 = top5.length ? top5.reduce((s, p) => s + p.median, 0) / top5.length : 0;
+    const avgCeil5 = top5.length ? top5.reduce((s, p) => s + p.ceiling, 0) / top5.length : 0;
+    const avgOwn5 = top5.length ? top5.reduce((s, p) => s + (p.own || 0), 0) / top5.length : 0;
+    // Score: implied total is the dominant driver (DFS theory: team totals correlate strongest with runs)
+    const score = implied * 4.0 + (pfVal - 1.0) * 20 + avgMed5 * 0.8 + (wHit - 1.0) * 50;
+    return {
+      team: t.team, game: t.game, opp: t.opp, implied, pf: pfVal, wHit,
+      avgMed5, avgCeil5, avgOwn5, playerCount: sorted.length, top5, score,
+      wRisk: g.wm?.risk || 'none', weatherLabel: g.wm?.label || '', isDome: g.isDome || false
+    };
+  }).filter(t => t.implied > 0 || t.avgMed5 > 3).sort((a, b) => b.score - a.score);
+
+  // ── Pitcher landscape ──────────────────────────────────────────────────────
+  const pitchers = pool.filter(p => rp(p, 'P')).map(p => {
+    const oppImplied = STATE.vegasData?.[p.opp]?.impliedTotal || 0;
+    const value = p.salary > 0 ? (p.median / p.salary * 1000) : 0;
+    // Score: median matters most, then matchup quality, then value
+    const matchupBonus = oppImplied > 0 ? Math.max(0, 6 - oppImplied) * 1.5 : 0;
+    const score = p.median * 0.5 + matchupBonus + value * 3;
+    return { ...p, oppImplied, value, score };
+  }).sort((a, b) => b.score - a.score);
+
+  // ── Ownership intelligence ─────────────────────────────────────────────────
+  const ownedPool = pool.filter(p => p.own > 0);
+  const chalkPlayers = ownedPool.filter(p => p.own > 25).sort((a, b) => b.own - a.own);
+  const leveragePlays = pool
+    .filter(p => p.own > 0 && p.own < 18 && p.ceiling > 20)
+    .sort((a, b) => (b.ceiling / (b.own + 1)) - (a.ceiling / (a.own + 1)))
+    .slice(0, 12);
+  const fieldFavoriteCount = ownedPool.filter(p => p.own > 35).length;
+  const avgOwn = ownedPool.length ? ownedPool.reduce((s, p) => s + p.own, 0) / ownedPool.length : 0;
+  const ownConcentration = chalkPlayers.slice(0, 5).reduce((s, p) => s + (p.own || 0), 0);
+
+  // ── Generate DFS theory signals ───────────────────────────────────────────
+  const signals = _buildTheorySignals(games, stackTargets, pitchers, pool, leveragePlays, fieldFavoriteCount);
+
+  // ── Render all sections ───────────────────────────────────────────────────
+  _renderSlateMetrics(pool, games, pitchers, stackTargets);
+  _renderTheorySignals(signals);
+  _renderSlateGameTable(games);
+  _renderSlateStackTable(stackTargets);
+  _renderSlatePitcherTable(pitchers);
+  _renderSlateOwnershipTable(chalkPlayers, leveragePlays, avgOwn, fieldFavoriteCount, ownConcentration);
+}
+
+function _buildTheorySignals(games, stackTargets, pitchers, pool, leveragePlays, fieldFavoriteCount) {
+  const signals = [];
+
+  // Best game environment for stacking
+  const bestGame = games[0];
+  if (bestGame && bestGame.ou > 0) {
+    const leadTeam = bestGame.homeImplied >= bestGame.awayImplied ? bestGame.home : bestGame.away;
+    const leadImpl = Math.max(bestGame.homeImplied, bestGame.awayImplied);
+    signals.push({ level: 'success', label: 'STACK', title: 'Primary Stack Game',
+      text: `${bestGame.away}@${bestGame.home} (O/U ${bestGame.ou.toFixed(1)}) is the highest-scoring environment on this slate. ${leadTeam} leads with a ${leadImpl.toFixed(1)} implied run total — build your primary 4–5 man stack here.` });
+  } else if (stackTargets.length > 0) {
+    const best = stackTargets[0];
+    signals.push({ level: 'success', label: 'STACK', title: 'Primary Stack Target',
+      text: `${best.team} ranks as the top stacking team by projection (avg top-5 median: ${best.avgMed5.toFixed(1)} pts). Load Vegas lines to refine with implied totals.` });
+  }
+
+  // Secondary stack
+  if (stackTargets.length >= 2) {
+    const sec = stackTargets[1];
+    const secImpl = sec.implied > 0 ? ` (implied ${sec.implied.toFixed(1)})` : '';
+    signals.push({ level: 'info', label: 'STACK', title: 'Secondary Stack',
+      text: `${sec.team}${secImpl} is the second-ranked stacking target. DFS theory recommends a 2–3 man mini-stack from a second game to diversify your GPP portfolio from the chalk field construction.` });
+  }
+
+  // Park factor boost
+  const parkBoostGame = games.find(g => (g.pf?.overall || 1) > 1.15);
+  if (parkBoostGame) {
+    const boost = (((parkBoostGame.pf?.overall || 1) - 1) * 100).toFixed(0);
+    signals.push({ level: 'success', label: 'PARK', title: 'Hitter-Friendly Park',
+      text: `${parkBoostGame.away}@${parkBoostGame.home} features a +${boost}% run park factor. The elevated environment amplifies ceiling for stacks — prioritize hitters from this game, especially in GPPs.` });
+  }
+
+  // Weather risks
+  games.forEach(g => {
+    const rain = g.weather?.precip_chance || 0;
+    if (g.wm?.risk === 'rain' || rain >= 35) {
+      signals.push({ level: 'warn', label: 'WEATHER', title: 'Postponement Risk',
+        text: `${g.away}@${g.home}: ${rain}% precip chance. Rain suspensions after 5 innings score completed PAs on DK, but full postponements score nothing — monitor close to lock and consider reducing exposure.` });
+    } else if (!g.isDome && (g.weather?.wind_mph || 0) >= 15) {
+      const dir = g.windLabel !== '—' ? ` blowing ${g.windLabel}` : '';
+      signals.push({ level: 'info', label: 'WIND', title: 'Elevated Wind',
+        text: `${g.away}@${g.home}: ${g.weather.wind_mph}mph wind${dir}. High wind increases HR and variance — a GPP ceiling booster if direction-aware. Verify orientation vs. the park's dimensions.` });
+    }
+  });
+
+  // Vegas line movement
+  const movedGames = games.filter(g => Math.abs(g.homeMvt) >= 0.3 || Math.abs(g.awayMvt) >= 0.3);
+  if (movedGames.length > 0) {
+    const mg = movedGames[0];
+    const homeBigger = Math.abs(mg.homeMvt) >= Math.abs(mg.awayMvt);
+    const mvtTeam = homeBigger ? mg.home : mg.away;
+    const mvt = homeBigger ? mg.homeMvt : mg.awayMvt;
+    signals.push({ level: 'info', label: 'VEGAS', title: 'Sharp Line Movement',
+      text: `${mvtTeam} implied total has moved ${mvt > 0 ? '+' : ''}${mvt.toFixed(1)} from open. Sharp money typically drives total movement — weight toward teams with positive implied movement in your GPP exposure.` });
+  }
+
+  // Chalk pitcher warning
+  const chalkSP = pitchers.find(p => (p.own || 0) > 28);
+  if (chalkSP) {
+    const alts = pitchers.filter(p => p.name !== chalkSP.name && (p.own || 0) < 14 && p.median >= chalkSP.median * 0.65).slice(0, 2);
+    const altText = alts.length ? ` Pivot options: ${alts.map(p => p.name).join(', ')}.` : '';
+    signals.push({ level: 'warn', label: 'OWN', title: 'Chalk Pitcher Alert',
+      text: `${chalkSP.name} is projected at ${(chalkSP.own || 0).toFixed(0)}% ownership — the dominant SP chalk. In GPPs, heavy SP chalk limits ceiling differentiation. If you roster this pitcher, ensure your batter stack is contrarian enough to separate.${altText}` });
+  }
+
+  // Ownership concentration
+  if (fieldFavoriteCount >= 3) {
+    signals.push({ level: 'warn', label: 'FIELD', title: 'Heavy-Chalk Slate',
+      text: `${fieldFavoriteCount} players are projected above 35% ownership, creating high field duplication. DFS theory requires at least 2–3 differentiated plays to achieve unique tournament-winning lineups — target leverage spots in the table below.` });
+  }
+
+  // Top leverage play
+  if (leveragePlays.length > 0) {
+    const lp = leveragePlays[0];
+    const pos = lp.dkPos || lp.rosterPos || '';
+    signals.push({ level: 'info', label: 'EDGE', title: 'Top GPP Leverage Spot',
+      text: `${lp.name} (${pos}, ${lp.team}): ${(lp.own || 0).toFixed(0)}% ownership with a ${lp.ceiling.toFixed(1)} pt ceiling — leverage ratio ${(lp.ceiling / ((lp.own || 1))).toFixed(1)}. Low-ownership + high-ceiling players like this create the +EV separation needed in large-field GPPs.` });
+  }
+
+  // Low-total games to avoid
+  const lowEnvGames = games.filter(g => g.ou > 0 && g.ou < 7.0);
+  if (lowEnvGames.length > 0) {
+    const names = lowEnvGames.map(g => `${g.away}@${g.home} (${g.ou.toFixed(1)})`).join(', ');
+    signals.push({ level: 'warn', label: 'AVOID', title: 'Low-Environment Games',
+      text: `${names}: O/U under 7.0 projects fewer combined runs. These environments suppress both floor and ceiling — avoid primary stacks from these games in both cash and GPPs unless projections significantly outperform Vegas.` });
+  }
+
+  // Confirmed lineups
+  const confirmedBatters = pool.filter(p => !rp(p, 'P') && p.isConfirmed && p.order > 0);
+  if (confirmedBatters.length > 0) {
+    const topOrder = confirmedBatters.filter(p => p.order <= 4).length;
+    signals.push({ level: 'success', label: 'LINEUPS', title: 'Confirmed Batting Orders',
+      text: `${confirmedBatters.length} batters have confirmed batting orders (${topOrder} in top-4 spots). Top-order hitters receive the most plate appearances and drive the highest correlation in multi-man stacks — prioritize confirmed lineup spots 1–5.` });
+  }
+
+  // Position scarcity check: SS/2B
+  ['SS', '2B'].forEach(pos => {
+    const elites = pool.filter(p => rp(p, pos) && p.median >= 8 && p.salary <= 4500);
+    if (elites.length >= 3) {
+      signals.push({ level: 'info', label: 'VALUE', title: `${pos} Value Concentration`,
+        text: `${elites.length} ${pos} options projecting 8+ pts at ≤$4,500 — salary relief that can fund elite stacks. Use value at ${pos} to maximize salary spend on your primary stack and SP.` });
+    }
+  });
+
+  return signals;
+}
+
+function _renderSlateMetrics(pool, games, pitchers, stackTargets) {
+  const el = document.getElementById('slate-metrics');
+  if (!el) return;
+  const batters = pool.filter(p => !rp(p, 'P') && p.median > 0);
+  const hasVegas = games.some(g => g.ou > 0);
+  const topOU = games[0]?.ou || 0;
+  const topImpl = hasVegas ? Math.max(0, ...games.map(g => Math.max(g.homeImplied, g.awayImplied)).filter(v => v > 0)) : 0;
+  const chalkCount = pool.filter(p => p.own > 25).length;
+  const rainGames = games.filter(g => (g.weather?.precip_chance || 0) >= 35).length;
+  function mc(label, val, sub, color) {
+    return `<div class="mc"><div class="mc-l">${label}</div><div class="mc-v" style="color:${color || 'var(--tp)'}">${esc(String(val))}</div>${sub ? `<div class="mc-s">${esc(sub)}</div>` : ''}</div>`;
+  }
+  const cards = [
+    mc('Games', games.length || pool.filter(p => p.game).length || '—', 'on slate', 'var(--tp)'),
+    mc('Batters', batters.length, `${pitchers.length} pitchers`),
+    hasVegas
+      ? mc('Top O/U', topOU > 0 ? topOU.toFixed(1) : '—', games[0] ? `${games[0].away}@${games[0].home}` : '', topOU >= 9 ? 'var(--tsu)' : topOU >= 7.5 ? 'var(--ti)' : 'var(--ts)')
+      : mc('Vegas', 'Not loaded', 'fetch in Vegas tab', 'var(--tt)'),
+    hasVegas
+      ? mc('Best Implied', topImpl > 0 ? topImpl.toFixed(1) : '—', 'highest team total', topImpl >= 5.5 ? 'var(--tsu)' : topImpl >= 4.5 ? 'var(--ti)' : 'var(--ts)')
+      : '',
+    stackTargets.length
+      ? mc('Top Stack', stackTargets[0].team, stackTargets[0].implied > 0 ? `${stackTargets[0].implied.toFixed(1)} implied` : 'by projection', 'var(--tsu)')
+      : '',
+    pool.some(p => p.own > 0)
+      ? mc('Chalk Players', chalkCount, '>25% projected own', chalkCount > 5 ? 'var(--tw)' : 'var(--ts)')
+      : '',
+    rainGames > 0
+      ? mc('Rain Risk', rainGames, `game${rainGames !== 1 ? 's' : ''} ≥35% precip`, 'var(--tw)')
+      : '',
+    pool.some(p => p.isConfirmed)
+      ? mc('Confirmed', pool.filter(p => p.isConfirmed && p.order > 0).length, 'batters with orders', 'var(--tsu)')
+      : '',
+  ].filter(Boolean);
+  el.innerHTML = cards.join('');
+}
+
+function _renderTheorySignals(signals) {
+  const el = document.getElementById('slate-signals');
+  if (!el) return;
+  if (!signals.length) {
+    el.innerHTML = '<div style="font-size:12px;color:var(--tt)">Load Vegas lines and ownership projections to generate DFS theory signals.</div>';
+    return;
+  }
+  const lm = {
+    success: { bg: 'var(--bsu)', border: 'var(--brd-su)', color: 'var(--tsu)' },
+    info:    { bg: 'var(--bi)',  border: 'var(--brd-i)',  color: 'var(--ti)' },
+    warn:    { bg: 'var(--bw)', border: 'var(--brd-w)', color: 'var(--tw)' },
+  };
+  el.innerHTML = signals.map(sig => {
+    const s = lm[sig.level] || lm.info;
+    return `<div style="background:${s.bg};border:0.5px solid ${s.border};border-radius:var(--rl);padding:10px 13px;margin-bottom:7px">
+      <div style="display:flex;align-items:center;gap:7px;margin-bottom:4px">
+        <span style="font-size:10px;font-weight:700;padding:2px 7px;background:${s.color};color:${s.bg};border-radius:4px;letter-spacing:.05em">${esc(sig.label)}</span>
+        <span style="font-size:12px;font-weight:600;color:${s.color}">${esc(sig.title)}</span>
+      </div>
+      <div style="font-size:12px;color:var(--ts);line-height:1.55">${esc(sig.text)}</div>
+    </div>`;
+  }).join('');
+}
+
+function _renderSlateGameTable(games) {
+  const el = document.getElementById('slate-game-table');
+  if (!el) return;
+  if (!games.length) { el.innerHTML = '<div style="font-size:12px;color:var(--tt)">No game data available.</div>'; return; }
+  const hasVegas = games.some(g => g.ou > 0);
+  const hasWeather = games.some(g => g.weather);
+  function mvtBadge(mvt) {
+    if (!mvt || Math.abs(mvt) < 0.1) return '';
+    return ` <span style="font-size:9px;color:${mvt > 0 ? 'var(--tsu)' : 'var(--td)'}">${mvt > 0 ? '▲' : '▼'}${Math.abs(mvt).toFixed(1)}</span>`;
+  }
+  el.innerHTML = `<div class="tbl-wrap"><table>
+    <thead><tr>
+      <th>#</th><th>Game</th>
+      ${hasVegas ? '<th>O/U</th><th>Away Impl</th><th>Home Impl</th>' : ''}
+      <th>Park Factor</th>
+      ${hasWeather ? '<th>Temp / Cond</th><th>Wind</th><th>Rain%</th>' : ''}
+      <th>Env Score</th>
+    </tr></thead>
+    <tbody>${games.map((g, i) => {
+      const rc = i === 0 ? 'var(--tsu)' : i < 3 ? 'var(--ti)' : 'var(--ts)';
+      const pfVal = g.pf?.overall || 1;
+      const pfClass = pfVal > 1.1 ? 'psu' : pfVal < 0.9 ? 'pd' : 'pg';
+      const rain = g.weather?.precip_chance || 0;
+      const rainColor = rain >= 50 ? 'var(--td)' : rain >= 30 ? 'var(--tw)' : 'var(--tsu)';
+      const windClass = g.windLabel === 'OUT' ? 'psu' : g.windLabel === 'IN' ? 'pd' : 'pg';
+      return `<tr>
+        <td><strong style="color:${rc}">#${i+1}</strong></td>
+        <td><strong>${esc(g.away)}@${esc(g.home)}</strong>${g.isDome ? ' <span class="pill pg" style="font-size:9px">Dome</span>' : ''}</td>
+        ${hasVegas ? `
+          <td><strong>${g.ou > 0 ? g.ou.toFixed(1) : '—'}</strong></td>
+          <td>${g.awayImplied > 0 ? g.awayImplied.toFixed(1) : '—'}${mvtBadge(g.awayMvt)}</td>
+          <td>${g.homeImplied > 0 ? g.homeImplied.toFixed(1) : '—'}${mvtBadge(g.homeMvt)}</td>
+        ` : ''}
+        <td><span class="pill ${pfClass}">${pfVal.toFixed(2)}x</span></td>
+        ${hasWeather ? `
+          <td>${g.isDome ? '<span class="pill pg">Dome</span>' : g.weather ? `${g.weather.temp_f}°F ${esc(g.wm?.label || '')}` : '—'}</td>
+          <td><span class="pill ${windClass}" style="font-size:10px">${esc(g.windLabel)}</span></td>
+          <td style="color:${rainColor}">${rain > 0 ? rain + '%' : '—'}</td>
+        ` : ''}
+        <td style="color:${rc};font-weight:600">${g.envScore > 0 ? g.envScore.toFixed(2) : '—'}</td>
+      </tr>`;
+    }).join('')}</tbody>
+  </table></div>`;
+}
+
+function _renderSlateStackTable(stackTargets) {
+  const el = document.getElementById('slate-stack-table');
+  if (!el) return;
+  if (!stackTargets.length) { el.innerHTML = '<div style="font-size:12px;color:var(--tt)">Load player projections to see stack targets.</div>'; return; }
+  el.innerHTML = `<div class="tbl-wrap"><table>
+    <thead><tr><th>#</th><th>Team</th><th>Opp</th><th>Implied</th><th>Park</th><th>Weather</th><th>Avg Med (5)</th><th>Avg Ceil (5)</th><th>Avg Own%</th><th>Score</th></tr></thead>
+    <tbody>${stackTargets.slice(0, 14).map((t, i) => {
+      const rc = i === 0 ? 'var(--tsu)' : i < 3 ? 'var(--ti)' : 'var(--ts)';
+      const pfClass = t.pf > 1.1 ? 'psu' : t.pf < 0.9 ? 'pd' : 'pg';
+      const wRiskColor = t.wRisk === 'rain' ? 'var(--td)' : 'var(--ts)';
+      const implColor = t.implied >= 5.5 ? 'var(--tsu)' : t.implied >= 4.0 ? 'var(--ti)' : t.implied > 0 ? 'var(--ts)' : 'var(--tt)';
+      const ownColor = t.avgOwn5 > 30 ? 'var(--tw)' : 'var(--ts)';
+      return `<tr>
+        <td><strong style="color:${rc}">#${i+1}</strong></td>
+        <td><strong>${esc(t.team)}</strong></td>
+        <td style="font-size:11px;color:var(--tt)">${esc(t.opp)}</td>
+        <td><strong style="color:${implColor}">${t.implied > 0 ? t.implied.toFixed(1) : '—'}</strong></td>
+        <td><span class="pill ${pfClass}">${t.pf.toFixed(2)}x</span></td>
+        <td style="color:${wRiskColor};font-size:11px">${t.isDome ? 'Dome' : (esc(t.weatherLabel) || '—')}</td>
+        <td>${t.avgMed5 > 0 ? t.avgMed5.toFixed(1) : '—'}</td>
+        <td>${t.avgCeil5 > 0 ? t.avgCeil5.toFixed(1) : '—'}</td>
+        <td style="color:${ownColor}">${t.avgOwn5 > 0 ? t.avgOwn5.toFixed(0) + '%' : '—'}</td>
+        <td style="color:${rc};font-weight:600">${t.score.toFixed(1)}</td>
+      </tr>`;
+    }).join('')}</tbody>
+  </table></div>`;
+}
+
+function _renderSlatePitcherTable(pitchers) {
+  const el = document.getElementById('slate-pitcher-table');
+  if (!el) return;
+  if (!pitchers.length) { el.innerHTML = '<div style="font-size:12px;color:var(--tt)">No pitcher data available.</div>'; return; }
+  el.innerHTML = `<div class="tbl-wrap"><table>
+    <thead><tr><th>#</th><th>Pitcher</th><th>Team</th><th>Opp</th><th>Salary</th><th>Median</th><th>Ceiling</th><th>Opp Implied</th><th>Own%</th><th>Value</th><th>Role</th></tr></thead>
+    <tbody>${pitchers.slice(0, 10).map((p, i) => {
+      const rc = i === 0 ? 'var(--tsu)' : i < 3 ? 'var(--ti)' : 'var(--ts)';
+      const ownColor = p.own > 25 ? 'var(--tw)' : (p.own > 0 && p.own < 12) ? 'var(--tsu)' : 'var(--ts)';
+      const matchupClass = p.oppImplied > 5 ? 'pd' : p.oppImplied > 4 ? 'pw' : p.oppImplied > 0 ? 'psu' : 'pg';
+      const isChalk = p.own > 25;
+      const isPivot = p.own > 0 && p.own < 12;
+      const roleLabel = isChalk ? 'CHALK' : isPivot ? 'PIVOT' : 'NEUTRAL';
+      const roleBg = isChalk ? 'var(--bw)' : isPivot ? 'var(--bsu)' : 'var(--bs)';
+      const roleColor = isChalk ? 'var(--tw)' : isPivot ? 'var(--tsu)' : 'var(--ts)';
+      const valColor = p.value > 5.5 ? 'var(--tsu)' : p.value > 4.5 ? 'var(--ti)' : 'var(--ts)';
+      return `<tr>
+        <td><strong style="color:${rc}">#${i+1}</strong></td>
+        <td><strong>${esc(p.name)}</strong></td>
+        <td>${esc(p.team)}</td>
+        <td>${esc(p.opp)}</td>
+        <td>$${(p.salary || 0).toLocaleString()}</td>
+        <td>${p.median > 0 ? p.median.toFixed(1) : '—'}</td>
+        <td>${p.ceiling > 0 ? p.ceiling.toFixed(1) : '—'}</td>
+        <td><span class="pill ${matchupClass}">${p.oppImplied > 0 ? p.oppImplied.toFixed(1) : '—'}</span></td>
+        <td style="color:${ownColor}">${p.own > 0 ? p.own.toFixed(0) + '%' : '—'}</td>
+        <td style="color:${valColor}">${p.value > 0 ? p.value.toFixed(2) : '—'}</td>
+        <td><span style="background:${roleBg};color:${roleColor};padding:2px 6px;border-radius:4px;font-size:10px;font-weight:600">${roleLabel}</span></td>
+      </tr>`;
+    }).join('')}</tbody>
+  </table></div>`;
+}
+
+function _renderSlateOwnershipTable(chalkPlayers, leveragePlays, avgOwn, fieldFavoriteCount, ownConcentration) {
+  const el = document.getElementById('slate-ownership-table');
+  if (!el) return;
+  if (!chalkPlayers.length && !leveragePlays.length) {
+    el.innerHTML = '<div style="font-size:12px;color:var(--tt)">Load ownership projections to see leverage analysis.</div>';
+    return;
+  }
+  function playerRow(p, label, labelBg, labelColor) {
+    const pos = p.dkPos || p.rosterPos || '?';
+    const ownColor = p.own > 35 ? 'var(--td)' : p.own > 25 ? 'var(--tw)' : (p.own > 0 && p.own < 12) ? 'var(--tsu)' : 'var(--ts)';
+    const levRatio = p.ceiling > 0 && p.own > 0 ? (p.ceiling / p.own).toFixed(1) : '—';
+    return `<tr>
+      <td><strong>${esc(p.name)}</strong></td>
+      <td style="font-size:11px">${esc(pos)}</td>
+      <td>${esc(p.team)}</td>
+      <td>$${(p.salary || 0).toLocaleString()}</td>
+      <td>${p.median > 0 ? p.median.toFixed(1) : '—'}</td>
+      <td>${p.ceiling > 0 ? p.ceiling.toFixed(1) : '—'}</td>
+      <td style="color:${ownColor};font-weight:600">${p.own > 0 ? p.own.toFixed(0) + '%' : '—'}</td>
+      <td>${levRatio}</td>
+      <td><span style="background:${labelBg};color:${labelColor};padding:2px 6px;border-radius:4px;font-size:10px;font-weight:600">${label}</span></td>
+    </tr>`;
+  }
+  const chalkRows = chalkPlayers.slice(0, 8).map(p => playerRow(p, 'CHALK', 'var(--bw)', 'var(--tw)')).join('');
+  const levRows = leveragePlays.slice(0, 8).map(p => playerRow(p, 'LEVERAGE', 'var(--bi)', 'var(--ti)')).join('');
+  el.innerHTML = `
+    <div style="margin-bottom:8px;font-size:12px;color:var(--ts)">
+      <strong>${chalkPlayers.length}</strong> chalk players (&gt;25% own) &nbsp;·&nbsp;
+      <strong>${fieldFavoriteCount}</strong> field favorites (&gt;35%) &nbsp;·&nbsp;
+      Field avg own: <strong>${avgOwn.toFixed(1)}%</strong> &nbsp;·&nbsp;
+      Top-5 chalk concentration: <strong>${ownConcentration.toFixed(0)}%</strong>
+    </div>
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>Player</th><th>Pos</th><th>Team</th><th>Salary</th><th>Median</th><th>Ceiling</th><th>Own%</th><th>Ceil/Own</th><th>Role</th></tr></thead>
+      <tbody>${chalkRows}${levRows}</tbody>
+    </table></div>`;
+}
+
 (async function init() {
+  cacheDOM(); // Populate _EL element cache before any render call
   try {
     STATE.parkFactors = await fetch('/api/park-factors').then(r => r.json());
     STATE.stadiumData = await fetch('/api/stadiums').then(r => r.json());
-    // Load saved calibration and apply to engine
+    // Load saved calibration and apply to engine.
+    // Auto-correct any persisted out-of-range values from before the clamp was added.
     const cal = await fetch('/api/calibration').then(r => r.json());
-    Engine.setCalibration(cal);
+    const CAL_MIN = 0.80, CAL_MAX = 1.20;
+    const batOob = (cal.batterScale || 1.0) < CAL_MIN || (cal.batterScale || 1.0) > CAL_MAX;
+    const pitOob = (cal.pitcherScale || 1.0) < CAL_MIN || (cal.pitcherScale || 1.0) > CAL_MAX;
+    if (batOob || pitOob) {
+      const corrected = {
+        batterScale: Math.max(CAL_MIN, Math.min(CAL_MAX, cal.batterScale || 1.0)),
+        pitcherScale: Math.max(CAL_MIN, Math.min(CAL_MAX, cal.pitcherScale || 1.0)),
+        positionScales: cal.positionScales || {}
+      };
+      // Persist the corrected values so it's fixed for future loads
+      await fetch('/api/calibration', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(corrected)
+      }).catch(() => {});
+      Engine.setCalibration(corrected);
+      setTimeout(() => showToast(
+        `Saved calibration was outside safe range (batters ×${(cal.batterScale||1).toFixed(3)}, pitchers ×${(cal.pitcherScale||1).toFixed(3)}). ` +
+        `Auto-corrected to ±20% limit. Re-run Analyze Projections in Backtest to recalibrate.`,
+        'warn', 8000
+      ), 1500);
+    } else {
+      Engine.setCalibration(cal);
+    }
     // Load source quality on startup (only shows if data exists)
     renderSourceQuality();
   } catch (e) { /* Server may not be running during dev */ }
