@@ -102,14 +102,21 @@ test.describe('16. Correlation priors — n<10 minimum (Fix 1)', () => {
 
   test('getCorrelation falls back to structural prior when no historical data', async ({ page }) => {
     await page.goto('/');
-    const corr = await page.evaluate(() => {
+    const { base, topOrder } = await page.evaluate(() => {
       Engine.buildPairCorrelations([]); // clear historical data
-      // Adjacent same-team batters → structural prior = 0.38
-      const p1 = { name: 'FakeBatter1', team: 'NYY', opp: 'BOS', dkPos: 'OF', order: 1 };
-      const p2 = { name: 'FakeBatter2', team: 'NYY', opp: 'BOS', dkPos: 'OF', order: 2 };
-      return Engine.getCorrelation(p1, p2);
+      // Adjacent same-team batters → base structural prior = 0.38.
+      // Use non-top-order slots (6,7) so the top-order inning-burst multiplier does NOT apply.
+      const b1 = { name: 'FakeBatter1', team: 'NYY', opp: 'BOS', dkPos: 'OF', order: 6 };
+      const b2 = { name: 'FakeBatter2', team: 'NYY', opp: 'BOS', dkPos: 'OF', order: 7 };
+      // Top-order adjacent pair (1,2) gets the documented +4% inning-burst multiplier.
+      const t1 = { name: 'FakeBatter3', team: 'NYY', opp: 'BOS', dkPos: 'OF', order: 1 };
+      const t2 = { name: 'FakeBatter4', team: 'NYY', opp: 'BOS', dkPos: 'OF', order: 2 };
+      return { base: Engine.getCorrelation(b1, b2), topOrder: Engine.getCorrelation(t1, t2) };
     });
-    expect(corr).toBeCloseTo(0.38, 2);
+    // Base adjacent structural prior, isolated from the burst multiplier.
+    expect(base).toBeCloseTo(0.38, 2);
+    // Top-order adjacent pairs carry the +4% inning-burst multiplier: 0.38 × 1.04 = 0.3952.
+    expect(topOrder).toBeCloseTo(0.3952, 3);
   });
 });
 

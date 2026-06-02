@@ -100,6 +100,7 @@
         <option value="lev">Leverage</option>
         <option value="gppScore">GPP Score</option>
         <option value="optExp">Optimal Exp%</option>
+        <option value="trueLev">True Leverage (Opt%−Own%)</option>
         <option value="avgppg">DK Avg PPG</option>
       </select>
       <input type="text" id="search-inp" placeholder="Search player..." oninput="debouncedRenderPlayers()" style="width:130px">
@@ -110,8 +111,10 @@
       <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--tt);cursor:pointer;white-space:nowrap">
         <input type="checkbox" id="filter-hide-injured" onchange="renderPlayers()"> Hide IL
       </label>
+      <button class="btn" id="btn-opt-pct" onclick="computeOptimalPct()" style="font-size:11px;padding:3px 10px;white-space:nowrap" title="Monte-Carlo each player's optimal lineup % and true leverage (optimal% − ownership%). Fills the Opt% column locally.">Optimal %</button>
       <button class="btn" onclick="exportPool()" style="font-size:11px;padding:3px 10px;white-space:nowrap">Export Pool CSV</button>
     </div>
+    <div id="ownership-flag-banner" style="display:none"></div>
     <div class="tbl-wrap">
       <table>
         <thead><tr>
@@ -351,6 +354,10 @@
       <input type="number" id="port-max-game-exposure" value="65" min="10" max="100" step="5" title="Maximum % of lineups whose primary stack comes from the same game. Prevents portfolio concentration in a single 2-team matchup. Default: 65%." onchange="saveSession()">
     </div>
     <div class="config-item port-classic-only">
+      <label>Max Same SP Pair <span style="font-weight:400;text-transform:none;letter-spacing:0">(0=off)</span></label>
+      <input type="number" id="port-max-sp-pair" value="0" min="0" max="50" step="1" title="Max number of lineups allowed to share the same two-pitcher combination. Spreads correlated SP upside/bust risk across the portfolio. 0 = disabled." onchange="saveSession()">
+    </div>
+    <div class="config-item port-classic-only">
       <label>Min Implied Total <span style="font-weight:400;text-transform:none;letter-spacing:0">(0=off)</span></label>
       <input type="number" id="port-min-implied" value="0" min="0" max="7" step="0.5" title="Only stack teams whose Vegas implied run total meets this threshold. 0 = no filter. Recommended: 3.5–4.0." onchange="saveSession()">
     </div>
@@ -389,7 +396,7 @@
     </div>
     <div class="config-item">
       <label>Min Salary ($) <span style="font-weight:400;text-transform:none;letter-spacing:0">optional</span></label>
-      <input type="number" id="port-min-salary" min="0" max="50000" step="100" placeholder="e.g. 49000" title="Reject lineups below this total salary. Leave blank for no floor. Recommended: 49000–49500 for GPP." onchange="saveSession()">
+      <input type="number" id="port-min-salary" min="0" max="50000" step="100" placeholder="default 48500" title="Reject lineups below this total salary. Leave blank to use the default 48500 floor. Set 0 to disable the floor entirely. Recommended: 49000–49500 for GPP." onchange="saveSession()">
     </div>
     <div class="config-item">
       <label>Cash Line (pts) <span style="font-weight:400;text-transform:none;letter-spacing:0">optional</span></label>
@@ -448,6 +455,15 @@
         <option value="1">Always 1</option>
         <option value="2">Always 2</option>
         <option value="0">None (disable)</option>
+      </select>
+    </div>
+    <div class="config-item port-classic-only" id="secondary-stack-row">
+      <label>Secondary Stack <span style="font-weight:400;text-transform:none;letter-spacing:0">(2nd game)</span></label>
+      <select id="port-secondary-stack" onchange="saveSession()" title="Add a 2–3 man cluster from a different game's team (the classic 4-3 / 5-2 two-stack) for a second independent ceiling source. Auto sizes by run environment and available roster slots. Off = primary stack + bring-back only.">
+        <option value="auto">Auto (2–3 by environment)</option>
+        <option value="2">Always 2</option>
+        <option value="3">Always 3</option>
+        <option value="off">Off</option>
       </select>
     </div>
     <!-- Ownership controls -->

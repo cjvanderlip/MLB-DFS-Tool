@@ -799,6 +799,10 @@ function applyOptimalToPool() {
   STATE.POOL.forEach(p => {
     const exp = STATE.optimalExposure[p.name];
     p.optExp = exp ? exp.pct : 0;
+    // Uploaded optimizer export supersedes any prior sim-derived Opt%; clear the sim
+    // source/leverage so the row renders the upload title and hides the stale leverage chip.
+    p.optExpSource = 'upload';
+    p.trueLev = null;
   });
 }
 
@@ -856,12 +860,49 @@ function mergePools() {
   if (Object.keys(STATE.TEAM_SCORING).length) applyTeamScoringToPool();
   if (Object.keys(STATE.optimalExposure).length) applyOptimalToPool();
   if (Object.keys(STATE.confirmedLineups).length) applyConfirmedToPool();
+  runOwnershipAudit(); // Fix #1 — validate/fill uploaded ownership before it drives leverage/sim
   invalidatePlayerRenderCache(); // pool changed — force re-filter on next render
   updateUI();
   checkAllLoaded();
   // Keep Slate Summary live: auto-refresh whenever the pool changes and the tab is open.
   if (document.getElementById('panel-slate')?.classList.contains('active')) {
     renderSlateSummary();
+  }
+}
+
+// Fix #1 — Ownership input-sanity layer.
+// Validates the uploaded `own` numbers (which drive all leverage/field/simROI math)
+// against an internal projection, fills any missing ownership with a per-player estimate
+// instead of a flat positional constant, and stores deviation flags for the UI / console.
+function runOwnershipAudit() {
+  if (!Engine.auditOwnership || !STATE.POOL.length) return;
+  try {
+    const ctx = { vegasData: STATE.vegasData, contestSize: STATE.contestSize };
+    const anyUploaded = STATE.POOL.some(p => (p.own || 0) > 0);
+    const { projections, flags } = Engine.auditOwnership(STATE.POOL, ctx);
+    const projByName = new Map(projections.map(r => [r.name, r.projectedOwn]));
+    // If a real ownership file was uploaded, only fill the gaps (own<=0) and leave
+    // uploaded numbers intact. If nothing was uploaded, project ownership for everyone.
+    STATE.POOL.forEach(p => {
+      if (anyUploaded && (p.own || 0) > 0) { p.ownProjected = false; return; }
+      const proj = projByName.get(p.name);
+      if (proj != null) {
+        p.own = proj;
+        p.ownProjected = true;
+        p.lev = Engine.calcLeverage(p, STATE.contestSize);
+      }
+    });
+    STATE.ownershipProjections = projections;
+    // Only surface deviation flags when the user actually uploaded ownership to validate.
+    STATE.ownershipFlags = anyUploaded ? flags : [];
+    STATE.ownershipFlagNames = new Set(STATE.ownershipFlags.map(f => f.name.toLowerCase()));
+    if (STATE.ownershipFlags.length) {
+      const top = STATE.ownershipFlags.slice(0, 5)
+        .map(f => `${f.name} ${f.uploadedOwn}%→~${f.projectedOwn}%`).join(', ');
+      console.warn(`[mlbdfs] Ownership sanity: ${STATE.ownershipFlags.length} player(s) deviate from model — ${top}`);
+    }
+  } catch (e) {
+    console.warn('[mlbdfs] ownership audit failed:', e.message);
   }
 }
 
@@ -889,6 +930,7 @@ function updateUI() {
   updateShowdownIndicator();
   updateShowdownLineupUI();
   renderPlayers(); renderLineup(); renderLuPool(); renderStacks();
+  renderOwnershipBanner();
   renderValueScatter();
   renderBlendControls();
   applyPendingLineupRestore();
@@ -948,6 +990,29 @@ function showUploadWarn(key, fname, fields, extra) {
   renderWarnings();
 }
 function hideUploadWarn(key) { delete activeWarnings[key]; renderWarnings(); }
+
+// Fix #1 — Ownership sanity banner in the Player Pool tab. Lists players whose uploaded
+// ownership deviates sharply from the internal model estimate (likely stale data), since
+// every leverage/field/simROI number is downstream of these inputs. Hidden when clean.
+function renderOwnershipBanner() {
+  const el = document.getElementById('ownership-flag-banner');
+  if (!el) return;
+  const flags = STATE.ownershipFlags || [];
+  if (!flags.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  const show = flags.slice(0, 8);
+  const chips = show.map(f => {
+    const arrow = f.direction === 'higher' ? '↑' : '↓';
+    const color = f.direction === 'higher' ? 'var(--td)' : 'var(--ti)';
+    return `<span style="display:inline-block;background:var(--bp);border:0.5px solid var(--brd-s);border-radius:4px;padding:1px 6px;margin:2px 4px 0 0;font-size:11px" title="Uploaded ${f.uploadedOwn}% vs model estimate ~${f.projectedOwn}%">${esc(f.name)} <strong style="color:${color}">${f.uploadedOwn}%${arrow}</strong> <span style="color:var(--tt)">~${f.projectedOwn}%</span></span>`;
+  }).join('');
+  const more = flags.length > show.length ? `<span style="font-size:11px;color:var(--tt);margin-left:4px">+${flags.length - show.length} more</span>` : '';
+  el.style.display = 'block';
+  el.innerHTML = `<div class="ib warn" style="margin:6px 0">`
+    + `<strong>Ownership sanity check:</strong> ${flags.length} player${flags.length > 1 ? 's' : ''} deviate sharply from the model estimate — verify these uploaded numbers aren't stale before trusting leverage and sim ROI.`
+    + `<div style="margin-top:4px">${chips}${more}</div>`
+    + `</div>`;
+}
+
 function renderWarnings() {
   const el = document.getElementById('upload-warnings');
   const keys = Object.keys(activeWarnings);
@@ -1039,7 +1104,17 @@ function renderPlayerRow(p, idx, maxC, usedNames) {
       multBadge = `<span class="pill" style="font-size:9px;margin-left:3px;background:var(--bw);color:${color}" title="Compound adjustments push this player ${sign}${pct}% from raw projection — check for double-counting if your CSV already prices in park/Vegas">\u26a0\ufe0f adj${sign}${pct}%</span>`;
     }
   } catch (e) { /* context incomplete — skip badge */ }
-  const optExpVal = p.optExp > 0 ? `<span class="pill ${p.optExp > 30 ? 'psu' : p.optExp > 10 ? 'pi' : 'pg'}">${p.optExp.toFixed(1)}%</span>` : '\u2014';
+  // Opt% = how often this player lands in the optimal lineup. Source is either an uploaded
+  // optimizer export or the sim-derived computeOptimalExposure run (see "Optimal %" button).
+  // When sim-derived, append a true-leverage chip (optimal% \u2212 ownership%): green = under-owned
+  // relative to optimal (a GPP play), red = over-owned chalk (a fade).
+  const optExpTitle = p.optExpSource === 'sim'
+    ? 'Sim-derived optimal lineup % (Monte Carlo). Chip = true leverage = optimal% \u2212 ownership%.'
+    : 'Optimal exposure from uploaded optimizer export';
+  const trueLevPill = (p.optExpSource === 'sim' && p.trueLev != null)
+    ? ` <span class="pill ${p.trueLev > 0 ? 'psu' : 'pd'}" style="font-size:9px" title="True leverage = optimal% \u2212 ownership%">${p.trueLev > 0 ? '+' : ''}${p.trueLev.toFixed(0)}</span>`
+    : '';
+  const optExpVal = p.optExp > 0 ? `<span class="pill ${p.optExp > 30 ? 'psu' : p.optExp > 10 ? 'pi' : 'pg'}" title="${optExpTitle}">${p.optExp.toFixed(1)}%</span>${trueLevPill}` : '\u2014';
   const confirmedBadge = p.isConfirmed ? `<span class="pill psu" style="font-size:9px;margin-left:3px">${p.confirmedOrder ? '#' + p.confirmedOrder : 'SP'}</span>` : '';
   const scBadge = p.barrelRate > 0 ? `<span class="pill ${p.barrelRate >= 10 ? 'psu' : p.barrelRate >= 7 ? 'pi' : 'pg'}" style="font-size:9px;margin-left:3px">Brl:${p.barrelRate.toFixed(0)}%</span>` : '';
   const injuryBadge = p.dkStatus === 'O'
@@ -1066,7 +1141,15 @@ function renderPlayerRow(p, idx, maxC, usedNames) {
       dvpBadge = `<span class="pill ${dvpClass}" style="font-size:9px;margin-left:3px;${sampleStyle}" title="vs ${p.opp} ${dvpPos} rank ${dvpEntry.rank}/${dvpEntry.totalTeams} (${dvpEntry.avgAllowed} DK avg allowed${games > 0 ? ', sample ' + games + ' games' + (thin ? ' — small sample, discount this signal' : '') : ''})">DvP:${dvpLabel}${sampleStr}</span>`;
     }
   }
-  return `<tr style="${inLu ? 'opacity:.38;' : ''}"><td><strong style="${formColor ? 'color:' + formColor : ''}">${esc(p.name)}</strong>${STATE.MODE === 'dk' && !p.hasRoo ? '<span style="font-size:10px;background:var(--bw);color:var(--tw);border-radius:3px;padding:1px 4px;margin-left:4px">no proj</span>' : ''}${confirmedBadge}${scBadge}${injuryBadge}${postponedBadge}${dvpBadge}${multBadge}</td><td><span class="pill pi" style="font-size:10px">${esc(p.dkPos) || '\u2014'}</span></td><td>${esc(p.team)}</td><td>${p.salary > 0 ? '$' + p.salary.toLocaleString() : '\u2014'}</td><td>${p.order > 0 ? '#' + p.order : '\u2014'}</td><td>${p.floor > 0 ? p.floor.toFixed(1) : '\u2014'}</td><td>${p.median > 0 ? '<strong>' + p.median.toFixed(1) + '</strong>' : '\u2014'}</td><td>${p.ceiling > 0 ? `<div class="bar-w"><div class="bar" style="width:${bw}px"></div><span style="font-size:11px;color:var(--ts)">${p.ceiling.toFixed(1)}</span></div>` : '\u2014'}</td><td><input type="number" min="0" max="100" step="0.5" value="${p.own > 0 ? p.own.toFixed(1) : ''}" placeholder="0" title="Edit projected ownership %" style="width:50px;font-size:11px;padding:2px 4px;border:0.5px solid var(--brd-s);border-radius:4px;background:var(--bp);color:${p.own > 50 ? 'var(--td)' : p.own > 25 ? 'var(--tw)' : p.own > 10 ? 'var(--ti)' : 'var(--tp)'};text-align:center" oninput="updatePlayerOwn(${idx},this.value)"></td><td class="${lc}">${p.lev !== 0 ? (p.lev > 0 ? '+' : '') + p.lev.toFixed(1) : '\u2014'}</td><td style="color:var(--ti);font-weight:500">${gppS > 0 ? gppS.toFixed(1) : '\u2014'}</td><td>${optExpVal}</td><td>${p.avgPpg > 0 ? p.avgPpg.toFixed(1) : '\u2014'}</td><td>${kDisplay}</td><td><button class="btn" style="padding:3px 8px;font-size:11px" ${inLu ? 'disabled' : ''} onclick="addPlayerByPoolIdx(${idx})">+</button></td></tr>`;
+  // Ownership input cues (Fix #1): mark modeled estimates (no uploaded value) with a
+  // dashed border + "est" tag, and flag uploaded numbers that deviate from the model with
+  // a \u26a0. Both are non-blocking visual hints; the cell stays editable to override.
+  const ownFlagged = STATE.ownershipFlagNames && STATE.ownershipFlagNames.has(p.name.toLowerCase());
+  const ownEst = p.ownProjected === true;
+  const ownBorder = ownFlagged ? '1px solid var(--tw)' : ownEst ? '1px dashed var(--ti)' : '0.5px solid var(--brd-s)';
+  const ownTitle = ownFlagged ? 'Uploaded ownership deviates sharply from the model estimate \u2014 verify it is not stale' : ownEst ? 'Modeled ownership estimate (no uploaded value) \u2014 edit to override' : 'Edit projected ownership %';
+  const ownMark = ownFlagged ? ' <span style="font-size:10px;color:var(--tw)" title="deviates from model estimate">\u26a0</span>' : ownEst ? ' <span style="font-size:8px;color:var(--ti);vertical-align:super" title="modeled estimate">est</span>' : '';
+  return `<tr style="${inLu ? 'opacity:.38;' : ''}"><td><strong style="${formColor ? 'color:' + formColor : ''}">${esc(p.name)}</strong>${STATE.MODE === 'dk' && !p.hasRoo ? '<span style="font-size:10px;background:var(--bw);color:var(--tw);border-radius:3px;padding:1px 4px;margin-left:4px">no proj</span>' : ''}${confirmedBadge}${scBadge}${injuryBadge}${postponedBadge}${dvpBadge}${multBadge}</td><td><span class="pill pi" style="font-size:10px">${esc(p.dkPos) || '\u2014'}</span></td><td>${esc(p.team)}</td><td>${p.salary > 0 ? '$' + p.salary.toLocaleString() : '\u2014'}</td><td>${p.order > 0 ? '#' + p.order : '\u2014'}</td><td>${p.floor > 0 ? p.floor.toFixed(1) : '\u2014'}</td><td>${p.median > 0 ? '<strong>' + p.median.toFixed(1) + '</strong>' : '\u2014'}</td><td>${p.ceiling > 0 ? `<div class="bar-w"><div class="bar" style="width:${bw}px"></div><span style="font-size:11px;color:var(--ts)">${p.ceiling.toFixed(1)}</span></div>` : '\u2014'}</td><td style="white-space:nowrap"><input type="number" min="0" max="100" step="0.5" value="${p.own > 0 ? p.own.toFixed(1) : ''}" placeholder="0" title="${ownTitle}" style="width:50px;font-size:11px;padding:2px 4px;border:${ownBorder};border-radius:4px;background:var(--bp);color:${p.own > 50 ? 'var(--td)' : p.own > 25 ? 'var(--tw)' : p.own > 10 ? 'var(--ti)' : 'var(--tp)'};text-align:center" oninput="updatePlayerOwn(${idx},this.value)">${ownMark}</td><td class="${lc}">${p.lev !== 0 ? (p.lev > 0 ? '+' : '') + p.lev.toFixed(1) : '\u2014'}</td><td style="color:var(--ti);font-weight:500">${gppS > 0 ? gppS.toFixed(1) : '\u2014'}</td><td>${optExpVal}</td><td>${p.avgPpg > 0 ? p.avgPpg.toFixed(1) : '\u2014'}</td><td>${kDisplay}</td><td><button class="btn" style="padding:3px 8px;font-size:11px" ${inLu ? 'disabled' : ''} onclick="addPlayerByPoolIdx(${idx})">+</button></td></tr>`;
 }
 
 // Filter/sort result cache — avoids O(n log n) resort on every render when filters haven't changed
@@ -1104,6 +1187,36 @@ function renderPlayers() {
   if (countEl) {
     const showing = Math.min(data.length, STATE.playerLimit);
     countEl.textContent = data.length === STATE.POOL.length ? `${data.length} players` : `Showing ${showing} of ${data.length} (${STATE.POOL.length} total)`;
+  }
+}
+
+// ── Sim-derived Optimal % + true leverage (Feature #2) ────────────────────────
+// Runs Engine.computeOptimalExposure over the current pool and annotates each player with
+// p.optExp (optimal lineup %) and p.trueLev (optimal% − ownership%). Feeds the same "Opt%"
+// column that the uploaded optimizer export uses — but generated locally, so you get the
+// game-theory leverage signal the paid tools sell without needing an external file.
+async function computeOptimalPct() {
+  if (!STATE.POOL.length) { showToast('Load a player pool first.', 'warn'); return; }
+  const btn = document.getElementById('btn-opt-pct');
+  const prev = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = 'Computing…'; }
+  // Yield so the button label repaints before the synchronous compute blocks the thread.
+  await new Promise(r => setTimeout(r, 0));
+  try {
+    const allowBvP = document.getElementById('allow-bvp')?.checked || false;
+    const res = Engine.computeOptimalExposure(STATE.POOL, { numDraws: 400, allowBvP });
+    let n = 0;
+    STATE.POOL.forEach(p => {
+      const r = res[p.name];
+      if (r) { p.optExp = r.optimalPct; p.optExpSource = 'sim'; p.trueLev = r.trueLeverage; n++; }
+    });
+    invalidatePlayerRenderCache();
+    renderPlayers();
+    showToast(`Optimal % computed over 400 sims for ${n} players. Sort by "True Leverage" to surface under-owned plays.`, 'success', 4000);
+  } catch (e) {
+    showToast('Optimal % computation failed: ' + (e.message || e), 'warn');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = prev || 'Optimal %'; }
   }
 }
 
@@ -2374,6 +2487,10 @@ function generatePortfolio() {
   const bbTargetRaw = document.getElementById('port-bb-target')?.value || 'auto';
   const bbTarget = bbTargetRaw === 'auto' ? null : parseInt(bbTargetRaw);
 
+  // Secondary stack: cross-game 2–3 man cluster. '' / 'off' = disabled, else 'auto' | '2' | '3'.
+  const secondaryStackRaw = document.getElementById('port-secondary-stack')?.value || 'off';
+  const secondaryStack = secondaryStackRaw === 'off' ? null : secondaryStackRaw;
+
   // Ownership controls
   const ownershipLambda = parseFloat(document.getElementById('port-own-lambda')?.value || '4') / 100;
   const maxAvgOwnership = parseFloat(document.getElementById('port-max-avg-own')?.value) || 0;
@@ -2507,10 +2624,16 @@ function generatePortfolio() {
       ctx.minGameTotal = parseFloat(document.getElementById('port-min-game-total')?.value) || 0;
       ctx.maxOppK9 = parseFloat(document.getElementById('port-max-opp-k9')?.value) || 0;
       ctx.blockNegWeather = document.getElementById('port-block-neg-weather')?.checked || false;
-      // Fix 3/8: read maxGameExposure from UI field (falls back to engine default 0.65)
-      const maxGameExposure = parseFloat(document.getElementById('port-max-game-exposure')?.value) || 0.65;
+      // Fix 3/8: read maxGameExposure from UI field (falls back to engine default 0.65).
+      // UI stores it as a whole-number percent; convert to the 0–1 fraction the engine expects.
+      const maxGameExposureRaw = parseFloat(document.getElementById('port-max-game-exposure')?.value);
+      const maxGameExposure = !isNaN(maxGameExposureRaw) ? maxGameExposureRaw / 100 : 0.65;
       const minSalaryRaw = document.getElementById('port-min-salary')?.value;
-      const minSalary = minSalaryRaw !== '' && minSalaryRaw != null ? parseFloat(minSalaryRaw) : 0;
+      // Blank → undefined so buildPortfolio's 48500 default floor applies.
+      // (Passing 0 would override the default and disable the floor entirely.)
+      const minSalary = minSalaryRaw !== '' && minSalaryRaw != null ? parseFloat(minSalaryRaw) : undefined;
+      // SP-pair concentration cap: max lineups sharing the same two-pitcher combo (0 = off).
+      const maxSpPairLineups = parseInt(document.getElementById('port-max-sp-pair')?.value) || 0;
       const result = await buildPortfolioWorker(getCalibratedPool(), {
         numLineups, maxExposure, maxExposurePitcher, contestType, contestSize: portContestSize,
         maxOverlap: maxOverlapVal,
@@ -2520,8 +2643,8 @@ function generatePortfolio() {
         lockedTeams, bannedTeams,
         context: ctx, iterations: OPTIMIZER_ITERATIONS,
         simFilter, simFilterPct, simFilterSims, payoutType, simROIMin, simROIMax,
-        maxGameExposure, minSalary,
-        bbEnabled, bbMinOppImplied, bbTarget,
+        maxGameExposure, minSalary, maxSpPairLineups,
+        bbEnabled, bbMinOppImplied, bbTarget, secondaryStack,
         ownershipLambda, maxAvgOwnership,
         customPayoutConfig,
       }, (built, target) => {
@@ -2666,6 +2789,11 @@ function renderPortfolioResults(result) {
       breachStr = `<br><span style="font-size:11px">Players over stated cap: ${top}${extra}.</span>`;
     }
     postWarnings.push(`<strong>Exposure caps were relaxed by ${result.exposureRelaxUsed} appearance${result.exposureRelaxUsed > 1 ? 's' : ''} (+${relaxPct}%) to fill all lineups.</strong>${breachStr}<br><span style="font-size:11px">To avoid this: add more stacks, raise Max Exposure %, or reduce lineup count.</span>`);
+  }
+  if (result.minSalaryRelaxed) {
+    const r = result.minSalaryRelaxed;
+    const reach = r.maxReachable ? ` This pool's richest valid lineup is only $${r.maxReachable.toLocaleString()}.` : '';
+    postWarnings.push(`<strong>Min-salary floor auto-lowered to $${r.appliedFloor.toLocaleString()}</strong> (you requested $${r.requested.toLocaleString()}).${reach} The requested floor was unreachable for this slate, so it was relaxed to fill the portfolio instead of returning zero lineups. Lower the Min Salary field (or set 0) to silence this.`);
   }
   if (result._diag?.overlapRelaxed && !postWarnings.some(w => w.includes('Overlap'))) {
     postWarnings.push(`<strong>Overlap cap auto-raised to ${result._diag.overlapRelaxed}.</strong> The engine raised the per-pair overlap limit during generation to break a deadlock — some lineups share more players than your stated max. Raise Max Overlap manually to silence this warning.`);
@@ -2869,7 +2997,7 @@ function renderPortfolioResults(result) {
   html += `<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
     <button class="btn-p" onclick="exportPortfolio()">Export All Lineups CSV</button>
     <button class="btn-g" onclick="savePortfolioToHistory()">Save All to Backtest History</button>
-    <button class="btn" onclick="runPortfolioSim()" id="port-sim-btn">Simulate Portfolio (Sim ROI)</button>
+    <button class="btn" onclick="runPortfolioSim()" id="port-sim-btn">Simulate Portfolio (P Threshold)</button>
   </div>
   <div id="port-sim-results" style="margin-top:10px"></div>`;
 
@@ -3085,7 +3213,7 @@ function runPortfolioSim() {
       console.error('Portfolio simulation failed:', e);
       out.innerHTML = `<div class="ib warn">Simulation error: ${e.message}</div>`;
     } finally {
-      btn.textContent = 'Simulate Portfolio (Sim ROI)'; btn.disabled = false;
+      btn.textContent = 'Simulate Portfolio (P Threshold)'; btn.disabled = false;
     }
   }, 30);
 }
@@ -3266,6 +3394,11 @@ function _simVisibleResults() {
   return { rows, top3ROI, bot3ROI, top3P90 };
 }
 
+// Color for the expected-dupes cell by risk band (low dupes = good/green = leverage).
+function dupeColor(risk) {
+  return risk === 'Unique' ? 'var(--tsu)' : risk === 'Low' ? 'var(--ti)' : risk === 'Med' ? 'var(--tw)' : 'var(--td)';
+}
+
 // Render the entire sim results panel. Called on intake AND after every sort/filter/expand.
 function renderSimTable() {
   const out = document.getElementById('port-sim-results');
@@ -3280,7 +3413,7 @@ function renderSimTable() {
 
   let html = `<div class="ib blue" style="font-size:12px;margin-bottom:8px">
     Sim results vs. ownership-weighted field. Cash line ≈ <strong>${_simState.cashLine}</strong> pts.
-    Portfolio avg cash rate: <strong>${avgCash.toFixed(1)}%</strong> · Avg Sim ROI: <strong style="color:${avgROI >= 0 ? 'var(--tsu)' : 'var(--td)'}">${avgROI >= 0 ? '+' : ''}${avgROI.toFixed(1)}%</strong>${avgROISE > 0 ? ` <span style="color:var(--tt);font-weight:400">± ${avgROISE.toFixed(1)}%</span>` : ''}
+    Portfolio avg cash rate: <strong>${avgCash.toFixed(1)}%</strong> · Avg P(Thresh): <strong style="color:${avgROI >= 0 ? 'var(--tsu)' : 'var(--td)'}">${avgROI >= 0 ? '+' : ''}${avgROI.toFixed(1)}%</strong>${avgROISE > 0 ? ` <span style="color:var(--tt);font-weight:400">± ${avgROISE.toFixed(1)}%</span>` : ''}
   </div>`;
 
   // Paradox alert (GPP, high cash rate + negative ROI) — unchanged logic
@@ -3356,7 +3489,8 @@ function renderSimTable() {
       ${sh('p90', 'P90', 'Ceiling — 90th percentile')}
       ${sh('cashRate', 'Cash%', 'Sim cash rate vs. field')}
       ${isCash ? '' : sh('winRate', 'Win%', 'Sim top-1% rate')}
-      ${sh('simROI', 'Sim ROI', 'Expected ROI vs. ownership-weighted field')}
+      ${isCash ? '' : sh('expectedDupes', 'Dupes', 'Expected identical entries in the field — lower = more unique (leverage). Driven by your projected ownership and the contest size.')}
+      ${sh('simROI', 'P(Thresh)', 'Probability of exceeding cash/win threshold (not true GPP ROI — see controls to enable field simulation)')}
       ${sh('fit', 'Fit', 'Best contest type based on score distribution + ownership')}
       ${sh('stack', 'Stack', 'Primary + secondary stack signature')}
     </tr></thead>
@@ -3405,20 +3539,21 @@ function renderSimTable() {
       <td style="color:var(--tsu)">${r.p90.toFixed(1)}</td>
       <td>${r.cashRate}%</td>
       ${isCash ? '' : `<td>${r.winRate}%</td>`}
+      ${isCash ? '' : `<td title="${r.dupeRisk} dupe risk · ${r.pUnique != null ? r.pUnique + '% chance this lineup is unique' : ''}"><span style="color:${dupeColor(r.dupeRisk)};font-weight:600">${r.expectedDupes != null ? r.expectedDupes.toFixed(1) : '—'}</span> <span style="font-size:9px;color:var(--tt)">${esc(r.dupeRisk || '')}</span></td>`}
       <td style="font-weight:600;color:${roiColor}">${roi >= 0 ? '+' : ''}${roi}%${seStr}</td>
       <td>${fit ? `<span style="color:${fit.color};font-weight:600;font-size:10px">${esc(fit.label)}</span>` : '—'}</td>
       <td>${primaryPill}${secondaryPill}</td>
     </tr>`;
 
     if (isExpanded) {
-      html += `<tr style="${rowBg}"><td colspan="${isCash ? 10 : 11}" style="padding:8px 12px;background:rgba(0,0,0,.15)">
+      html += `<tr style="${rowBg}"><td colspan="${isCash ? 10 : 12}" style="padding:8px 12px;background:rgba(0,0,0,.15)">
         ${_simExpandedRoster(r)}
       </td></tr>`;
     }
   });
 
   if (!visible.rows.length) {
-    html += `<tr><td colspan="${isCash ? 10 : 11}" style="text-align:center;color:var(--tt);padding:14px">No lineups match the current filters.</td></tr>`;
+    html += `<tr><td colspan="${isCash ? 10 : 12}" style="text-align:center;color:var(--tt);padding:14px">No lineups match the current filters.</td></tr>`;
   }
 
   html += '</tbody></table></div>';
@@ -3463,6 +3598,7 @@ function _simExpandedRoster(r) {
       <span>Salary: <strong>$${totalSal.toLocaleString()}</strong></span>
       <span>Proj. Median: <strong>${totalMed.toFixed(1)}</strong></span>
       <span>Avg Own: <strong style="color:${avgOwn > 18 ? 'var(--td)' : avgOwn > 12 ? 'var(--tw)' : 'var(--tsu)'}">${avgOwn.toFixed(1)}%</strong></span>
+      ${r.expectedDupes != null ? `<span title="Expected identical entries in the field — lower is more unique">Est. dupes: <strong style="color:${dupeColor(r.dupeRisk)}">${r.expectedDupes.toFixed(1)}</strong> <span style="color:var(--tt)">(${r.dupeRisk}, ${r.pUnique}% unique)</span></span>` : ''}
       <span style="color:var(--tt)">Original sim rank: <strong>${_simState.origSimRank.get(r.lu) || '?'}</strong></span>
     </div>`;
 }
@@ -3825,6 +3961,13 @@ async function loadHistory() {
     const withActuals = history.filter(h => h.playerActuals && Object.keys(h.playerActuals).length >= 2);
     if (withActuals.length >= 3) {
       Engine.buildPairCorrelations(withActuals);
+      // Fix #3 — calibrate the simulator's boom/bust tail rates from actual outcomes
+      // instead of the hardcoded 3%/4% defaults. Shrinks toward defaults at low sample.
+      if (Engine.computeTailRatesFromHistory && Engine.setTailRates && STATE.POOL.length) {
+        const tail = Engine.computeTailRatesFromHistory(withActuals, STATE.POOL);
+        Engine.setTailRates(tail);
+        STATE.tailRates = tail;
+      }
     }
     renderBacktestPanel(history, summary);
   } catch (e) {
@@ -5018,7 +5161,7 @@ function runContestFlashback() {
 
     let html = `<div class="mc-row">
       <div class="mc"><div class="mc-l">Slates Analyzed</div><div class="mc-v">${flashResults.length}</div></div>
-      <div class="mc"><div class="mc-l">Avg Sim ROI</div><div class="mc-v" style="color:${avgSimROI >= 0 ? 'var(--tsu)' : 'var(--td)'}">
+      <div class="mc"><div class="mc-l">Avg P(Thresh)</div><div class="mc-v" style="color:${avgSimROI >= 0 ? 'var(--tsu)' : 'var(--td)'}">
         ${avgSimROI >= 0 ? '+' : ''}${avgSimROI.toFixed(1)}%</div><div class="mc-s">vs. ownership field</div></div>
       <div class="mc"><div class="mc-l">Avg Cash Rate</div><div class="mc-v">${avgCashRate.toFixed(1)}%</div></div>
       ${avgActualROI != null ? `<div class="mc"><div class="mc-l">Actual ROI</div><div class="mc-v" style="color:${avgActualROI >= 0 ? 'var(--tsu)' : 'var(--td)'}">
@@ -5028,7 +5171,7 @@ function runContestFlashback() {
     html += `<div style="overflow-x:auto;margin-top:8px"><table style="font-size:11px;width:100%">
       <thead><tr>
         <th style="text-align:left">Date</th><th>Contest</th><th>P50</th>
-        <th>Cash%</th><th>Sim ROI</th>
+        <th>Cash%</th><th>P(Thresh)</th>
         ${withActualROI.length ? '<th>Actual ROI</th>' : ''}
         <th>Proj</th><th>Actual</th>
       </tr></thead><tbody>`;
@@ -6302,6 +6445,8 @@ function saveSession() {
         bbEnabled: document.getElementById('port-bb-enabled')?.checked !== false,
         bbMinOppImplied: document.getElementById('port-bb-min-implied')?.value,
         bbTarget: document.getElementById('port-bb-target')?.value,
+        secondaryStack: document.getElementById('port-secondary-stack')?.value,
+        maxSpPair: document.getElementById('port-max-sp-pair')?.value,
         ownLambda: document.getElementById('port-own-lambda')?.value,
         maxAvgOwn: document.getElementById('port-max-avg-own')?.value,
         customCashPct: document.getElementById('custom-cash-pct')?.value,
@@ -6395,6 +6540,8 @@ function restoreSession() {
     if (pc.bbEnabled != null) { const el = document.getElementById('port-bb-enabled'); if (el) { el.checked = pc.bbEnabled; toggleBringBackOptions(); } }
     if (pc.bbMinOppImplied != null) { const el = document.getElementById('port-bb-min-implied'); if (el) el.value = pc.bbMinOppImplied; }
     if (pc.bbTarget != null) { const el = document.getElementById('port-bb-target'); if (el) el.value = pc.bbTarget; }
+    if (pc.secondaryStack != null) { const el = document.getElementById('port-secondary-stack'); if (el) el.value = pc.secondaryStack; }
+    if (pc.maxSpPair != null) { const el = document.getElementById('port-max-sp-pair'); if (el) el.value = pc.maxSpPair; }
     if (pc.ownLambda != null) {
       const el = document.getElementById('port-own-lambda'); if (el) el.value = pc.ownLambda;
       const lbl = document.getElementById('own-lambda-label'); if (lbl) lbl.textContent = (pc.ownLambda / 100).toFixed(2);

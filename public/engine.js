@@ -123,7 +123,7 @@ function samplePlayerScore(player, correlationShift = 0) {
   // floor field because projection sources define floor as the P10 of a *normal* start.
   // Sampled independently of the correlation shift (a pitcher bust is idiosyncratic,
   // not a symptom of the whole lineup underperforming together).
-  if (isSP && Math.random() < 0.04) {
+  if (isSP && Math.random() < _bustRate) {
     return Math.max(-30, randNorm(-2, 9));
   }
 
@@ -134,13 +134,26 @@ function samplePlayerScore(player, correlationShift = 0) {
   if (z <= 0) {
     score = median + z * leftStd;
   } else {
-    // ── Batter boom scenario (~3% of plate appearances) ───────────────────────
+    // ── Batter boom scenario (correlation-aware) ──────────────────────────────
     // Models multi-HR / bases-loaded / stolen-base games that blow through the
     // stated ceiling. Observed examples: Jake Burger 4.4× ceiling, Jose Caballero
-    // 2.2× ceiling, Jeremiah Jackson 16× stated ceiling. Sampled independently of
-    // the correlation shift — one batter's boom does not predict a teammate's boom.
-    if (!isSP && Math.random() < 0.03) {
-      score = randNorm(effectiveCeiling * 1.50, rightStd * 1.50);
+    // 2.2× ceiling, Jeremiah Jackson 16× stated ceiling. Base rate ~3% per PA-game.
+    //
+    // Fix #2: the boom PROBABILITY now scales with the positive correlation shift so
+    // a stack whose correlated z spikes booms TOGETHER — the "whole-stack-erupts-for-60"
+    // outcome that actually wins GPPs. Previously the boom fired on an independent
+    // Math.random() roll that discarded correlationShift, so each teammate could boom
+    // but never in a coordinated way, systematically thinning the joint right tail of a
+    // stack (exactly the tail GPP ROI lives on). A +1.0 shift ≈1.7×s the boom rate,
+    // +2.0 ≈2.4×s it; capped at 12%. SP excluded (pitcher booms aren't a stack effect).
+    const boomProb = !isSP
+      ? Math.min(_boomRate * 4, _boomRate * (1 + Math.max(0, correlationShift) * 0.7))
+      : 0;
+    if (boomProb > 0 && Math.random() < boomProb) {
+      // Boom magnitude also rides the correlation shift: a more strongly co-moving
+      // stack booms bigger, not just more often. Shift adds up to ~0.5σ of extra ceiling.
+      const boomCenter = effectiveCeiling * 1.50 + Math.max(0, correlationShift) * rightStd * 0.5;
+      score = randNorm(boomCenter, rightStd * 1.50);
     } else {
       score = median + z * rightStd;
     }
@@ -217,6 +230,64 @@ function getCorrScale() { return _corrScale; }
 function getSimDiversity() { return _simDiversity; }
 function getCorrDampener() { return _corrDampener; }
 
+// ── Calibratable tail-event rates (Fix #3) ───────────────────────────────────
+// _boomRate: base per-game probability a batter blows through his stated ceiling
+//            (multi-HR / bases-loaded / SB games). Scaled up by correlation in
+//            samplePlayerScore so stacks boom together.
+// _bustRate: per-start probability an SP suffers an early-exit / blow-up that
+//            produces a large negative DK score.
+// Defaults (3% / 4%) match the historical hardcoded values; computeTailRatesFromHistory
+// fits them to actuals so the simulator's tails reflect this slate-pool's real outcomes
+// rather than fixed guesses.
+const DEFAULT_BOOM_RATE = 0.03;
+const DEFAULT_BUST_RATE = 0.04;
+let _boomRate = DEFAULT_BOOM_RATE;
+let _bustRate = DEFAULT_BUST_RATE;
+function setTailRates(rates = {}) {
+  const { boomRate, bustRate } = rates || {};
+  if (boomRate != null && isFinite(boomRate)) _boomRate = Math.max(0.005, Math.min(0.10, boomRate));
+  if (bustRate != null && isFinite(bustRate)) _bustRate = Math.max(0.005, Math.min(0.12, bustRate));
+}
+function getTailRates() { return { boomRate: _boomRate, bustRate: _bustRate }; }
+
+// Estimate boom/bust rates from historical actuals.
+// A batter "boom" = an actual DK score at or above the player's stated ceiling.
+// An SP "bust"    = a negative DK score, or one below 20% of the projected median.
+// Rates are shrunk toward the defaults at low sample (full trust at 200 batter / 100 SP
+// observations) and clamped by setTailRates. Returns the fitted rates plus the raw
+// sample counts so the UI can report confidence.
+function computeTailRatesFromHistory(historyEntries, pool) {
+  const playerMap = {};
+  for (const p of (pool || [])) playerMap[(p.name || '').toLowerCase()] = p;
+
+  let batterObs = 0, batterBooms = 0, spObs = 0, spBusts = 0;
+  for (const entry of (historyEntries || [])) {
+    const actuals = entry.playerActuals;
+    if (!actuals) continue;
+    for (const [name, raw] of Object.entries(actuals)) {
+      const actual = parseFloat(raw);
+      if (isNaN(actual)) continue;
+      const p = playerMap[name.toLowerCase()];
+      if (!p) continue;
+      if (rp(p, 'P')) {
+        spObs++;
+        if (actual < 0 || (p.median > 0 && actual < p.median * 0.20)) spBusts++;
+      } else {
+        const ceil = p.ceiling || (p.median > 0 ? p.median * 1.5 : 0);
+        if (ceil > 0) { batterObs++; if (actual >= ceil) batterBooms++; }
+      }
+    }
+  }
+
+  const boomTrust = Math.min(1, batterObs / 200);
+  const bustTrust = Math.min(1, spObs / 100);
+  const rawBoom = batterObs > 0 ? batterBooms / batterObs : DEFAULT_BOOM_RATE;
+  const rawBust = spObs > 0 ? spBusts / spObs : DEFAULT_BUST_RATE;
+  const boomRate = parseFloat((DEFAULT_BOOM_RATE * (1 - boomTrust) + rawBoom * boomTrust).toFixed(4));
+  const bustRate = parseFloat((DEFAULT_BUST_RATE * (1 - bustTrust) + rawBust * bustTrust).toFixed(4));
+  return { boomRate, bustRate, batterSample: batterObs, spSample: spObs, batterBooms, spBusts };
+}
+
 // Game-environment correlation scaler.
 // Higher O/U games produce stronger same-team and same-game correlations because
 // run scoring concentrates in fewer high-scoring innings — when one batter in a
@@ -263,12 +334,15 @@ function getCorrelation(p1, p2) {
     // Apply game-environment scaler: blowout-candidate games amplify same-team
     // correlations because runs cluster in fewer big innings.
     const envScale = gameEnvCorrScale(p1, p2);
+    // Inning-burst multiplier: top-order batters (order <= 4) share inning-level
+    // run-chain effects. Add +4% when both are top-order for GPP ceiling upside.
+    const inningBurstMult = (o1 <= 4 && o2 <= 4) ? 1.04 : 1.0;
     // Adjacent batters: 0.38, 2-apart: 0.30, etc.
     // Research shows 1-2 combo has highest correlation
-    if (diff === 1) return Math.min(0.95, 0.38 * _corrScale * envScale);
-    if (diff === 2) return Math.min(0.95, 0.30 * _corrScale * envScale);
-    if (diff === 3) return Math.min(0.95, 0.22 * _corrScale * envScale);
-    return Math.min(0.95, 0.15 * _corrScale * envScale); // Same team, far apart
+    if (diff === 1) return Math.min(0.95, 0.38 * _corrScale * envScale * inningBurstMult);
+    if (diff === 2) return Math.min(0.95, 0.30 * _corrScale * envScale * inningBurstMult);
+    if (diff === 3) return Math.min(0.95, 0.22 * _corrScale * envScale * inningBurstMult);
+    return Math.min(0.95, 0.15 * _corrScale * envScale * inningBurstMult); // Same team, far apart
   }
 
   // Pitcher and own team batters: positive correlation — an ace's quality start requires
@@ -574,6 +648,149 @@ function effectiveOwn(player) {
   return player.own > 0 ? player.own : positionalOwnDefault(player);
 }
 
+// ── Ownership Projection & Input-Sanity Layer (Fix #1) ────────────────────────
+//
+// The whole leverage / field / simROI stack is downstream of the `own` numbers the
+// user uploads. Nothing previously validated that input — a stale or wrong ROO
+// ownership column produced confidently-wrong leverage and ROI. This layer builds an
+// INTERNAL ownership estimate from the same signals the field actually responds to
+// (projected value, salary, Vegas implied total, batting order, position) so we can
+//   (a) fill missing ownership with a per-player estimate instead of a flat positional
+//       constant, and
+//   (b) flag uploaded numbers that deviate hard from expectation (probable staleness).
+//
+// Method: within each roster-slot position group, players' "appeal" (value × Vegas ×
+// PA-order for batters; value × win-prob for pitchers) is softmax-normalised over a
+// fixed ownership budget = (slot count × 100%). This mirrors the structural fact that
+// summed ownership across a position equals the number of lineup slots it fills. It is a
+// heuristic, not a trained model — but it correlates ownership with value/salary/Vegas,
+// which is exactly the sanity check that was missing.
+const _OWN_SLOTS = { P: 2, C: 1, '1B': 1, '2B': 1, '3B': 1, SS: 1, OF: 3 };
+function _ownPrimaryPos(p) {
+  if (rp(p, 'P')) return 'P';
+  const pos = (p.dkPos || p.rosterPos || '').split('/')[0].trim().toUpperCase();
+  return _OWN_SLOTS[pos] != null ? pos : 'OF';
+}
+
+function projectOwnership(pool, context = {}) {
+  const { vegasData = null } = context;
+
+  // Appeal score per player — the raw driver of field ownership.
+  const appeal = new Map();
+  for (const p of pool) {
+    if (!(p.salary > 0) || !((p.median || 0) > 0)) { appeal.set(p, 0); continue; }
+    let a = (p.median / p.salary) * 1000; // pts per $1k — the dominant ownership driver
+    if (rp(p, 'P')) {
+      // Pitchers: win probability is a strong ownership pull on top of raw value.
+      if (p.winProb != null) a *= (1 + (p.winProb - 0.5) * 0.4);
+    } else {
+      // Batters: Vegas implied total and PA volume (batting order) drive ownership.
+      const it = vegasData?.[p.team]?.impliedTotal;
+      if (it != null && it > 1.5) a *= (it / 4.5);
+      a *= orderPAMult(p.order || 5);
+    }
+    appeal.set(p, Math.max(0, a));
+  }
+
+  // Group by primary position and allocate each position's ownership budget across its
+  // players with a scale-free power law: weight ∝ appeal^GAMMA. This is intentionally NOT
+  // a z-score softmax — dividing by the group's SD would amplify tiny value differences
+  // into huge ownership gaps even when every player is essentially equal value. The power
+  // law keeps ownership near-uniform when value is flat and only concentrates when a player
+  // is genuinely higher value, which is how the field actually behaves.
+  const groups = {};
+  for (const p of pool) {
+    const pos = _ownPrimaryPos(p);
+    (groups[pos] = groups[pos] || []).push(p);
+  }
+
+  const GAMMA = 2.5;   // value sensitivity — higher = more concentration on top plays
+  const OWN_CAP = 50;  // single-player ownership ceiling (a realistic chalk max)
+  const out = [];
+  for (const [pos, players] of Object.entries(groups)) {
+    const budget = (_OWN_SLOTS[pos] ?? 1) * 100;
+    const weights = players.map(p => {
+      const a = appeal.get(p) || 0;
+      return a > 0 ? Math.pow(a, GAMMA) : 0;
+    });
+    const sumW = weights.reduce((s, v) => s + v, 0) || 1;
+    // Proportional allocation of the position's ownership budget.
+    const proj = weights.map(w => budget * (w / sumW));
+    // Redistribute capped excess to the uncapped players so the group still sums to the
+    // budget. Without this, clipping at OWN_CAP leaks budget and biases every projection
+    // LOW — which made uploaded ownership look uniformly "too high" and over-fired the audit.
+    for (let iter = 0; iter < 6; iter++) {
+      let excess = 0;
+      const uncapped = [];
+      for (let i = 0; i < proj.length; i++) {
+        if (proj[i] > OWN_CAP) { excess += proj[i] - OWN_CAP; proj[i] = OWN_CAP; }
+        else if (proj[i] > 0 && proj[i] < OWN_CAP - 1e-6) uncapped.push(i);
+      }
+      if (excess <= 0.05 || !uncapped.length) break;
+      const uncSum = uncapped.reduce((s, i) => s + proj[i], 0) || 1;
+      uncapped.forEach(i => { proj[i] = Math.min(OWN_CAP, proj[i] + excess * (proj[i] / uncSum)); });
+    }
+    players.forEach((p, i) => {
+      out.push({
+        name: p.name, team: p.team, pos,
+        projectedOwn: parseFloat(Math.max(0, proj[i]).toFixed(1)),
+        uploadedOwn: p.own || 0,
+      });
+    });
+  }
+  return out;
+}
+
+// Compare uploaded ownership against the internal projection and flag SUSPECT numbers.
+//
+// The projection is a deliberately crude value-based heuristic, so it will routinely
+// disagree with a good ROO export by 10–15 points on individual players — that is NOT a
+// data-quality problem and must not be flagged, or the banner cries wolf and gets ignored.
+// We therefore flag only the one pattern that genuinely signals stale/wrong data:
+//   an uploaded ownership that is implausibly HIGH for how little value the player offers.
+// Concretely a flag requires ALL of:
+//   • uploaded ≥ OWN_FLAG_MIN              — ignore noise on low-owned players
+//   • uploaded ≥ projected × OWN_FLAG_RATIO — far more owned than any value justifies
+//   • uploaded − projected ≥ OWN_FLAG_GAP   — a large absolute gap, not a rounding nit
+// The "lower than model" direction is intentionally never flagged: a player owned less
+// than expected is ordinary field/leverage behaviour, not an error.
+const OWN_FLAG_MIN = 20;    // minimum uploaded ownership to even consider flagging
+const OWN_FLAG_RATIO = 2.5; // uploaded must be ≥ this multiple of the projection
+const OWN_FLAG_GAP = 15;    // …and at least this many points above it
+function auditOwnership(pool, context = {}) {
+  const projections = projectOwnership(pool, context);
+  const flags = [];
+  for (const r of projections) {
+    if (r.uploadedOwn <= 0) continue; // missing ownership is handled by fill, not flagged
+    const delta = parseFloat((r.uploadedOwn - r.projectedOwn).toFixed(1));
+    const ratio = r.uploadedOwn / Math.max(r.projectedOwn, 0.5);
+    if (r.uploadedOwn >= OWN_FLAG_MIN && ratio >= OWN_FLAG_RATIO && delta >= OWN_FLAG_GAP) {
+      flags.push({
+        name: r.name, team: r.team, pos: r.pos,
+        uploadedOwn: r.uploadedOwn, projectedOwn: r.projectedOwn,
+        delta, direction: 'higher',
+      });
+    }
+  }
+  flags.sort((a, b) => b.delta - a.delta);
+  return { projections, flags };
+}
+
+// Return a pool copy with ownership filled from the projection.
+// fillMissingOnly (default true): only players with own<=0 are populated — uploaded
+// numbers are left untouched. Set false to overwrite all ownership with the projection
+// (useful when no ownership file was uploaded at all). Populated values are marked with
+// ownProjected=true so the UI can distinguish modelled ownership from uploaded ownership.
+function applyOwnershipProjection(pool, context = {}, fillMissingOnly = true) {
+  const projByName = new Map(projectOwnership(pool, context).map(r => [r.name, r.projectedOwn]));
+  return pool.map(p => {
+    const proj = projByName.get(p.name);
+    if (proj == null) return p;
+    if (fillMissingOnly && p.own > 0) return p;
+    return { ...p, own: proj, ownProjected: true };
+  });
+}
+
 // GPP Score: composite metric for tournament value
 function calcGppScore(player, contestSize = 1000) {
   const ceiling = player.ceiling || 0;
@@ -856,7 +1073,13 @@ function buildPlayerContext(p, context = {}) {
     // Prefer confirmed SP, then fall back to highest-salary pitcher facing this team
     const oppPitchers = pool.filter(q => rp(q, 'P') && q.opp === p.team && q.hand);
     const oppSP = oppPitchers.find(q => q.isConfirmed) || oppPitchers.sort((a, b) => (b.salary || 0) - (a.salary || 0))[0];
-    if (oppSP?.hand) platoonMult = platoonMultiplier(p.hand, oppSP.hand);
+    if (oppSP?.hand) {
+      // Fix #5: PA-weight the starter platoon edge and account for the bullpen share.
+      // bullpenData[opp].rhpShare (if present) supplies the pen's L/R innings mix;
+      // otherwise the bullpen portion regresses to neutral.
+      const oppBullpen = bullpenData?.[p.opp] || null;
+      platoonMult = platoonMultiplierPAWeighted(p.hand, oppSP.hand, oppBullpen);
+    }
   }
 
   // ── DvP: how many DK pts the opposing team allows to this position ──────────
@@ -939,7 +1162,7 @@ function scoreSingle(p, context = {}) {
 }
 
 function scoreGpp(p, context = {}) {
-  const { contestSize = 1000, primaryStackTeam, bringBackTeam } = context;
+  const { contestSize = 1000, primaryStackTeam, bringBackTeam, secondaryStackTeam } = context;
   const pc = buildPlayerContext(p, context);
   const optBoost = optimalExposureBoost(p, context, 'gpp');
 
@@ -979,7 +1202,32 @@ function scoreGpp(p, context = {}) {
   // projections support it. Smaller than primaryStackTeam to preserve hierarchy.
   const bbDepthBoost = (bringBackTeam && p.team === bringBackTeam && p.team !== primaryStackTeam) ? 1.04 : 1.0;
 
-  return gppScore * paMult * pc.hrMult * pc.batterMult / pc.pf.run * optBoost * stackDepthBoost * bbDepthBoost * cptMult;
+  // Secondary-stack depth bonus: batters from the cross-game secondary stack team get a
+  // +5% boost so the fill/1-swap keeps the cluster intact and can grow a 2-man into a
+  // 3-man when projections support it. Sits between the primary (+7%) and bring-back
+  // (+4%) so the structural hierarchy primary > secondary > bring-back is preserved.
+  const secDepthBoost = (secondaryStackTeam && p.team === secondaryStackTeam
+    && p.team !== primaryStackTeam && p.team !== bringBackTeam) ? 1.05 : 1.0;
+
+  return gppScore * paMult * pc.hrMult * pc.batterMult / pc.pf.run * optBoost * stackDepthBoost * bbDepthBoost * secDepthBoost * cptMult;
+}
+
+// Slate-relative average batter median, memoized per pool array.
+// Fix #5: getPitcherMatchupScore previously anchored "league-average opponent" at a
+// hardcoded 7.0 DK median, which drifts with whatever scale the projection source uses
+// (different sites/seasons scale ROO medians differently). Computing the anchor from the
+// actual pool keeps the matchup signal centered regardless of projection scale.
+const _slateBatterBaselineCache = new WeakMap();
+function slateBatterMedianBaseline(pool) {
+  if (_slateBatterBaselineCache.has(pool)) return _slateBatterBaselineCache.get(pool);
+  const batters = pool.filter(p => !rp(p, 'P') && p.median > 0 && (p.isConfirmed || p.order > 0));
+  const src = batters.length >= 20 ? batters : pool.filter(p => !rp(p, 'P') && p.median > 0);
+  // Fall back to the historical 7.0 anchor when the pool is too thin to be representative.
+  const baseline = src.length >= 8
+    ? src.reduce((s, p) => s + p.median, 0) / src.length
+    : 7.0;
+  _slateBatterBaselineCache.set(pool, baseline);
+  return baseline;
 }
 
 function getPitcherMatchupScore(pitcher, context) {
@@ -996,10 +1244,11 @@ function getPitcherMatchupScore(pitcher, context) {
 
   const avgMedian = src.reduce((s, p) => s + p.median, 0) / src.length;
 
-  // Continuous linear scale anchored at league-average opponent (7.0 DK median = 0).
-  // Each 1-point below avg = +0.75, each 1-point above = −0.75.
-  // Elite matchup (avg 4.0) → +2.25; weak matchup (avg 10.0) → −2.25. Capped at ±3.
-  return Math.max(-3, Math.min(3, (7.0 - avgMedian) * 0.75));
+  // Continuous linear scale anchored at the slate's own average batter median (Fix #5),
+  // so the matchup signal is centered regardless of the projection source's scale.
+  // Each 1-point below the slate average = +0.75, each 1-point above = −0.75. Capped at ±3.
+  const anchor = slateBatterMedianBaseline(pool);
+  return Math.max(-3, Math.min(3, (anchor - avgMedian) * 0.75));
 }
 
 // ── Placement Validation ──────────────────────────────────────────────────
@@ -1343,6 +1592,17 @@ function gppStackBonus(lu, usedStackTeam, payoutType = 'top20') {
     else if (c >= 3) bonus += 1;
   });
 
+  // Secondary-stack structure bonus.
+  // The two biggest batter clusters define the lineup's structure. Reward a genuine
+  // two-stack so the 1-swap search prefers "primary + secondary" over "primary + scattered":
+  //   • a SECONDARY 2-man cluster (2nd team with exactly 2) → +0.5 — the only credit a
+  //     2-stack gets (the per-team loop above only rewards 3+), nudging mini-stacks to form.
+  //   • a DOUBLE stack (two teams each 3+) → +1.5 on top of the per-team bonuses, since two
+  //     independent correlated ceiling sources is the winning large-field GPP shape.
+  const sortedCounts = Object.values(teamCounts).sort((a, b) => b - a);
+  if (sortedCounts[1] === 2) bonus += 0.5;
+  if (sortedCounts[0] >= 3 && sortedCounts[1] >= 3) bonus += 1.5;
+
   // Batting order adjacency bonus within stacks.
   // gap=1: perfectly adjacent pair (+1.0) — highest run-chain correlation.
   // gap=2: one batter between them (+0.5) — still meaningful, e.g. 3-5 with #4 batting around them.
@@ -1466,6 +1726,77 @@ function tryPlaceStack(stackPlayers, requiredSlots, _pool) {
   return true;
 }
 
+// Min-exposure-aware trim for the sim-filter pass.
+// The sim filter generates an overflow pool and keeps the top numLineups by ROI — but a
+// naive top-N can drop the very lineups that were carrying a player/team MIN-exposure
+// target, silently violating it. This selects numLineups lineups that still satisfy the
+// MIN overrides where feasible, while otherwise preferring the highest-ROI lineups.
+//
+// candidates: simResults sorted by simROI_lb desc. Returns an array of lineups.
+// Greedy repair: start with the top-N by ROI, then for each unmet minimum swap in the
+// highest-ROI candidate that helps and swap out the lowest-ROI kept lineup that is safe
+// to remove (i.e. removing it won't push any OTHER minimum below its target).
+function selectWithMinExposure(candidates, numLineups, playerOverrides, teamExposureOverrides) {
+  const playerMin = {};
+  for (const [name, ov] of Object.entries(playerOverrides || {})) if (ov && ov.min != null) playerMin[name] = Math.ceil(numLineups * ov.min);
+  const teamMin = {};
+  for (const [team, ov] of Object.entries(teamExposureOverrides || {})) if (ov && ov.min != null) teamMin[team] = Math.ceil(numLineups * ov.min);
+  const pNames = Object.keys(playerMin), tNames = Object.keys(teamMin);
+  if (!pNames.length && !tNames.length) return candidates.slice(0, numLineups).map(r => r.lu);
+
+  // Tag each candidate with which min-targeted players it rosters and which min-targeted
+  // teams it stacks (3+ batters — matches teamStackCounts semantics).
+  const tag = r => {
+    const players = r.lu.filter(Boolean);
+    const names = new Set(players.map(p => p.name));
+    const teamCts = {};
+    players.forEach(p => { if (!rp(p, 'P')) teamCts[p.team] = (teamCts[p.team] || 0) + 1; });
+    const stackTeams = new Set(Object.entries(teamCts).filter(([, n]) => n >= 3).map(([t]) => t));
+    return { lu: r.lu, players: pNames.filter(n => names.has(n)), teams: tNames.filter(t => stackTeams.has(t)) };
+  };
+  const tagged = candidates.map(tag); // preserves ROI-desc order
+  const kept = tagged.slice(0, numLineups);
+  const rest = tagged.slice(numLineups);
+
+  const pCount = {}; pNames.forEach(n => pCount[n] = 0);
+  const tCount = {}; tNames.forEach(t => tCount[t] = 0);
+  kept.forEach(k => { k.players.forEach(n => pCount[n]++); k.teams.forEach(t => tCount[t]++); });
+
+  let guard = 0;
+  while (guard++ < numLineups * 3) {
+    // Pick the most-deficient unmet minimum.
+    let need = null, needType = null, maxDef = 0;
+    for (const n of pNames) { const def = playerMin[n] - pCount[n]; if (def > maxDef) { maxDef = def; need = n; needType = 'p'; } }
+    for (const t of tNames) { const def = teamMin[t] - tCount[t]; if (def > maxDef) { maxDef = def; need = t; needType = 't'; } }
+    if (!need) break; // every minimum satisfied
+
+    const helps = c => needType === 'p' ? c.players.includes(need) : c.teams.includes(need);
+    const inIdx = rest.findIndex(helps);
+    if (inIdx === -1) break; // no candidate can satisfy this minimum — genuinely infeasible
+
+    // Lowest-ROI kept lineup (kept is ROI-desc, scan from end) that doesn't help this need
+    // and whose removal won't drop another minimum below target.
+    let outPos = -1;
+    for (let i = kept.length - 1; i >= 0; i--) {
+      const k = kept[i];
+      if (helps(k)) continue;
+      let safe = true;
+      for (const n of k.players) if (pCount[n] <= playerMin[n]) { safe = false; break; }
+      if (safe) for (const t of k.teams) if (tCount[t] <= teamMin[t]) { safe = false; break; }
+      if (!safe) continue;
+      outPos = i; break;
+    }
+    if (outPos === -1) break; // can't free a slot without breaking another minimum
+
+    const incoming = rest.splice(inIdx, 1)[0];
+    const outgoing = kept.splice(outPos, 1)[0];
+    outgoing.players.forEach(n => pCount[n]--); outgoing.teams.forEach(t => tCount[t]--);
+    incoming.players.forEach(n => pCount[n]++); incoming.teams.forEach(t => tCount[t]++);
+    kept.push(incoming); rest.push(outgoing);
+  }
+  return kept.map(k => k.lu);
+}
+
 async function buildPortfolio(pool, opts = {}, onProgress = null) {
   const {
     numLineups = 20,
@@ -1487,7 +1818,7 @@ async function buildPortfolio(pool, opts = {}, onProgress = null) {
     iterations = 5000,
     simFilter = false,     // if true, generate overflow lineups and keep top numLineups by sim ROI
     simFilterPct = 50,     // % of extra lineups to generate beyond numLineups (e.g. 50 = 150% total)
-    simFilterSims = 1500,  // number of sim iterations for the filter pass (higher = more accurate ranking)
+    simFilterSims = 5000,  // number of sim iterations for the filter pass (higher = more accurate ranking, 5K reduces SE enough for reliable ROI filtering)
     payoutType = 'top20',  // payout structure passed to simulatePortfolio for filter scoring
     simROIMin = null,      // lower bound for sim ROI band (e.g. -15 = -15%). null = no lower bound
     simROIMax = null,      // upper bound for sim ROI band (e.g. 0 = 0%). null = no upper bound
@@ -1499,6 +1830,7 @@ async function buildPortfolio(pool, opts = {}, onProgress = null) {
     bbMinOppImplied = 4.0,   // min opponent implied total to trigger bring-back
     bbTarget = null,         // forced bring-back count (null = auto: 1 or 2 based on game O/U)
     maxAvgOwnership = 0,     // reject lineups whose avg player ownership exceeds this % (0 = off)
+    secondaryStack = null,   // cross-game secondary stack: null/'off' = disabled, 'auto', 2, or 3
   } = opts;
 
   // targetLineups: how many to generate before sim-filter trims back to numLineups.
@@ -1525,6 +1857,27 @@ async function buildPortfolio(pool, opts = {}, onProgress = null) {
   const bannedNames = new Set(
     pool.filter(p => bannedTeams.includes(p.team)).map(p => p.name)
   );
+
+  // ── Min-salary feasibility guard ────────────────────────────────────────────
+  // The min-salary floor (default 48500) rejects any lineup totalling below it. On a
+  // cheap or short slate the pool's richest valid lineup can fall under that floor, in
+  // which case EVERY candidate is rejected and the portfolio silently comes back empty
+  // (the UI then shows nothing). Build the richest valid lineup (greedy by salary) to
+  // find the achievable ceiling; if the requested floor sits above it, lower the floor
+  // to a feasible value and surface a warning rather than emitting zero lineups.
+  let effectiveMinSalary = minSalary;
+  let minSalaryRelaxed = null;
+  if (minSalary > 0) {
+    const richest = greedyFill(pool, p => p.salary || 0, bannedNames, new Array(ROSTER_SIZE).fill(null), allowBvP, 5);
+    if (richest && richest.every(Boolean)) {
+      const maxReachable = richest.reduce((s, p) => s + (p.salary || 0), 0);
+      if (minSalary > maxReachable) {
+        effectiveMinSalary = Math.max(0, maxReachable - 300);
+        minSalaryRelaxed = { requested: minSalary, appliedFloor: effectiveMinSalary, maxReachable };
+      }
+    }
+  }
+
   // Also filter stacks that belong to banned teams
   const allowedStacks3 = stacks3.filter(s => !bannedTeams.includes(s.team));
   const allowedStacks5 = stacks5.filter(s => !bannedTeams.includes(s.team));
@@ -1661,6 +2014,13 @@ async function buildPortfolio(pool, opts = {}, onProgress = null) {
   // provides an independent escape path for "all stacks exhausted" deadlocks.
   let nullLuStreak = 0;
   const MAX_NULL_STREAK = Math.max(25, targetLineups * 3); // 60 for 20 lineups
+  // Salary-floor relaxation: when the min-salary floor persistently rejects otherwise-valid
+  // lineups it's set higher than this pool/stack combination can reach, so we step it down
+  // rather than let it starve the portfolio to empty (see the feasibility pre-clamp above).
+  // Keyed on cumulative salaryFail (like the null-lu relaxation) so interspersed accepts
+  // don't stall the step-down; on a healthy slate the floor is reachable and this never fires.
+  const SALARY_RELAX_AFTER = 25;   // cumulative salary fails per floor step-down
+  const SALARY_RELAX_STEP = 1000;  // amount to lower the floor each relaxation tick
 
   while (lineups.length < targetLineups && attempts < maxAttempts) {
     attempts++;
@@ -1676,7 +2036,10 @@ async function buildPortfolio(pool, opts = {}, onProgress = null) {
         // especially for batters in GPP stacks. Hard cap gives exact enforcement.
         // max(1,...) prevents floor rounding to 0 on small lineup counts, which would
         // immediately exclude everyone and hang the generator.
-        const hardMax = Math.max(1, Math.floor(numLineups * ov.max)) + exposureRelax;
+        // NOTE: explicit user overrides are NOT relaxed by exposureRelax (unlike the
+        // global default cap below) — a user-set max is a directive, not a soft target.
+        // This matches the team-override path, which also omits exposureRelax.
+        const hardMax = Math.max(1, Math.floor(numLineups * ov.max));
         if (count >= hardMax) excludeOverExposed.add(p.name);
       } else if (lineups.length > 0) {
         // Hard cap for global defaults: exclude a player after they've hit the absolute
@@ -1805,7 +2168,7 @@ async function buildPortfolio(pool, opts = {}, onProgress = null) {
         bannedStackTeams, forcedStackTeams, stackSize, teamStackCounts, payoutType,
         exposureRelax > 0 ? 3.0 : 0,  // jitter: add score noise in recycle phase to break deterministic deadlock
         effectiveOwnershipLambda,
-        bbEnabled, bbMinOppImplied, bbTarget
+        bbEnabled, bbMinOppImplied, bbTarget, secondaryStack
       );
 
       // Capture which stack IDs were newly chosen during this attempt.
@@ -1861,10 +2224,22 @@ async function buildPortfolio(pool, opts = {}, onProgress = null) {
 
     const prevCount = lineups.length;
     if (lu && lu.every(Boolean)) {
-      // Reject lineups below the minimum salary floor (user-configurable)
-      if (minSalary > 0) {
+      // Reject lineups below the minimum salary floor (user-configurable).
+      // effectiveMinSalary is the feasibility-clamped floor — equal to minSalary on a
+      // normal slate, lowered automatically when the pool can't reach the requested floor.
+      if (effectiveMinSalary > 0) {
         const luSalary = lu.reduce((s, p) => s + (p.salary || 0), 0);
-        if (luSalary < minSalary) { _diag.salaryFail = (_diag.salaryFail || 0) + 1; continue; }
+        if (luSalary < effectiveMinSalary) {
+          _diag.salaryFail = (_diag.salaryFail || 0) + 1;
+          // Every SALARY_RELAX_AFTER cumulative rejections, step the floor down so a floor
+          // that's too high for this pool can't deadlock the build to empty.
+          if (_diag.salaryFail % SALARY_RELAX_AFTER === 0 && effectiveMinSalary > 0) {
+            effectiveMinSalary = Math.max(0, effectiveMinSalary - SALARY_RELAX_STEP);
+            if (minSalaryRelaxed) minSalaryRelaxed.appliedFloor = effectiveMinSalary;
+            else minSalaryRelaxed = { requested: minSalary, appliedFloor: effectiveMinSalary, maxReachable: null };
+          }
+          continue;
+        }
       }
 
       // Validate stack size constraint: reject lineups that don't meet the forced stack size
@@ -2111,7 +2486,10 @@ async function buildPortfolio(pool, opts = {}, onProgress = null) {
       }
     } else {
       inBandCount = simResults.length; // no band — all qualify
-      kept = simResults.slice(0, numLineups).map(r => r.lu);
+      // Min-exposure-aware trim: keep the top numLineups by ROI but protect any player/team
+      // MIN-exposure targets that a naive top-N would drop. (When an ROI band is set, the
+      // band selection above takes precedence and min-protection is not applied.)
+      kept = selectWithMinExposure(simResults, numLineups, playerOverrides, teamExposureOverrides);
     }
 
     // Record per-lineup simROI for the kept set so the UI can show the distribution
@@ -2214,6 +2592,7 @@ async function buildPortfolio(pool, opts = {}, onProgress = null) {
     stackSize,             // forced stack size (3|4|5|null) — used by UI for contextual advice
     exposureRelaxUsed: exposureRelax, // > 0 means caps were opened to fill lineups
     exposureCapBreached, // [{ name, count, pct, originalCap, originalCapPct, isPitcher }] — players over their stated cap
+    minSalaryRelaxed,    // { requested, appliedFloor, maxReachable } when the min-salary floor was auto-lowered to stay feasible; null otherwise
     virtualStackTeams: [...virtualStackTeams],
     pitcherWarnings, teamExposureWarnings,
     bannedTeams, lockedTeams,
@@ -2237,7 +2616,7 @@ function generateSingleLineup(pool, excludeNames, context, iterations, allowBvP 
 
 // lockedTeam: if set, this team's stack must be used for this lineup.
 // fullPool: the unfiltered pool used for virtual stack synthesis (may differ from pool after exclusions).
-function generateGppLineup(pool, excludeNames, context, stacks3, stacks5, usedStackIds, iterations, contestSize, lockedTeam, fullPool, allowBvP = false, forceInclude = new Set(), prefer5Man = null, bannedStackTeams = new Set(), forcedStackTeams = new Set(), stackSize = null, teamStackCounts = {}, payoutType = 'top20', jitter = 0, ownershipLambda = 0, bbEnabled = true, bbMinOppImplied = 4.0, bbTarget = null) {
+function generateGppLineup(pool, excludeNames, context, stacks3, stacks5, usedStackIds, iterations, contestSize, lockedTeam, fullPool, allowBvP = false, forceInclude = new Set(), prefer5Man = null, bannedStackTeams = new Set(), forcedStackTeams = new Set(), stackSize = null, teamStackCounts = {}, payoutType = 'top20', jitter = 0, ownershipLambda = 0, bbEnabled = true, bbMinOppImplied = 4.0, bbTarget = null, secondaryStackTarget = null) {
   const requiredSlots = new Array(ROSTER_SIZE).fill(null);
   let usedStackTeam = null;
 
@@ -2299,8 +2678,14 @@ function generateGppLineup(pool, excludeNames, context, stacks3, stacks5, usedSt
     // is measurably higher than the base projection (i.e. batters are genuinely correlated).
     const corrBonusA = getStackCorrBonus(a);
     const corrBonusB = getStackCorrBonus(b);
-    const scoreA = a.proj * (stackImplied(a.team) / 4.5) - blendedStackOwn(a) * 0.3 - repeatPenaltyA + adjBonusA + corrBonusA;
-    const scoreB = b.proj * (stackImplied(b.team) / 4.5) - blendedStackOwn(b) * 0.3 - repeatPenaltyB + adjBonusB + corrBonusB;
+    // PRIMARY SIGNAL: use analytical P90 (correlated upside) instead of mean projection
+    // This promotes stacks with high ceiling and tight correlation over high mean but spread
+    const stackPlayersA = a.players.map(name => pool.find(p => p.name.toLowerCase() === name.toLowerCase())).filter(Boolean);
+    const stackPlayersB = b.players.map(name => pool.find(p => p.name.toLowerCase() === name.toLowerCase())).filter(Boolean);
+    const p90A = stackPlayersA.length >= 2 ? calcAnalyticalStackP90(stackPlayersA) : a.proj || 0;
+    const p90B = stackPlayersB.length >= 2 ? calcAnalyticalStackP90(stackPlayersB) : b.proj || 0;
+    const scoreA = p90A * (stackImplied(a.team) / 4.5) - blendedStackOwn(a) * 0.3 - repeatPenaltyA + adjBonusA + corrBonusA;
+    const scoreB = p90B * (stackImplied(b.team) / 4.5) - blendedStackOwn(b) * 0.3 - repeatPenaltyB + adjBonusB + corrBonusB;
     return scoreB - scoreA;
   };
   // Multi-factor game-environment gate for stack selection.
@@ -2500,8 +2885,31 @@ function generateGppLineup(pool, excludeNames, context, stacks3, stacks5, usedSt
   const stackOpp = usedStackTeam ? (pool.find(p => p.team === usedStackTeam && p.opp))?.opp : null;
   const stackOppImplied = stackOpp ? (vegasData[stackOpp]?.impliedTotal || 0) : 0;
   const bbGameTotal = vegasData[usedStackTeam]?.gameTotal || 0;
+  // Reserve hitter slots for a secondary stack so bring-back + secondary don't both try to
+  // consume the same room. DK rosters have 8 hitter slots; a 5-primary + 3-secondary already
+  // fills all 8, so on deep primaries the bring-back is trimmed (or skipped) in favour of the
+  // cross-game secondary, which adds an independent ceiling source rather than a same-game hedge.
+  //
+  // Secondary stacking is a large-slate strategy. In AUTO mode it stands down on small slates,
+  // where forcing a second stack just clones lineups (no room for diversity) and is poor
+  // strategy on a concentrated slate anyway. The right measure is the number of games that
+  // actually contain a STACKABLE team (≥4 batters) — the raw game count over-counts venues
+  // where no real secondary is possible (a team with 1–2 listed players). An explicit 2/3
+  // honours the user's deliberate choice regardless of slate size.
+  const _secTeamBatters = {};
+  pool.forEach(p => { if (!rp(p, 'P') && p.salary > 0 && ((p.median || 0) > 0 || (p.ceiling || 0) > 0)) _secTeamBatters[p.team] = (_secTeamBatters[p.team] || 0) + 1; });
+  const stackableGames = new Set(
+    pool.filter(p => !rp(p, 'P') && p.game && (_secTeamBatters[p.team] || 0) >= 4).map(p => p.game)
+  ).size;
+  const secActive = !!secondaryStackTarget && secondaryStackTarget !== 'off'
+    && !(secondaryStackTarget === 'auto' && stackableGames < 5);
+  const secReserve = secActive
+    ? (secondaryStackTarget === 'auto' ? 2 : parseInt(secondaryStackTarget) || 0)
+    : 0;
   if (bbEnabled && usedStackTeam && stackOpp && stackOppImplied >= bbMinOppImplied) {
-    const bringBackTarget = bbTarget != null ? bbTarget : (bbGameTotal >= 11.0 ? 2 : 1);
+    const primaryBatters = requiredSlots.filter(p => p && !rp(p, 'P')).length;
+    const bbRoom = Math.max(0, 8 - primaryBatters - secReserve);
+    const bringBackTarget = Math.min(bbRoom, bbTarget != null ? bbTarget : (bbGameTotal >= 11.0 ? 2 : 1));
 
     {
       const alreadyPlaced = new Set(requiredSlots.filter(Boolean).map(p => p.name));
@@ -2518,8 +2926,12 @@ function generateGppLineup(pool, excludeNames, context, stacks3, stacks5, usedSt
       ).sort((a, b) => {
         const oMa = orderPAMult(a.order), oMb = orderPAMult(b.order);
         const vegasScale = stackOppImplied / 4.5;
-        const sa = ((a.ceiling || 0) * 0.65 + (a.median || 0) * 0.35) * oMa * vegasScale - (a.own || 0) * 0.06;
-        const sb = ((b.ceiling || 0) * 0.65 + (b.median || 0) * 0.35) * oMb * vegasScale - (b.own || 0) * 0.06;
+        // Ownership-weighted scoring: divide by own^0.6 to reduce over-owned bring-backs
+        // This creates natural diversification without explicit capping
+        const ownWeightA = Math.pow(Math.max(a.own || 1, 1), 0.6);
+        const ownWeightB = Math.pow(Math.max(b.own || 1, 1), 0.6);
+        const sa = ((a.ceiling || 0) * 0.65 + (a.median || 0) * 0.35) * oMa * vegasScale / ownWeightA - (a.own || 0) * 0.06;
+        const sb = ((b.ceiling || 0) * 0.65 + (b.median || 0) * 0.35) * oMb * vegasScale / ownWeightB - (b.own || 0) * 0.06;
         return sb - sa;
       });
 
@@ -2548,10 +2960,93 @@ function generateGppLineup(pool, excludeNames, context, stacks3, stacks5, usedSt
     }
   }
 
+  // ── Secondary stack: a 2–3 man cluster from a DIFFERENT game's team ──────────
+  // The classic large-field two-stack (4-3 / 5-2 / 4-2-2). Unlike the bring-back (same
+  // game as the primary — a hedge that both sides erupt), this adds a SECOND, independent
+  // correlated ceiling source from another game, which is the structure that actually wins
+  // big GPPs. Best-effort: if no eligible team fits the remaining slots/salary, the lineup
+  // is still valid (the optimizer fills the rest). Skipped entirely when secReserve === 0.
+  let usedSecondaryTeam = null;
+  if (secReserve > 0 && usedStackTeam) {
+    const primaryGame = (pool.find(p => p.team === usedStackTeam) || {}).game || null;
+    const battersPlaced = requiredSlots.filter(p => p && !rp(p, 'P')).length;
+    const openHitterSlots = 8 - battersPlaced;
+    if (openHitterSlots >= 2) {
+      const excludeTeams = new Set([usedStackTeam, stackOpp, usedBringBackTeam].filter(Boolean));
+      const rosteredSpOpps = new Set(requiredSlots.filter(p => p && rp(p, 'P') && p.opp).map(p => p.opp));
+      // Eligible secondary teams: have batters, in a DIFFERENT game than the primary, pass
+      // the environment gate, not banned, and (unless allowBvP) not the opponent of an SP
+      // we've already rostered (which would create a banned batter-vs-pitcher pairing).
+      const teamHasBatters = {};
+      pool.forEach(p => {
+        if (rp(p, 'P') || excludeTeams.has(p.team) || excludeNames.has(p.name)) return;
+        if (!(p.salary > 0) || !((p.median || 0) > 0 || (p.ceiling || 0) > 0)) return;
+        if (primaryGame && p.game === primaryGame) return;   // must be a different game
+        if (!allowBvP && rosteredSpOpps.has(p.team)) return; // would clash with our SP
+        if (bannedStackTeams.has(p.team)) return;
+        if (!passesEnvironment(p.team)) return;
+        teamHasBatters[p.team] = (teamHasBatters[p.team] || 0) + 1;
+      });
+      // Eligible teams with ≥2 batters; in auto mode require a genuinely good run
+      // environment (≥4.3 implied) up front so the gate doesn't depend on iteration order.
+      const autoMode = secondaryStackTarget === 'auto';
+      let eligibleTeams = Object.keys(teamHasBatters).filter(t => teamHasBatters[t] >= 2);
+      if (autoMode) eligibleTeams = eligibleTeams.filter(t => stackImplied(t) >= 4.3);
+      eligibleTeams.sort((a, b) => stackImplied(b) - stackImplied(a));
+      // Rotate the secondary across the portfolio: shuffle the top few environment-qualified
+      // teams so different lineups pair with different second games. Strict best-first would
+      // clone the same secondary into every lineup, collapsing diversity (dup exhaustion).
+      const topK = eligibleTeams.slice(0, Math.min(4, eligibleTeams.length));
+      for (let i = topK.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [topK[i], topK[j]] = [topK[j], topK[i]]; }
+      const orderedTeams = [...topK, ...eligibleTeams.slice(4)];
+      for (const team of orderedTeams) {
+        // Size up to 3 only when there's room and the total is strong (auto); explicit
+        // sizes (2/3) always attempt, clamped to the open hitter slots.
+        let size = autoMode
+          ? (openHitterSlots >= 3 && stackImplied(team) >= 4.6 ? 3 : 2)
+          : Math.min(parseInt(secondaryStackTarget) || 2, openHitterSlots);
+        size = Math.min(size, openHitterSlots);
+        if (size < 2) continue;
+
+        // Select this team's batters that fit the REMAINING open slots. We can't reuse
+        // buildVirtualStack here — it picks the best adjacency window regardless of position,
+        // but the primary stack has already consumed C/1B/2B/etc., so the secondary must be
+        // drawn from players eligible for whatever slots are still open (mostly SS/OF). Sort
+        // by PA-weighted ceiling so the cluster still skews to high-upside top-of-order bats.
+        const teamBatters = pool.filter(p =>
+          p.team === team && !rp(p, 'P') && !excludeNames.has(p.name) &&
+          !requiredSlots.some(rs => rs && rs.name === p.name) &&
+          p.salary > 0 && ((p.median || 0) > 0 || (p.ceiling || 0) > 0)
+        ).sort((a, b) =>
+          ((b.ceiling || 0) * 0.6 + (b.median || 0) * 0.4) * orderPAMult(b.order)
+          - ((a.ceiling || 0) * 0.6 + (a.median || 0) * 0.4) * orderPAMult(a.order)
+        );
+
+        // Tentatively place up to `size` into open slots; roll back if we can't reach 2 so
+        // we never scatter a lone batter from a team that couldn't form a real secondary.
+        const placedIdx = [];
+        for (const sp of teamBatters) {
+          if (placedIdx.length >= size) break;
+          const salUsed = requiredSlots.reduce((s, p) => s + (p ? p.salary : 0), 0);
+          const openSlots = requiredSlots.filter(p => !p).length;
+          if (salUsed + sp.salary + (openSlots - 1) * 3500 > SALARY_CAP) continue;
+          for (let i = 0; i < ROSTER_SIZE; i++) {
+            if (requiredSlots[i] || !DK_SLOTS[i].eligible(sp)) continue;
+            requiredSlots[i] = sp;
+            placedIdx.push(i);
+            break;
+          }
+        }
+        if (placedIdx.length >= 2) { usedSecondaryTeam = team; break; }
+        placedIdx.forEach(i => { requiredSlots[i] = null; }); // roll back partial placement
+      }
+    }
+  }
+
   // Precompute all player scores once — avoids re-evaluating the same scoreGpp context
   // on every greedy swap (was ~30M calls for a 20-lineup run). Stack/bring-back context
   // is stable within this call, so caching is safe.
-  const scoreCtx = { ...context, pool, contestSize, primaryStackTeam: usedStackTeam, bringBackTeam: usedBringBackTeam };
+  const scoreCtx = { ...context, pool, contestSize, primaryStackTeam: usedStackTeam, bringBackTeam: usedBringBackTeam, secondaryStackTeam: usedSecondaryTeam };
   const baseScores = new Map(pool.map(p => [p.name, scoreGpp(p, scoreCtx)]));
   // Always apply jitter: 0.5 FPTS amplitude in the first cycle to break the determinism
   // that causes identical non-stack fillers across attempts (which floods dup tracking);
@@ -3024,6 +3519,34 @@ function platoonMultiplier(batterHand, pitcherHand) {
   return 1.0;
 }
 
+// ── PA-weighted platoon (starter + bullpen) ──────────────────────────────────
+// Fix #5: a batter faces the opposing STARTER for only ~62% of his plate appearances;
+// the other ~38% come against the bullpen. Applying the full starter-hand platoon edge
+// to 100% of expected production (the old behaviour) systematically overstates it,
+// especially against a starter likely to be lifted early.
+//
+// We PA-weight the starter platoon edge by the starter share and handle the bullpen
+// share separately:
+//   • If the opposing bullpen's right-handed-innings share is known (bullpenInfo.rhpShare,
+//     0–1), blend the reliever-platoon edge across that L/R mix.
+//   • Otherwise the bullpen share regresses to neutral (1.0) — we don't invent a lean we
+//     can't support, but we also stop pretending the starter faces every PA.
+// STARTER_PA_SHARE is conservative; bumping it toward 1.0 recovers the old behaviour.
+const STARTER_PA_SHARE = 0.62;
+function platoonMultiplierPAWeighted(batterHand, starterHand, bullpenInfo = null) {
+  if (!batterHand || !starterHand) return 1.0;
+  const starterEdge = platoonMultiplier(batterHand, starterHand);
+
+  let bullpenEdge = 1.0;
+  const rhpShare = bullpenInfo && bullpenInfo.rhpShare != null ? bullpenInfo.rhpShare : null;
+  if (rhpShare != null && rhpShare >= 0 && rhpShare <= 1) {
+    bullpenEdge = rhpShare * platoonMultiplier(batterHand, 'R')
+                + (1 - rhpShare) * platoonMultiplier(batterHand, 'L');
+  }
+
+  return STARTER_PA_SHARE * starterEdge + (1 - STARTER_PA_SHARE) * bullpenEdge;
+}
+
 // ── Unconfirmed Lineup Penalty ───────────────────────────────────────────────
 // Reduces the optimizer score for players not yet confirmed in the batting order.
 // Only activates when context.hasConfirmedData = true (confirmed lineups have been
@@ -3192,8 +3715,12 @@ function buildFieldLineup(pool, cache = null) {
       for (const t of secTeams) { rs -= secTeamOwn[t]; if (rs <= 0) { secondTeam = t; break; } }
 
       const miniPool = miniCandsBatters.filter(p => p.team === secondTeam);
+      // Variable secondary size: ~35% of field lineups run a 3-man secondary, the rest 2-man.
+      // Mirrors the real field (and now our own builder, which can place a 2–3 secondary), so
+      // simROI compares like-for-like instead of against a field that only ever 2-stacks.
+      const miniTarget = Math.random() < 0.35 ? 3 : 2;
       let miniPlaced = 0;
-      for (let i = 2; i < ROSTER_SIZE && miniPlaced < 2; i++) {
+      for (let i = 2; i < ROSTER_SIZE && miniPlaced < miniTarget; i++) {
         if (lu[i]) continue;
         const slot = DK_SLOTS[i];
         const eligible = miniPool.filter(p => !usedNames.has(p.name) && slot.eligible(p));
@@ -3220,6 +3747,14 @@ function buildFieldLineup(pool, cache = null) {
 
 // Sample a full lineup score with intra-lineup correlation using Cholesky decomposition.
 // Reuses the same asymmetric distribution as samplePlayerScore but with correlated z-scores.
+//
+// Fix #4: applies the shared _corrDampener (default 1.0) rather than a hardcoded 0.5.
+// Previously this path used 0.5 while simulateLineup used _corrDampener, so the
+// displayed P10/P50/P90 (from simulateLineup) and the cashRate/ROI numbers (from this
+// path, via simulatePortfolio) were computed at different correlation strengths.
+// Both paths now share the same dampener so the distribution shown to the user matches
+// the distribution the ROI engine ranks on. The user-facing corrDampener slider still
+// scales both consistently.
 function sampleCorrelatedLineup(players, L) {
   const n = players.length;
   const z = [];
@@ -3232,7 +3767,7 @@ function sampleCorrelatedLineup(players, L) {
   }
   let total = 0;
   for (let i = 0; i < n; i++) {
-    total += samplePlayerScore(players[i], correlated[i] * 0.5);
+    total += samplePlayerScore(players[i], correlated[i] * _corrDampener);
   }
   return total;
 }
@@ -3242,6 +3777,88 @@ function sampleCorrelatedLineup(players, L) {
 // fieldLineups: number of synthetic opponent lineups to simulate (field size proxy).
 // Async: yields to the UI thread every 200 field sims and every 5 user lineups
 // so the browser never freezes on large portfolios.
+// ── Lineup duplication estimate ("dupes") ────────────────────────────────────
+// Estimates how many OTHER entries in a contest of `contestSize` are expected to be
+// IDENTICAL to this lineup. Dupes split the top of the payout: a lineup duplicated 40×
+// in a 100k-field GPP shares any first-place finish 41 ways, so low dupes = high
+// leverage. This is the headline metric SaberSim/Stokastic charge for, and it is the
+// mechanical reason behind the "high cash rate / negative ROI" failure mode — chalk
+// builds win when everyone else's identical build also wins.
+//
+// Model: each field entry is approximated as an independent draw whose probability of
+// matching this exact lineup is the product of its players' ownership fractions. The raw
+// independent product massively UNDERstates real dupes because the field clusters onto a
+// small set of valid, high-projection constructions — a 5-man stack is effectively ONE
+// correlated decision, not five independent ones. We correct for this clustering by
+// raising the product to DUPE_CONCENTRATION (≈0.5): for a 10-man roster this behaves as
+// though ~5 independent choices drive duplication, which lands dupe counts in the
+// observed range (a chalk lineup ≈ 8–10 dupes in a 100k field, a contrarian one ≈ 0).
+// Returns { expected, pUnique, risk }.
+const DUPE_CONCENTRATION = 0.5;
+function estimateDupes(players, contestSize = 1000) {
+  const valid = (players || []).filter(Boolean);
+  if (!valid.length || contestSize <= 1) return { expected: 0, pUnique: 1, risk: 'Unique' };
+  let logProd = 0;
+  for (const p of valid) {
+    // Clamp ownership into a sane range; treat missing/zero ownership as a small default
+    // so a single un-projected player doesn't collapse the whole estimate to zero.
+    const ownPct = p.own > 0 ? p.own : 3;
+    logProd += Math.log(Math.min(0.95, Math.max(0.005, ownPct / 100)));
+  }
+  const expected = (contestSize - 1) * Math.exp(logProd * DUPE_CONCENTRATION);
+  const pUnique = Math.exp(-expected); // Poisson P(0 other identical entries)
+  const risk = expected < 0.5 ? 'Unique' : expected < 2 ? 'Low' : expected < 8 ? 'Med' : 'High';
+  return { expected, pUnique, risk };
+}
+
+// ── Sim-derived "optimal lineup %" + true leverage ───────────────────────────
+// For each Monte Carlo draw we sample every player's fantasy score (with a shared
+// per-team game-environment shock so a team's bats boom together — the dominant MLB
+// correlation), build the highest-scoring valid lineup for that draw, and tally
+// appearances. A player's optimal% = fraction of draws in which they land in the optimal
+// lineup. This is the game-theory leverage signal the paid tools sell:
+//   trueLeverage = optimal% − ownership%
+// so a player optimal in 30% of winning lineups but only 10% owned is +20 (a strong GPP
+// play), while a 40%-owned chalk bat that's optimal 25% of the time is −15 (a fade).
+// Cheap by design: independent per-player sampling + one shared team shock + a greedy
+// fill per draw — no Cholesky, so 300–500 draws over a full pool run in well under a sec.
+function computeOptimalExposure(pool, opts = {}) {
+  const { numDraws = 400, allowBvP = false, maxBattersPerTeam = 5, teamShock = 0.35 } = opts;
+  const players = (pool || []).filter(p => p && p.salary > 0 && p.median > 0);
+  if (players.length < ROSTER_SIZE) return {};
+
+  const counts = new Map();
+  for (const p of players) counts.set(p.name, 0);
+
+  for (let d = 0; d < numDraws; d++) {
+    const teamShocks = new Map();
+    const drawScores = new Map();
+    for (const p of players) {
+      const team = p.team || '?';
+      if (!teamShocks.has(team)) teamShocks.set(team, randNorm(0, 1));
+      const base = samplePlayerScore(p);
+      // Same-team correlation: shift batters by a shared team shock scaled by their own
+      // upside spread, so a team that "booms" this draw pulls its whole stack up together.
+      // Pitchers are left idiosyncratic (no positive same-team-bat correlation).
+      const isP = rp(p, 'P');
+      const spread = Math.max(1, (p.ceiling || p.median) - (p.median || 0));
+      const score = base + (isP ? 0 : teamShock * teamShocks.get(team) * spread);
+      drawScores.set(p.name, Math.max(0, score));
+    }
+    const lu = greedyFill(players, q => drawScores.get(q.name) || 0, new Set(),
+                          new Array(ROSTER_SIZE).fill(null), allowBvP, maxBattersPerTeam);
+    if (!lu || lu.some(x => !x)) continue;
+    for (const p of lu) counts.set(p.name, (counts.get(p.name) || 0) + 1);
+  }
+
+  const out = {};
+  for (const p of players) {
+    const pct = parseFloat((counts.get(p.name) / numDraws * 100).toFixed(1));
+    out[p.name] = { optimalPct: pct, trueLeverage: parseFloat((pct - (p.own || 0)).toFixed(1)) };
+  }
+  return out;
+}
+
 async function simulatePortfolio(lineups, pool, numSims = 2000, contestType = 'gpp', manualCashLine = null, manualWinLine = null, payoutType = 'top20', contestSize = 1000, skipLineupStats = false, onSimProgress = null, customPayoutConfig = null) {
   if (!lineups.length || !pool.length) return [];
 
@@ -3258,6 +3875,62 @@ async function simulatePortfolio(lineups, pool, numSims = 2000, contestType = 'g
   };
   const pc = (isCash ? { cashPct: 0.50, cashMult: 1.9, winMult: 1.9, winPct: 0.50 }
                      : (payoutConfig[payoutType] || payoutConfig.top20));
+
+  // ── Multi-tier payout curve (Fix #3) ────────────────────────────────────────
+  // Real GPP payouts have many rungs (top 0.1%, 0.5%, 1%, 2%, 5%, 10%, 20% …), each
+  // paying a different multiple of the entry fee. The old model collapsed this to two
+  // points (min-cash + top-0.5%), which under-rewards the 5×–40× mid-ladder finishes
+  // that actually drive GPP ROI — exactly the finishes a high-ceiling lineup earns.
+  //
+  // Each tier is { pctTop, mult, lev }: finishing within the top `pctTop` fraction of
+  // the field pays `mult`× the entry fee; `lev` marks the exclusive tiers where field
+  // duplication matters, so ownLeverage is applied there. Tiers are evaluated as DISJOINT
+  // bands (a top-2% finish is paid the 2% rung, not also the 5%/10%/20% rungs), so there
+  // is no double counting. cash/custom derive a 2-tier curve that exactly reproduces the
+  // previous behaviour.
+  const STANDARD_TIERS = {
+    top20: [
+      { pctTop: 0.001, mult: 50,  lev: true },
+      { pctTop: 0.005, mult: 20,  lev: true },
+      { pctTop: 0.02,  mult: 8,   lev: false },
+      { pctTop: 0.05,  mult: 4,   lev: false },
+      { pctTop: 0.10,  mult: 2.5, lev: false },
+      { pctTop: 0.20,  mult: 1.5, lev: false },
+    ],
+    top10: [
+      { pctTop: 0.001, mult: 60,  lev: true },
+      { pctTop: 0.005, mult: 25,  lev: true },
+      { pctTop: 0.02,  mult: 10,  lev: false },
+      { pctTop: 0.05,  mult: 5,   lev: false },
+      { pctTop: 0.10,  mult: 3,   lev: false },
+    ],
+    winner: [
+      { pctTop: 0.001, mult: 120, lev: true },
+      { pctTop: 0.005, mult: 40,  lev: true },
+      { pctTop: 0.01,  mult: 15,  lev: false },
+    ],
+  };
+
+  // Resolve the active tier set. A custom config may supply its own `tiers`; otherwise
+  // cash and custom fall back to a 2-tier {win, cash} curve equivalent to the legacy math.
+  let tiers;
+  if (isCash) {
+    tiers = [{ pctTop: pc.cashPct, mult: pc.cashMult, lev: false }];
+  } else if (payoutType === 'custom') {
+    if (Array.isArray(customPayoutConfig?.tiers) && customPayoutConfig.tiers.length) {
+      tiers = customPayoutConfig.tiers.map(t => ({ pctTop: t.pctTop, mult: t.mult, lev: !!t.lev }));
+    } else {
+      tiers = [
+        { pctTop: pc.winPct,  mult: pc.winMult,  lev: true },
+        { pctTop: pc.cashPct, mult: pc.cashMult, lev: false },
+      ];
+    }
+  } else {
+    tiers = STANDARD_TIERS[payoutType] || STANDARD_TIERS.top20;
+  }
+  // Sort ascending by pctTop (most exclusive first) and drop degenerate tiers.
+  tiers = tiers.filter(t => t.pctTop > 0 && t.mult > 0).sort((a, b) => a.pctTop - b.pctTop);
+  if (!tiers.length) tiers = [{ pctTop: 0.20, mult: 1.5, lev: false }];
 
   // Pre-compute pool filters and slot eligibility once — reused across all numSims field builds
   // to avoid O(pool × slots × numSims) redundant filter work inside buildFieldLineup.
@@ -3281,10 +3954,21 @@ async function simulatePortfolio(lineups, pool, numSims = 2000, contestType = 'g
   }
   fieldScores.sort((a, b) => a - b);
 
-  const cashCutoffIdx = Math.floor(fieldScores.length * (1 - pc.cashPct));
-  const winCutoffIdx = Math.floor(fieldScores.length * (1 - pc.winPct));
-  const cashLine = manualCashLine != null ? manualCashLine : (fieldScores[cashCutoffIdx] || 0);
-  const winLine = manualWinLine != null ? manualWinLine : (fieldScores[winCutoffIdx] || 0);
+  // Field score line for each payout tier (the score needed to reach that tier).
+  // tiers are ascending by pctTop, so tierLines is descending (most exclusive = highest).
+  const fieldLineFor = pctTop => {
+    const idx = Math.min(fieldScores.length - 1, Math.floor(fieldScores.length * (1 - pctTop)));
+    return fieldScores[idx] || 0;
+  };
+  const tierLines = tiers.map(t => fieldLineFor(t.pctTop));
+  // Honour manual cash/win line overrides: the win line pins the most-exclusive tier,
+  // the cash line pins the least-exclusive (largest pctTop) tier. Intermediate tiers
+  // stay field-derived. This preserves the manual-line feature under the tiered model.
+  if (manualWinLine != null) tierLines[0] = manualWinLine;
+  if (manualCashLine != null) tierLines[tierLines.length - 1] = manualCashLine;
+  // cashLine / winLine retained for the result payload + UI (least / most exclusive tier).
+  const winLine = tierLines[0];
+  const cashLine = tierLines[tierLines.length - 1];
 
   // Process each lineup sequentially, yielding every 5 lineups so the browser
   // can paint progress updates and stay interactive throughout.
@@ -3321,36 +4005,52 @@ async function simulatePortfolio(lineups, pool, numSims = 2000, contestType = 'g
     // preventing the filter from systematically selecting "lucky" noise outliers.
     const B_SE = 20;
     const groupSz = Math.floor(numSims / B_SE);
-    const groupCash = new Array(B_SE).fill(0);
-    const groupWin  = new Array(B_SE).fill(0);
-    let cashCount = 0, winCount = 0;
+    const nTiers = tierLines.length;
+
+    // Per-tier hit counts: tierHits[j] = sims whose score reached tier j (cumulative,
+    // i.e. score >= tierLines[j]). groupTierHits[g][j] is the same within each SE group.
+    const tierHits = new Array(nTiers).fill(0);
+    const groupTierHits = Array.from({ length: B_SE }, () => new Array(nTiers).fill(0));
     for (let s = 0; s < numSims; s++) {
       const ourScore = sampleCorrelatedLineup(players, L);
       const g = Math.min(Math.floor(s / groupSz), B_SE - 1);
-      if (ourScore >= cashLine) { cashCount++; groupCash[g]++; }
-      if (ourScore >= winLine)  { winCount++;  groupWin[g]++; }
+      // tierLines is descending; once a score clears tier j it clears every less-exclusive
+      // tier too, so we can break at the first (most exclusive) tier it reaches.
+      for (let j = 0; j < nTiers; j++) {
+        if (ourScore >= tierLines[j]) {
+          for (let k = j; k < nTiers; k++) { tierHits[k]++; groupTierHits[g][k]++; }
+          break;
+        }
+      }
     }
-    const cashRate = cashCount / numSims;
-    const winRate = winCount / numSims;
+    // cashRate = reached the least-exclusive tier; winRate = reached the most-exclusive.
+    const cashRate = tierHits[nTiers - 1] / numSims;
+    const winRate  = tierHits[0] / numSims;
 
-    // Sim ROI calculation.
+    // Tiered EV (Fix #3).
     //
-    // For GPP: winning is a strict subset of cashing (same lineup that wins also cashes),
-    // so cashRate and winRate are NOT independent. Paying cashMult on cashRate AND winMult
-    // on winRate double-counts the winning outcomes. Correct split:
-    //   EV = P(cash but not win) × cashMult + P(win) × winMult × ownLeverage
-    //      = (cashRate - winRate) × cashMult + winRate × winMult × ownLeverage
+    // tierHits[j] is cumulative P(reach tier j) × numSims. The DISJOINT band probability
+    // of finishing exactly in tier j (better than tier j+1 but not as good as tier j-1) is
+    //   band_0 = P(reach tier 0)
+    //   band_j = P(reach tier j) − P(reach tier j-1)   for j ≥ 1
+    // Each band is paid its own tier multiplier (× ownLeverage for the lev-flagged exclusive
+    // tiers), so there is no double counting. EV = Σ band_j × mult_j; ROI = EV − 1.
     //
-    // For cash (double-up): there is no separate "win" tier — the config has cashPct==winPct
-    // and cashMult==winMult, so the win component would double the payout.
-    // Also, ownLeverage does not apply to double-ups — the payout is fixed regardless of
-    // how unique the lineup is. Use simple: cashRate × cashMult.
-    let simROI;
-    if (isCash) {
-      simROI = cashRate * pc.cashMult - 1;
-    } else {
-      simROI = (cashRate - winRate) * pc.cashMult + winRate * pc.winMult * ownLeverage - 1;
-    }
+    // For cash (double-up) the single tier carries no win component and ownLeverage does
+    // not apply (the payout is fixed regardless of uniqueness) — this reduces to the
+    // previous cashRate × cashMult − 1.
+    const tierEV = (hits, total) => {
+      let ev = 0;
+      for (let j = 0; j < nTiers; j++) {
+        const cum = hits[j] / total;
+        const prevCum = j > 0 ? hits[j - 1] / total : 0;
+        const band = cum - prevCum;
+        const lev = (!isCash && tiers[j].lev) ? ownLeverage : 1.0;
+        ev += band * tiers[j].mult * lev;
+      }
+      return ev;
+    };
+    const simROI = tierEV(tierHits, numSims) - 1;
 
     // Compute bootstrap SE from group-level ROIs.
     // SE estimates how much simROI would vary across re-runs at this sample size.
@@ -3358,11 +4058,7 @@ async function simulatePortfolio(lineups, pool, numSims = 2000, contestType = 'g
     // so the filter keeps genuinely better lineups rather than noise winners.
     const groupROIs = [];
     for (let g = 0; g < B_SE; g++) {
-      const gCashRate = groupCash[g] / groupSz;
-      const gWinRate  = groupWin[g]  / groupSz;
-      const gROI = isCash
-        ? gCashRate * pc.cashMult - 1
-        : (gCashRate - gWinRate) * pc.cashMult + gWinRate * pc.winMult * ownLeverage - 1;
+      const gROI = tierEV(groupTierHits[g], groupSz) - 1;
       groupROIs.push(gROI * 100);
     }
     const meanGROI = groupROIs.reduce((s, v) => s + v, 0) / B_SE;
@@ -3375,8 +4071,14 @@ async function simulatePortfolio(lineups, pool, numSims = 2000, contestType = 'g
     const simROI_se = parseFloat((sdGroups / Math.sqrt(B_SE)).toFixed(1));
     const simROI_lb = parseFloat((simROI * 100 - simROI_se).toFixed(1));
 
+    // Expected duplication of this exact lineup across the contest field (Feature #1).
+    const dup = estimateDupes(players, contestSize);
+
     results.push({
       lu,
+      expectedDupes: parseFloat(dup.expected.toFixed(2)),
+      pUnique: parseFloat((dup.pUnique * 100).toFixed(0)),
+      dupeRisk: dup.risk,
       p10: luSim ? luSim.p10 : null,
       p50: luSim ? luSim.p50 : null,
       p90: luSim ? luSim.p90 : null,
@@ -3567,6 +4269,26 @@ async function buildShowdownPortfolio(pool, opts = {}, onProgress = null) {
       if (cnt >= maxCnt) excluded.add(p.name);
     });
 
+    // Player MIN-exposure overrides (parity with the classic builder): force a player in
+    // once the lineups still needed can no longer satisfy the player's min target unless
+    // they appear now. exposureCounts is keyed by name and shared across the CPT/FLEX
+    // variants, so the override governs the player's combined exposure.
+    const forceNames = new Set();
+    if (Object.keys(playerExposureOverrides).length) {
+      const remaining = Math.max(0, numLineups - lineups.length);
+      if (remaining > 0) {
+        for (const [name, ov] of Object.entries(playerExposureOverrides)) {
+          if (!ov || ov.min == null) continue;
+          const targetCount = Math.ceil(numLineups * ov.min);
+          const currentCount = exposureCounts[name] || 0;
+          if (targetCount - currentCount >= remaining) {
+            forceNames.add(name);
+            excluded.delete(name); // a forced player can't also be excluded
+          }
+        }
+      }
+    }
+
     // GPP: jitter diversifies lineup composition across iterations.
     // Cash: no jitter — floor-focused scoring should be deterministic so the
     // same best players are consistently selected rather than randomly swapped.
@@ -3578,7 +4300,7 @@ async function buildShowdownPortfolio(pool, opts = {}, onProgress = null) {
       return base + jitter();
     };
 
-    const lu = optimizeShowdownLineup(pool, scoreFn, { excludeNames: excluded });
+    const lu = optimizeShowdownLineup(pool, scoreFn, { excludeNames: excluded, forceInclude: forceNames });
     if (!lu || lu.some(p => !p)) { _diag.nullLu++; continue; }
 
     const salTotal = lu.reduce((s, p) => s + (p?.salary || 0), 0);
@@ -3824,6 +4546,84 @@ function getBestPlays(pool, ctx, contestSize) {
   };
 }
 
+// ── Field Distribution Simulation ────────────────────────────────────────
+
+// Generate synthetic field lineups for GPP ROI calculation
+function generateFieldLineups(pool, numField = 50, context = {}) {
+  if (!pool || pool.length < ROSTER_SIZE) return [];
+  const fieldLineups = [];
+  // Create synthetic field by running optimizer at population ownership levels
+  for (let i = 0; i < numField; i++) {
+    // Small jitter to ownership creates field variance
+    const fieldPool = pool.map(p => ({
+      ...p,
+      own: (p.own || 0) * (0.85 + Math.random() * 0.30) // ±15% ownership jitter
+    }));
+    const fieldLu = optimizeLineup(fieldPool, p => scoreGpp(p, context), {
+      iterations: 2000,
+      contestType: 'gpp',
+      ownershipLambda: 0.02 // light ownership pressure (field less ownership-aware)
+    });
+    if (fieldLu && fieldLu.every(Boolean)) fieldLineups.push(fieldLu);
+  }
+  return fieldLineups.slice(0, numField);
+}
+
+// Compute true GPP ROI: portfolio vs. synthetic field
+function computeGppRoi(portfolioLineups, fieldLineups, portfolioSims, payoutStructure = null) {
+  if (!portfolioLineups.length || !fieldLineups.length || !portfolioSims.length) return null;
+  
+  // Default payout structure (top 20% cash)
+  const numField = fieldLineups.length || 100;
+  const payout = payoutStructure || {
+    cashPlaces: Math.ceil(numField * 0.20),
+    winPlace: 1,
+    toWin: numField * 10,
+    toCash: 10
+  };
+  
+  const results = [];
+  for (const sim of portfolioSims) {
+    const portfolioScores = portfolioLineups.map((lu, idx) => {
+      const luScore = lu.filter(Boolean).reduce((s, p) => {
+        return s + (sim.playerScores?.[p.name] || sim.playerStats?.find(ps => ps.name === p.name)?.p50 || p.median || 0);
+      }, 0);
+      return { idx, score: luScore };
+    });
+    
+    const fieldScores = fieldLineups.map((lu, idx) => {
+      const luScore = lu.filter(Boolean).reduce((s, p) => {
+        return s + (sim.playerScores?.[p.name] || sim.playerStats?.find(ps => ps.name === p.name)?.p50 || p.median || 0);
+      }, 0);
+      return { idx: -1 - idx, score: luScore }; // negative to distinguish
+    });
+    
+    const allLineups = [...portfolioScores, ...fieldScores].sort((a, b) => b.score - a.score);
+    
+    const portfolioCashes = portfolioScores.filter(lu => {
+      const rank = allLineups.findIndex(x => x.idx === lu.idx);
+      return rank >= 0 && rank < payout.cashPlaces;
+    }).length;
+    
+    const portfolioWins = portfolioScores.filter(lu => {
+      const rank = allLineups.findIndex(x => x.idx === lu.idx);
+      return rank === 0;
+    }).length;
+    
+    results.push({ portfolioCashes, portfolioWins });
+  }
+  
+  // Aggregate metrics
+  const totalCashes = results.reduce((s, r) => s + r.portfolioCashes, 0);
+  const totalWins = results.reduce((s, r) => s + r.portfolioWins, 0);
+  const cashRate = totalCashes / (results.length * portfolioLineups.length);
+  const winRate = totalWins / results.length;
+  const expectedPayout = totalWins * payout.toWin + Math.max(0, totalCashes - totalWins) * payout.toCash;
+  const roi = (expectedPayout / (results.length * portfolioLineups.length * 10)) - 1;
+  
+  return { cashRate, winRate, roi, totalCashes, totalWins, fieldSize: numField };
+}
+
 // ── Public API ──────────────────────────────────────────────────────────────
 
 return {
@@ -3839,6 +4639,8 @@ return {
   simulateLineup,
   simulatePortfolio,
   samplePlayerScore,
+  estimateDupes,
+  computeOptimalExposure,
 
   // Correlation
   getCorrelation,
@@ -3850,6 +4652,9 @@ return {
   setCorrDampener, getCorrDampener,
   setVegasContext, // for game-O/U-aware correlation scaling
 
+  // Tail-event calibration (Fix #3)
+  setTailRates, getTailRates, computeTailRatesFromHistory,
+
   // Scoring
   scoreCash, scoreSingle, scoreGpp,
   calcLeverage, calcGppScore,
@@ -3860,7 +4665,7 @@ return {
   vegasAdjustment, vegasPitcherAdjustment,
   teamScoringAdjustment,
   statcastCeilingBoost, pitcherStuffBoost, bullpenAdjustment, catcherFramingAdjustment, sprintSpeedBoost, calcPortfolioOverlap, computePortfolioDiversity, umpireMultiplier,
-  dvpMultiplier, platoonMultiplier, unconfirmedMultiplier,
+  dvpMultiplier, platoonMultiplier, platoonMultiplierPAWeighted, unconfirmedMultiplier,
   computeStackAdjacency, computeStackAdjacencyFromPool,
 
   // Projection blending
@@ -3874,6 +4679,10 @@ return {
   // Portfolio
   buildPortfolio,
   buildShowdownPortfolio, optimizeShowdownLineup,
+
+  // Field distribution simulation (NEW: True GPP ROI computation)
+  generateFieldLineups,
+  computeGppRoi,
 
   // Multiplier introspection
   // Returns how far the compound adjustment pushes a player from their raw projection.
@@ -3905,11 +4714,18 @@ return {
   // Stack analytics
   calcAnalyticalStackP90,
 
+  // Field simulation & true GPP ROI (NEW: Field distribution model)
+  generateFieldLineups,
+  computeGppRoi,
+
   // Slate defaults (Fix 8)
   getSlateDefaults,
 
   // Ownership helpers (Fix 1)
   positionalOwnDefault, effectiveOwn,
+
+  // Ownership projection & input-sanity layer (Fix #1)
+  projectOwnership, auditOwnership, applyOwnershipProjection,
 
   // Best Plays surfacing
   getBestPlays,

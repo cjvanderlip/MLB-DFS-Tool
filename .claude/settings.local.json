@@ -77,7 +77,8 @@
       "Bash(powershell -Command \"Get-Process -Name node -ErrorAction SilentlyContinue | Stop-Process -Force\")",
       "Bash(curl -s -X POST http://localhost:3000/api/contests/import-csv -H \"Content-Type: application/json\" -d \"{\\\\\"csv\\\\\":\\\\\"Contest Title,Sport,Contest_Key,Entry_Key,Points,Place,Entries_In_Contest,Winnings_Non_Ticket,Start_Date_EST\\\\nMLB 50K Tourney,MLB,12345678,ABCDEF,142.5,38/5231,5231,0,4/15/2026 7:05:00 PM\\\\\"}\")",
       "Bash(curl -s http://localhost:3000/api/contests/99999999)",
-      "Bash(node --check \"c:\\\\Users\\\\cjevi\\\\MLB DFS Tool\\\\public\\\\app.js\")"
+      "Bash(node --check \"c:\\\\Users\\\\cjevi\\\\MLB DFS Tool\\\\public\\\\app.js\")",
+      "Bash(node -e \"const d=require\\('./data/bullpen_cache.json'\\); const k=Object.keys\\(d\\); console.log\\('top keys:',k.slice\\(0,5\\)\\); const sample=d[k.find\\(x=>typeof d[x]==='object'\\)]||d[k[0]]; console.log\\(JSON.stringify\\(sample\\).slice\\(0,400\\)\\);\")"
     ],
     "additionalDirectories": [
       "c:\\Users\\cjevi\\MLB DFS Tool\\data"
