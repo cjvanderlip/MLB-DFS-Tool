@@ -2311,6 +2311,113 @@ app.get('/api/sprint-speed', async (req, res) => {
   }
 });
 
+// ── Season Stats (MLB Stats API — batter & pitcher season rates) ─────────────
+// Used as the anchor for internal projections when no ROO CSV is loaded.
+// Fields match exactly what buildInternalProjections() in engine.js expects.
+
+const seasonStatsCacheFile = path.join(dataDir, 'season_stats_cache.json');
+
+async function fetchSeasonBatters(year) {
+  // playerPool=All returns everyone with ≥1 PA; we filter to ≥20 PA client-side.
+  const url = `${MLB_API_BASE}/stats?stats=season&group=hitting&season=${year}&sportIds=1&playerPool=All&limit=2000`;
+  const resp = await apiFetch(url, { timeout: 20000 });
+  if (!resp.ok) throw new Error(`MLB API batter stats ${resp.status}`);
+  const json = await resp.json();
+  const splits = json.stats?.[0]?.splits || [];
+  const data = {};
+  for (const s of splits) {
+    const name = s.player?.fullName || '';
+    if (!name) continue;
+    const key = normalizeStatcastName(name);
+    if (!key) continue;
+    const st = s.stat || {};
+    const pa = parseInt(st.plateAppearances) || 0;
+    if (pa < 20) continue;
+    data[key] = {
+      pa,
+      g:   parseInt(st.gamesPlayed) || 1,
+      ab:  parseInt(st.atBats) || 0,
+      h:   parseInt(st.hits) || 0,
+      doubles: parseInt(st.doubles) || 0,
+      triples: parseInt(st.triples) || 0,
+      hr:  parseInt(st.homeRuns) || 0,
+      rbi: parseInt(st.rbi) || 0,
+      runs: parseInt(st.runs) || 0,
+      bb:  parseInt(st.baseOnBalls) || 0,
+      k:   parseInt(st.strikeOuts) || 0,
+      sb:  parseInt(st.stolenBases) || 0,
+      hbp: parseInt(st.hitByPitch) || 0,
+    };
+  }
+  return data;
+}
+
+async function fetchSeasonPitchers(year) {
+  const url = `${MLB_API_BASE}/stats?stats=season&group=pitching&season=${year}&sportIds=1&playerPool=All&limit=1000`;
+  const resp = await apiFetch(url, { timeout: 20000 });
+  if (!resp.ok) throw new Error(`MLB API pitcher stats ${resp.status}`);
+  const json = await resp.json();
+  const splits = json.stats?.[0]?.splits || [];
+  const data = {};
+  for (const s of splits) {
+    const name = s.player?.fullName || '';
+    if (!name) continue;
+    const key = normalizeStatcastName(name);
+    if (!key) continue;
+    const st = s.stat || {};
+    const gs = parseInt(st.gamesStarted) || 0;
+    const g  = parseInt(st.gamesPlayed) || 0;
+    // Include SPs (any starts) and relievers with ≥5 appearances
+    if (gs < 1 && g < 5) continue;
+    const ipRaw = parseFloat(st.inningsPitched) || 0;
+    // MLB API uses .1 and .2 for fractional innings (1 out, 2 outs), not decimal
+    const ipOuts = Math.floor(ipRaw) * 3 + Math.round((ipRaw % 1) * 10);
+    const ip = ipOuts / 3;
+    if (ip < 1) continue;
+    data[key] = {
+      g, gs,
+      ip,
+      k:   parseInt(st.strikeOuts) || 0,
+      er:  parseInt(st.earnedRuns) || 0,
+      h:   parseInt(st.hits) || 0,
+      bb:  parseInt(st.baseOnBalls) || 0,
+      w:   parseInt(st.wins) || 0,
+      hbp: parseInt(st.hitBatsmen) || 0,
+    };
+  }
+  return data;
+}
+
+app.get('/api/season-stats', async (req, res) => {
+  try {
+    if (fs.existsSync(seasonStatsCacheFile)) {
+      const cached = JSON.parse(fs.readFileSync(seasonStatsCacheFile, 'utf8'));
+      const age = Date.now() - new Date(cached.fetchedAt).getTime();
+      if (age < 6 * 60 * 60 * 1000) {
+        return res.json({ success: true, batters: cached.batters, pitchers: cached.pitchers,
+          cached: true, fetchedAt: cached.fetchedAt,
+          batterCount: Object.keys(cached.batters || {}).length,
+          pitcherCount: Object.keys(cached.pitchers || {}).length });
+      }
+    }
+    const year = new Date().getFullYear();
+    const [batters, pitchers] = await Promise.all([fetchSeasonBatters(year), fetchSeasonPitchers(year)]);
+    const payload = { batters, pitchers, fetchedAt: new Date().toISOString(),
+      batterCount: Object.keys(batters).length, pitcherCount: Object.keys(pitchers).length };
+    fs.writeFileSync(seasonStatsCacheFile, JSON.stringify(payload, null, 2));
+    res.json({ success: true, ...payload });
+  } catch (err) {
+    if (fs.existsSync(seasonStatsCacheFile)) {
+      const cached = JSON.parse(fs.readFileSync(seasonStatsCacheFile, 'utf8'));
+      return res.json({ success: true, batters: cached.batters, pitchers: cached.pitchers,
+        cached: true, stale: true, fetchedAt: cached.fetchedAt, error: err.message,
+        batterCount: Object.keys(cached.batters || {}).length,
+        pitcherCount: Object.keys(cached.pitchers || {}).length });
+    }
+    res.status(500).json({ error: 'Season stats fetch failed: ' + err.message });
+  }
+});
+
 // ── Recent Form (last 14 days from MLB Stats API) ────────────────────────────
 
 const formCacheFile = path.join(dataDir, 'form_cache.json');

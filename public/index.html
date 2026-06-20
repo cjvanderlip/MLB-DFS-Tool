@@ -50,6 +50,7 @@
     <div class="fi" id="fi-s5"><div class="fdot" id="fd-s5"></div><div class="fn" id="fn-s5">5-man stack file</div><div class="fc" id="fc-s5">not loaded</div></div>
     <div class="fi" id="fi-ts"><div class="fdot" id="fd-ts"></div><div class="fn" id="fn-ts">Team Scoring Percentages</div><div class="fc" id="fc-ts">not loaded</div></div>
     <div class="fi" id="fi-opt"><div class="fdot" id="fd-opt"></div><div class="fn" id="fn-opt">Optimal Lineups (optimizer export)</div><div class="fc" id="fc-opt">not loaded</div></div>
+    <div class="fi" id="fi-pm"><div class="fdot" id="fd-pm"></div><div class="fn" id="fn-pm">Portfolio Manager Export (optional)</div><div class="fc" id="fc-pm">not loaded</div></div>
   </div>
   <div id="source-quality-panel" style="display:none;margin-top:8px;padding:8px 10px;background:var(--bs);border-radius:var(--r);border:0.5px solid var(--brd-s)">
     <div style="font-size:11px;font-weight:600;color:var(--ts);margin-bottom:6px">Projection Source Quality (from historical actuals)</div>
@@ -258,7 +259,9 @@
         <div id="position-scarcity" style="display:none;gap:4px;flex-wrap:wrap;margin-bottom:8px;padding:6px 8px;background:var(--bw);border-radius:var(--r);font-size:11px;color:var(--tw)"></div>
         <div id="lineup-slots"></div>
         <div id="lineup-warns" style="display:none;margin-top:8px"></div>
+        <div id="optimal-status" style="display:none;margin-top:6px;padding:5px 10px;background:var(--bs);border-radius:var(--r);border:0.5px solid var(--brd-s);font-size:11px;gap:8px;align-items:center;flex-wrap:wrap"></div>
         <div id="lineup-analysis" style="display:none;margin-top:6px;padding:6px 10px;background:var(--bi);border-radius:var(--r);border:0.5px solid var(--brd-i)"></div>
+        <div id="best-plays-guidance" style="display:none;margin-top:8px;padding:8px 10px;background:var(--bs);border-radius:var(--r);border:0.5px solid var(--brd-s)"></div>
         <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;align-items:center">
           <select id="contest-type-sel" style="font-size:12px;padding:5px 8px;border-radius:var(--r);border:0.5px solid var(--brd-s);background:var(--bp);color:var(--tp)">
             <option value="single">Single Entry</option>
@@ -269,15 +272,44 @@
             <input type="checkbox" id="allow-bvp" style="width:13px;height:13px">
             Allow BvP
           </label>
-          <button class="btn-g" onclick="autoFill()">Auto-fill</button>
+          <button class="btn-g" id="autofill-btn" onclick="autoFill()">Auto-fill</button>
           <button class="btn" onclick="clearLineup()">Clear</button>
           <button class="btn-p" onclick="exportLineup()">Export CSV</button>
           <button class="btn-dk" id="dk-export-btn" onclick="exportDK()" style="display:none">DK Upload</button>
         </div>
         <div style="margin-top:12px;padding-top:12px;border-top:0.5px solid var(--brd-t)">
+          <div class="sec-label">Quick Stack</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+            <div class="pbs" id="qs-size-btns">
+              <button class="pb" onclick="setQsSize(3,this)">3</button>
+              <button class="pb active" onclick="setQsSize(4,this)">4</button>
+              <button class="pb" onclick="setQsSize(5,this)">5</button>
+            </div>
+            <select id="qs-team-sel" onchange="updateQsPreview()"
+              style="font-size:12px;padding:4px 6px;border-radius:var(--r);border:0.5px solid var(--brd-s);background:var(--bp);color:var(--tp);flex:1;min-width:140px;max-width:220px">
+              <option value="auto">Auto (Best Team)</option>
+            </select>
+            <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--ts);cursor:pointer;white-space:nowrap">
+              <input type="checkbox" id="qs-bringback" onchange="updateQsPreview()" checked style="width:13px;height:13px">
+              Bring-back
+            </label>
+          </div>
+          <div style="display:flex;gap:6px;margin-bottom:6px">
+            <button class="btn-g" onclick="applyQuickStack()" style="flex:1">Apply Stack</button>
+            <button class="btn" onclick="clearQuickStack()" title="Remove stacked batters from lineup">Clear</button>
+          </div>
+          <div id="qs-preview" style="display:none;padding:6px 8px;background:var(--bi);border-radius:4px;border:0.5px solid var(--brd-i);font-size:11px;line-height:1.6"></div>
+          <div id="qs-status" style="display:none;margin-top:5px;font-size:11px;color:var(--ts)"></div>
+        </div>
+        <div style="margin-top:12px;padding-top:12px;border-top:0.5px solid var(--brd-t)">
           <div class="sec-label">Generate 3 Contest Lineups</div>
           <button class="btn-g" onclick="generateThreeLineups()" id="gen-three-btn" style="width:100%">Generate Cash + Single + GPP</button>
           <div id="three-lineups-display" style="display:none;margin-top:12px"></div>
+        </div>
+        <div style="margin-top:12px;padding-top:12px;border-top:0.5px solid var(--brd-t)">
+          <div class="sec-label">Best Plays Guided Lineups</div>
+          <button class="btn" onclick="generateLineupsFromBestPlays()" id="gen-best-plays-btn" style="width:100%;background:linear-gradient(135deg, rgba(34,197,94,.15), rgba(59,130,246,.15));border:0.5px solid rgba(34,197,94,.3);color:var(--ti);font-weight:600">Generate 5 Lineups from Best Plays</button>
+          <div id="best-plays-lineups-display" style="display:none;margin-top:12px"></div>
         </div>
         <div id="export-out" style="display:none"></div>
       </div>
@@ -347,7 +379,7 @@
     </div>
     <div class="config-item">
       <label>Max Lineup Overlap <span style="font-weight:400;text-transform:none;letter-spacing:0">(0=off)</span></label>
-      <input type="number" id="port-max-overlap" value="6" min="0" max="10" title="Max players shared between any two lineups. 0 = disabled. GPP recommended: 5–6." onchange="saveSession()">
+      <input type="number" id="port-max-overlap" value="5" min="0" max="10" title="Max players shared between any two lineups. 0 = disabled. GPP recommended: 5–6." onchange="saveSession()">
     </div>
     <div class="config-item port-classic-only">
       <label>Max Game Exposure <span style="font-weight:400;text-transform:none;letter-spacing:0">(%)</span></label>
@@ -355,11 +387,11 @@
     </div>
     <div class="config-item port-classic-only">
       <label>Max Same SP Pair <span style="font-weight:400;text-transform:none;letter-spacing:0">(0=off)</span></label>
-      <input type="number" id="port-max-sp-pair" value="0" min="0" max="50" step="1" title="Max number of lineups allowed to share the same two-pitcher combination. Spreads correlated SP upside/bust risk across the portfolio. 0 = disabled." onchange="saveSession()">
+      <input type="number" id="port-max-sp-pair" value="0" min="0" max="50" step="1" title="Max number of lineups allowed to share the same two-pitcher combination. Spreads correlated SP upside/bust risk across the portfolio. 0 = disabled (use Slate Defaults for an auto-scaled value)." onchange="saveSession()">
     </div>
     <div class="config-item port-classic-only">
       <label>Min Implied Total <span style="font-weight:400;text-transform:none;letter-spacing:0">(0=off)</span></label>
-      <input type="number" id="port-min-implied" value="0" min="0" max="7" step="0.5" title="Only stack teams whose Vegas implied run total meets this threshold. 0 = no filter. Recommended: 3.5–4.0." onchange="saveSession()">
+      <input type="number" id="port-min-implied" value="3.5" min="0" max="7" step="0.5" title="Only stack teams whose Vegas implied run total meets this threshold. 0 = no filter. Recommended: 3.5–4.0." onchange="saveSession()">
     </div>
     <div class="config-item port-classic-only">
       <label>Min Game O/U <span style="font-weight:400;text-transform:none;letter-spacing:0">(0=off)</span></label>
@@ -367,7 +399,7 @@
     </div>
     <div class="config-item port-classic-only">
       <label>Max Opp SP K/9 <span style="font-weight:400;text-transform:none;letter-spacing:0">(0=off)</span></label>
-      <input type="number" id="port-max-opp-k9" value="0" min="0" max="15" step="0.5" title="Skip stacking against SPs with K/9 above this. 0 = no filter. Recommended: 10." onchange="saveSession()">
+      <input type="number" id="port-max-opp-k9" value="10" min="0" max="15" step="0.5" title="Skip stacking against SPs with K/9 above this. 0 = no filter. Recommended: 10." onchange="saveSession()">
     </div>
     <div class="config-item port-classic-only" style="justify-content:center">
       <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
@@ -522,13 +554,18 @@
     </div>
   </div>
   </div>
+  <!-- Player-level exclusions (applies to all optimizer builds) -->
+  <div style="margin-top:10px">
+    <div style="font-size:11px;color:var(--tt);text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px">Ban Players <span style="font-size:10px;font-weight:400;text-transform:none;letter-spacing:0">(comma-separated — excluded from all lineups)</span></div>
+    <input type="text" id="port-ban-players" placeholder="e.g. Vaughn Grissom, Jorge Soler, Jose Fermin" style="width:100%;box-sizing:border-box;font-size:12px;padding:5px 8px;border:0.5px solid var(--brd-s);border-radius:var(--r);background:var(--bp);color:var(--tp)" oninput="saveSession()">
+  </div>
   <div id="port-warnings" style="display:none;margin-bottom:10px"></div>
 
   <!-- Sim ROI Filter -->
   <div style="margin-bottom:10px;padding:8px 10px;border:0.5px solid var(--brd-s);border-radius:var(--r);background:var(--bp)">
     <div style="display:flex;align-items:center;gap:10px">
       <label style="display:flex;align-items:center;gap:6px;cursor:pointer;flex:0 0 auto">
-        <input type="checkbox" id="port-sim-filter" style="width:14px;height:14px" onchange="toggleSimFilter();saveSession()">
+        <input type="checkbox" id="port-sim-filter" style="width:14px;height:14px" onchange="toggleSimFilter();saveSession();validatePortfolioSettings()">
         <span style="font-size:12px;font-weight:500">Sim ROI Filter</span>
       </label>
       <span style="font-size:11px;color:var(--tt);flex:1">Generate extra lineups, keep top N by sim ROI</span>
@@ -536,17 +573,56 @@
     <div id="sim-filter-options" style="display:none;flex-direction:column;gap:6px;margin-top:8px">
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
         <label style="font-size:11px;color:var(--tt);white-space:nowrap">Overflow %</label>
-        <input type="number" id="port-sim-filter-pct" value="50" min="10" max="200" step="10" title="% of extra lineups to generate beyond the target count (e.g. 50 = generate 150%, keep best 100% by sim ROI)." style="width:60px;font-size:12px;padding:3px 6px;border:0.5px solid var(--brd-s);border-radius:4px;background:var(--bp);color:var(--tp)" onchange="saveSession()">
+        <input type="number" id="port-sim-filter-pct" value="50" min="10" max="500" step="10" title="% of extra lineups to generate beyond the target count (e.g. 50 = generate 150%, keep best 100% by sim ROI). Max 500%." style="width:60px;font-size:12px;padding:3px 6px;border:0.5px solid var(--brd-s);border-radius:4px;background:var(--bp);color:var(--tp)" onchange="this.value=Math.min(500,Math.max(10,+this.value||50));saveSession()">
         <label style="font-size:11px;color:var(--tt);white-space:nowrap">Sims</label>
         <input type="number" id="port-sim-filter-sims" value="1500" min="100" max="5000" step="100" title="Simulations per lineup for the filter pass. More = more accurate ranking but slower." style="width:65px;font-size:12px;padding:3px 6px;border:0.5px solid var(--brd-s);border-radius:4px;background:var(--bp);color:var(--tp)" onchange="saveSession()">
       </div>
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
         <label style="font-size:11px;color:var(--tt);white-space:nowrap">ROI Band</label>
-        <input type="number" id="port-sim-roi-min" placeholder="min %" step="1" title="Keep only lineups with sim ROI ≥ this value (e.g. -15 = -15%). Leave blank for no lower bound." style="width:65px;font-size:12px;padding:3px 6px;border:0.5px solid var(--brd-s);border-radius:4px;background:var(--bp);color:var(--tp)" onchange="saveSession()">
+        <input type="number" id="port-sim-roi-min" placeholder="min %" step="1" title="Keep only lineups with sim ROI ≥ this value (e.g. -15 = -15%). Leave blank for no lower bound." style="width:65px;font-size:12px;padding:3px 6px;border:0.5px solid var(--brd-s);border-radius:4px;background:var(--bp);color:var(--tp)" onchange="saveSession();validatePortfolioSettings()">
         <span style="font-size:11px;color:var(--tt)">to</span>
-        <input type="number" id="port-sim-roi-max" placeholder="max %" step="1" title="Keep only lineups with sim ROI ≤ this value (e.g. 0 = 0%). Leave blank for no upper bound." style="width:65px;font-size:12px;padding:3px 6px;border:0.5px solid var(--brd-s);border-radius:4px;background:var(--bp);color:var(--tp)" onchange="saveSession()">
-        <span style="font-size:11px;color:var(--tt)">% sim ROI — leave blank to keep top N</span>
+        <input type="number" id="port-sim-roi-max" placeholder="max %" step="1" title="Keep only lineups with sim ROI ≤ this value. Leave blank for no upper bound. Setting this to 0 in GPP mode will filter OUT positive-ROI lineups." style="width:65px;font-size:12px;padding:3px 6px;border:0.5px solid var(--brd-s);border-radius:4px;background:var(--bp);color:var(--tp)" onchange="saveSession();validatePortfolioSettings()">
+        <span style="font-size:11px;color:var(--tt)">% — leave blank = top N</span>
+        <button onclick="document.getElementById('port-sim-roi-min').value='';document.getElementById('port-sim-roi-max').value='';saveSession();validatePortfolioSettings()" style="font-size:10px;padding:2px 6px;border:0.5px solid var(--brd-s);border-radius:3px;background:var(--bp);color:var(--ts);cursor:pointer;line-height:1.4" title="Clear ROI Band">Clear</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Best Plays Weighting -->
+  <div style="margin-bottom:10px;padding:10px 12px;background:var(--bs);border-radius:var(--r);border:0.5px solid var(--brd-s)">
+    <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--tp);cursor:pointer;margin-bottom:6px">
+      <input type="checkbox" id="port-use-best-plays" style="width:13px;height:13px;cursor:pointer" onchange="saveSession()">
+      <strong>Apply Best Plays Weighting</strong>
+      <span style="font-weight:400;color:var(--ts);">(requires Best Plays tab to be loaded)</span>
+    </label>
+    <div style="font-size:11px;color:var(--tt);padding:6px 8px;background:var(--bp);border-radius:4px;border-left:3px solid var(--ti)">
+      Applies smart bonuses: +2.5% leverage, +1.5% bring-back, +3% contrarian (GPP), -2.5% chalk (−3% for GPP)
+    </div>
+  </div>
+
+  <!-- Phase 3: Best Plays Automation -->
+  <div style="margin-bottom:10px;padding:10px 12px;background:var(--bs);border-radius:var(--r);border:0.5px solid var(--brd-s);border-left:3px solid var(--tsu)">
+    <div style="margin-bottom:8px">
+      <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--tp);cursor:pointer;margin-bottom:4px">
+        <input type="checkbox" id="port-enforce-contrarian" style="width:13px;height:13px;cursor:pointer" class="port-gpp-only" onchange="saveSession()">
+        <strong>Enforce Contrarian Stack (GPP)</strong>
+      </label>
+      <div style="font-size:11px;color:var(--tt);margin-left:22px">Auto-inject contrarian 5-man into GPP lineups</div>
+    </div>
+    <div style="margin-bottom:8px">
+      <label style="font-size:12px;color:var(--tp);display:flex;align-items:center;gap:8px;margin-bottom:3px">
+        <span style="min-width:140px">Bring-Back Target %</span>
+        <input type="range" id="port-bring-back-target" value="50" min="0" max="100" step="10" style="flex:1;min-width:100px" onchange="document.getElementById('bb-target-label').textContent=this.value+'%';saveSession()">
+        <span id="bb-target-label" style="min-width:35px;text-align:right;font-size:11px;color:var(--ti)">50%</span>
+      </label>
+      <div style="font-size:11px;color:var(--tt);margin-left:22px">Minimum % of lineups that must include bring-back plays</div>
+    </div>
+    <div>
+      <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--tp);cursor:pointer;margin-bottom:4px">
+        <input type="checkbox" id="port-diversity-analysis" style="width:13px;height:13px;cursor:pointer" onchange="saveSession()">
+        <strong>Show Diversity Analysis</strong>
+      </label>
+      <div style="font-size:11px;color:var(--tt);margin-left:22px">Display play classification metrics for the portfolio</div>
     </div>
   </div>
 
@@ -577,7 +653,8 @@
     </div>
   </details>
 
-  <div id="portfolio-results"><div class="empty">Configure settings above and generate a portfolio.</div></div>
+  <div id="pm-lineups-section" style="display:none;margin-bottom:12px"></div>
+  <div id="portfolio-results"><div class="empty" style="color:var(--tt);font-size:12px">No portfolio generated yet. Click <strong>Generate Portfolio</strong> above.</div></div>
 </div>
 
 <!-- ═══ SIMULATOR (Monte Carlo) ═══ -->
@@ -589,8 +666,8 @@
     <div class="config-item">
       <label>Simulations</label>
       <select id="sim-count" onchange="saveSession()">
-        <option value="5000">5,000 (fast)</option>
-        <option value="10000" selected>10,000 (standard)</option>
+        <option value="5000" selected>5,000 (fast)</option>
+        <option value="10000">10,000 (standard)</option>
         <option value="25000">25,000 (detailed)</option>
         <option value="50000">50,000 (high precision)</option>
       </select>
@@ -614,11 +691,58 @@
       </div>
     </div>
   </div>
+  <div style="margin-bottom:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+    <label style="font-size:12px;color:var(--ts);white-space:nowrap">Score Lines:</label>
+    <div style="display:flex;align-items:center;gap:4px">
+      <label style="font-size:11px;color:var(--tt)">Cash</label>
+      <input type="number" id="sim-cash-line" value="130" min="50" max="300" step="1"
+        style="width:62px;padding:3px 5px;font-size:12px;background:var(--bs);border:1px solid var(--brd);border-radius:4px;color:var(--tp)"
+        title="Score needed to cash (top ~22%). Rates are live — adjust and re-run.">
+    </div>
+    <div style="display:flex;align-items:center;gap:4px">
+      <label style="font-size:11px;color:var(--tt)">Top 10%</label>
+      <input type="number" id="sim-top10-line" value="150" min="50" max="300" step="1"
+        style="width:62px;padding:3px 5px;font-size:12px;background:var(--bs);border:1px solid var(--brd);border-radius:4px;color:var(--tp)"
+        title="Score needed to finish in the top 10%.">
+    </div>
+    <div style="display:flex;align-items:center;gap:4px">
+      <label style="font-size:11px;color:var(--tt)">Win</label>
+      <input type="number" id="sim-win-line" value="170" min="50" max="300" step="1"
+        style="width:62px;padding:3px 5px;font-size:12px;background:var(--bs);border:1px solid var(--brd);border-radius:4px;color:var(--tp)"
+        title="Score needed to win or finish top ~5%.">
+    </div>
+    <button class="btn" onclick="loadSimBenchmarks()"
+      style="font-size:11px;padding:3px 8px;white-space:nowrap"
+      title="Auto-fill lines from your historical contest results">Auto-fill from History</button>
+    <span id="sim-bench-status" style="font-size:11px;color:var(--ts)"></span>
+  </div>
+  <div style="margin-bottom:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+    <label style="font-size:12px;color:var(--ts);white-space:nowrap">Contest:</label>
+    <select id="edge-payout-type" onchange="saveSession()"
+      style="font-size:12px;padding:3px 6px;border-radius:var(--r);border:0.5px solid var(--brd-s);background:var(--bp);color:var(--tp)">
+      <option value="top20">GPP — Top 20%</option>
+      <option value="top10">Large Field — Top 10%</option>
+      <option value="winner">Winner Take Most</option>
+      <option value="double">Double-Up / 50/50</option>
+    </select>
+    <input type="number" id="edge-field-size" value="10000" min="2" max="2000000" step="1000"
+      onchange="saveSession()"
+      style="width:80px;padding:3px 5px;font-size:12px;background:var(--bs);border:1px solid var(--brd);border-radius:4px;color:var(--tp)"
+      title="Total entries in the contest">
+    <label style="font-size:11px;color:var(--tt)">entries</label>
+    <label style="font-size:11px;color:var(--tt)">· $</label>
+    <input type="number" id="edge-entry-fee" value="20" min="1" max="10000" step="1"
+      onchange="saveSession()"
+      style="width:56px;padding:3px 5px;font-size:12px;background:var(--bs);border:1px solid var(--brd);border-radius:4px;color:var(--tp)"
+      title="Entry fee in dollars">
+    <label style="font-size:11px;color:var(--tt)">entry</label>
+  </div>
   <div style="margin-bottom:12px">
     <button class="btn-g" id="run-sim-btn" onclick="runSimulation()">Run Simulation</button>
     <span id="sim-pair-corr-status" style="font-size:11px;color:var(--tt);margin-left:10px"></span>
   </div>
   <div id="sim-results"><div class="empty">Build a lineup first (Lineup Builder tab), then run a simulation to see score distributions.</div></div>
+  <div id="edge-card" style="display:none;margin-top:12px;padding:14px 16px;background:var(--bs);border:1px solid var(--brd);border-radius:var(--r)"></div>
 </div>
 
 <!-- ═══ BACKTESTING ═══ -->

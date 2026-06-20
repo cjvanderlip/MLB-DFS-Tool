@@ -130,6 +130,37 @@ test.describe('Simulator and sim-filter coverage', () => {
     await expect(page.locator('#port-sim-filter-sims')).toHaveValue('2100');
   });
 
+  test('new portfolio and lineup settings persist across reload', async ({ page }) => {
+    await page.goto('/');
+
+    // Set the four previously-unpersisted settings.
+    // contest-type-sel lives inside the Lineup Builder panel; it may be hidden before upload.
+    // Set it directly via evaluate to avoid a visibility-gate timeout.
+    await page.evaluate(() => {
+      const el = document.getElementById('contest-type-sel');
+      if (el) { el.value = 'gpp'; el.dispatchEvent(new Event('change', { bubbles: true })); }
+    });
+
+    await page.locator('.tab:has-text("Portfolio")').click();
+    await page.locator('#port-use-best-plays').check();
+    await page.locator('#port-enforce-contrarian').check();
+    await page.locator('#port-diversity-analysis').check();
+    await page.locator('#port-ban-players').fill('Fake Player Name');
+
+    // saveSession fires on input/change; trigger manually to be safe
+    await page.evaluate(() => saveSession());
+    await page.reload();
+
+    await page.locator('.tab:has-text("Lineup Builder")').click();
+    await expect(page.locator('#contest-type-sel')).toHaveValue('gpp');
+
+    await page.locator('.tab:has-text("Portfolio")').click();
+    await expect(page.locator('#port-use-best-plays')).toBeChecked();
+    await expect(page.locator('#port-enforce-contrarian')).toBeChecked();
+    await expect(page.locator('#port-diversity-analysis')).toBeChecked();
+    await expect(page.locator('#port-ban-players')).toHaveValue('Fake Player Name');
+  });
+
   test('portfolio sim ROI diagnostics explain empty and zero-band results', async ({ page }) => {
     await page.goto('/');
     await uploadBaseFiles(page);

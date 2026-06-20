@@ -425,6 +425,148 @@ test.describe('11. Projection override modal (after upload)', () => {
       await expect(page.locator('#proj-override-modal')).toBeHidden();
     }
   });
+
+  test('applying an override updates STATE.projOverrides and player median', async ({ page }) => {
+    // Open Juan Soto's override modal (he appears in the fixture pool)
+    await page.evaluate(() => openOverrideModal('Juan Soto'));
+    await expect(page.locator('#proj-override-modal')).toBeVisible();
+
+    await page.locator('#po-median').fill('50.0');
+    await page.locator('#po-ceiling').fill('80.0');
+    await page.locator('button[onclick*="applyOverrideModal"]').click();
+
+    // Modal auto-closes after 700ms
+    await page.waitForTimeout(900);
+    await expect(page.locator('#proj-override-modal')).toBeHidden();
+
+    const { projOverride, playerMedian } = await page.evaluate(() => {
+      const ov = STATE.projOverrides['Juan Soto'];
+      const p = STATE.POOL.find(pl => pl.name === 'Juan Soto');
+      return { projOverride: ov, playerMedian: p?.median };
+    });
+
+    expect(projOverride?.median).toBe(50);
+    expect(projOverride?.ceiling).toBe(80);
+    expect(playerMedian).toBe(50);
+  });
+
+  test('clearing an override restores original projection values', async ({ page }) => {
+    // Apply an override first
+    await page.evaluate(() => openOverrideModal('Juan Soto'));
+    await page.locator('#po-median').fill('99.9');
+    await page.locator('button[onclick*="applyOverrideModal"]').click();
+    await page.waitForTimeout(900);
+
+    // Verify override was applied
+    const overriddenMedian = await page.evaluate(() =>
+      STATE.POOL.find(p => p.name === 'Juan Soto')?.median
+    );
+    expect(overriddenMedian).toBe(99.9);
+
+    // Now clear it
+    await page.evaluate(() => openOverrideModal('Juan Soto'));
+    await expect(page.locator('#proj-override-modal')).toBeVisible();
+    await page.locator('button[onclick*="clearOverrideModal"]').click();
+    await page.waitForTimeout(300);
+
+    const { cleared, restoredMedian } = await page.evaluate(() => ({
+      cleared: !STATE.projOverrides['Juan Soto'],
+      restoredMedian: STATE.POOL.find(p => p.name === 'Juan Soto')?.median,
+    }));
+
+    expect(cleared).toBe(true);
+    expect(restoredMedian).toBeCloseTo(13.2, 1); // original fixture value (ROO_CSV has Juan Soto median 13.2)
+  });
+
+  test('override badge highlights edit button when override is active', async ({ page }) => {
+    // Apply an override via JS
+    await page.evaluate(() => {
+      STATE.projOverrides['Juan Soto'] = { median: 50, ceiling: 80, floor: null, own: null };
+      applyProjOverridesToPool();
+      invalidatePlayerRenderCache();
+      renderPlayers();
+    });
+    await page.waitForTimeout(300);
+
+    // The edit button for Juan Soto should have the tsu (green) colour style
+    const sotoRow = page.locator('#player-tbody tr').filter({ hasText: 'Juan Soto' });
+    const editBtn = sotoRow.locator('button[onclick*="openOverrideModal"]');
+    const style = await editBtn.getAttribute('style');
+    expect(style).toContain('tsu');
+  });
+});
+
+test.describe('22. Ban Players field', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/');
+    await uploadFiles(page,
+      ['DKSalaries.csv', DK_SALARIES_CSV],
+      ['roo_projections.csv', ROO_CSV]
+    );
+    await page.locator('.tab:has-text("Portfolio")').click();
+  });
+
+  test('port-ban-players input exists in the portfolio panel', async ({ page }) => {
+    await expect(page.locator('#port-ban-players')).toBeVisible();
+  });
+
+  test('banned player is excluded from getCalibratedPool()', async ({ page }) => {
+    await page.locator('#port-ban-players').fill('Juan Soto');
+
+    const included = await page.evaluate(() => {
+      const pool = getCalibratedPool();
+      return pool.some(p => p.name === 'Juan Soto');
+    });
+    expect(included).toBe(false);
+  });
+
+  test('non-banned players are not excluded', async ({ page }) => {
+    await page.locator('#port-ban-players').fill('Juan Soto');
+
+    const included = await page.evaluate(() => {
+      const pool = getCalibratedPool();
+      return pool.some(p => p.name === 'Mookie Betts');
+    });
+    expect(included).toBe(true);
+  });
+
+  test('multiple comma-separated bans all take effect', async ({ page }) => {
+    await page.locator('#port-ban-players').fill('Juan Soto, Mookie Betts, Gerrit Cole');
+
+    const result = await page.evaluate(() => {
+      const pool = getCalibratedPool();
+      return {
+        soto: pool.some(p => p.name === 'Juan Soto'),
+        betts: pool.some(p => p.name === 'Mookie Betts'),
+        cole: pool.some(p => p.name === 'Gerrit Cole'),
+        altuve: pool.some(p => p.name === 'Jose Altuve'), // not banned
+      };
+    });
+    expect(result.soto).toBe(false);
+    expect(result.betts).toBe(false);
+    expect(result.cole).toBe(false);
+    expect(result.altuve).toBe(true);
+  });
+
+  test('ban match is case-insensitive', async ({ page }) => {
+    await page.locator('#port-ban-players').fill('JUAN SOTO');
+
+    const included = await page.evaluate(() => {
+      const pool = getCalibratedPool();
+      return pool.some(p => p.name === 'Juan Soto');
+    });
+    expect(included).toBe(false);
+  });
+
+  test('clearing the ban field restores the player to the pool', async ({ page }) => {
+    await page.locator('#port-ban-players').fill('Juan Soto');
+    const bannedPool = await page.evaluate(() => getCalibratedPool().some(p => p.name === 'Juan Soto'));
+    expect(bannedPool).toBe(false);
+
+    await page.locator('#port-ban-players').fill('');
+    const restoredPool = await page.evaluate(() => getCalibratedPool().some(p => p.name === 'Juan Soto'));
+    expect(restoredPool).toBe(true);
+  });
 });
 
 test.describe('12. API endpoints', () => {
@@ -646,6 +788,12 @@ test.describe('15. Portfolio generation — full 20-lineup count', () => {
     test.setTimeout(120_000);
 
     await page.goto('/');
+    // Block auto-fetch of confirmed lineups — real MLB lineup data would mark fixture players
+    // as isConfirmed=false and filter them from getCalibratedPool(), shrinking the pool.
+    await page.route('/api/lineups/**', route => route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ success: true, games: [] }),
+    }));
     await uploadFiles(page,
       ['DKSalaries.csv', richPortfolioFixture.dkCsv],
       ['roo_projections.csv', richPortfolioFixture.rooCsv],

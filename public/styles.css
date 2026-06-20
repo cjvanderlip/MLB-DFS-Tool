@@ -105,6 +105,9 @@ tr:hover td { background: var(--bs) }
 .slot-info { font-size: 11px; color: var(--ts) }
 .slot-rm { padding: 2px 6px; font-size: 11px; border-radius: 4px; border: 0.5px solid var(--brd-s); cursor: pointer; background: transparent; color: var(--ts) }
 .slot-rm:hover { background: var(--bd); color: var(--td); border-color: var(--brd-d) }
+.slot-lock { padding: 2px 5px; font-size: 13px; border: none; cursor: pointer; background: transparent; opacity: 0.25; transition: opacity .15s }
+.slot-lock:hover { opacity: 0.7 }
+.slot-lock.locked { opacity: 1; filter: sepia(1) saturate(3) hue-rotate(5deg) }
 .slot-empty { flex: 1; font-size: 12px; color: var(--tt) }
 
 /* ── Salary Bar ────────────────────────────────────────────────────────────── */

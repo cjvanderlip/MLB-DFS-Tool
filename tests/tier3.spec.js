@@ -466,3 +466,87 @@ test.describe('21. Regression — no JS errors after Tier 3 changes', () => {
     await expect(page.locator('#check-postponed-btn')).toBeVisible();
   });
 });
+
+// ─── Engine fixes: injury normalization, greedyFill filter, locked-team stacks ─
+
+test.describe('22. Engine fixes — injury normalization and greedyFill filter', () => {
+  test('applyInjuriesToPool uses normalized key matching — no false-positive substring match', async ({ page }) => {
+    await page.goto('/');
+    await uploadAndGoToPlayers(page);
+
+    // "Al" is a substring of "Jose Altuve" and "Salvador Perez"; it must NOT match either.
+    // Inject an injury record for a non-existent player whose name is a substring of real names.
+    const result = await page.evaluate(() => {
+      const fakeName = 'Al'; // substring of "Jose Altuve", "Salvador Perez" etc.
+      STATE.injuryData = [{ name: fakeName, type: 'IL', description: 'test injury' }];
+      applyInjuriesToPool();
+      // None of the real pool players should get the IL flag from "Al"
+      return STATE.POOL
+        .filter(p => p.injuryFlag && p.injuryType === 'IL')
+        .map(p => p.name);
+    });
+
+    // The substring "Al" must not have matched any real pool player
+    expect(result).toHaveLength(0);
+  });
+
+  test('applyInjuriesToPool matches accent-stripped names correctly', async ({ page }) => {
+    await page.goto('/');
+    await uploadAndGoToPlayers(page);
+
+    // Inject injury data using an accented name — should still match the pool player
+    // whose name may or may not have the accent in the CSV.
+    const result = await page.evaluate(() => {
+      STATE.injuryData = [{ name: 'José Ramírez', type: 'GTD', description: 'day-to-day' }];
+      applyInjuriesToPool();
+      // Pool has "Jose Ramirez" (no accents) — normalized keys should match
+      const p = STATE.POOL.find(pl => pl.name === 'Jose Ramirez');
+      return p ? { flag: p.injuryFlag, type: p.injuryType } : null;
+    });
+
+    // If the pool has Jose Ramirez, he should pick up the GTD flag via normalized matching
+    if (result !== null) {
+      expect(result.flag).toBe(true);
+      expect(result.type).toBe('GTD');
+    }
+  });
+
+  test('greedyFill does not pick avgPpg-only players (no median/ceiling)', async ({ page }) => {
+    await page.goto('/');
+
+    const result = await page.evaluate(() => {
+      // Build a minimal pool where only one player has no median/ceiling but has avgPpg.
+      // greedyFill should NOT select them since they fail the (median>0 || ceiling>0) filter.
+      const fakePool = [
+        { name: 'RealPlayer',     dkPos: 'OF', rosterPos: 'OF', team: 'NYY', opp: 'BOS', salary: 4000, median: 12, ceiling: 22, floor: 4, avgPpg: 0, own: 10, game: 'NYY@BOS', hasDk: true, hasRoo: true },
+        { name: 'AvgPpgOnlyPlayer', dkPos: 'OF', rosterPos: 'OF', team: 'NYY', opp: 'BOS', salary: 2000, median: 0, ceiling: 0, floor: 0, avgPpg: 8, own: 5, game: 'NYY@BOS', hasDk: true, hasRoo: false },
+      ];
+      // calibratePool is a no-op pass-through when called with a minimal pool
+      const slots = new Array(10).fill(null);
+      const result = Engine.greedyFill(fakePool, p => p.median || 0, new Set(), slots);
+      return result.filter(Boolean).map(p => p.name);
+    });
+
+    expect(result).not.toContain('AvgPpgOnlyPlayer');
+  });
+
+  test('projection override modal functions are defined on the page', async ({ page }) => {
+    await page.goto('/');
+    const fns = await page.evaluate(() => ([
+      typeof openOverrideModal,
+      typeof closeOverrideModal,
+      typeof applyOverrideModal,
+      typeof clearOverrideModal,
+      typeof applyProjOverridesToPool,
+    ]));
+    fns.forEach(t => expect(t).toBe('function'));
+  });
+
+  test('STATE.projOverrides initializes as empty object', async ({ page }) => {
+    await page.goto('/');
+    const type = await page.evaluate(() => typeof STATE.projOverrides);
+    expect(type).toBe('object');
+    const keys = await page.evaluate(() => Object.keys(STATE.projOverrides).length);
+    expect(keys).toBe(0);
+  });
+});

@@ -1,4 +1,4 @@
-// ═══════════════════════════════════════════════════════════════════════════════
+﻿// ═══════════════════════════════════════════════════════════════════════════════
 // MLB DFS Tool v2.0 — Application UI Layer
 // Connects Engine.js analytics to the user interface
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -17,6 +17,7 @@ const STATE = {
 
   // Lineup
   lineup: new Array(10).fill(null),
+  lockedSlots: new Array(10).fill(false),
   generatedLineups: [],
 
   // Context data
@@ -27,10 +28,16 @@ const STATE = {
   OPTIMAL_LINEUPS: [],
   optimalExposure: {}, optimalStacks: {},
 
+  // Portfolio Manager import
+  PM_LINEUPS: [],
+  pmSort: { col: 'rank', dir: 1 },
+  pmEdgeOnly: false,
+
   // Portfolio
   portfolioLineups: [], portfolioExposure: {}, lastPortfolioResult: null,
   playerExposureOverrides: {},
   teamExposureOverrides: {},
+  projOverrides: {},      // { 'Player Name': { median, ceiling, floor, own } } — per-session projection overrides
 
   // Slate type
   slateType: 'classic', // 'classic' | 'showdown'
@@ -41,6 +48,7 @@ const STATE = {
   // Live data
   confirmedLineups: {},
   statcastData: {}, pitcherStatcastData: {},
+  seasonStatsData: null, // { batters: {}, pitchers: {} } from /api/season-stats
   formData: {}, blendWeights: {},
   windEffects: {}, injuryData: [],
   umpireData: {}, dvpData: {},
@@ -53,6 +61,13 @@ const STATE = {
   // tracks the residual deviation only). Defaults assume ROO (which prices both in).
   sourceIncludesPark: true,
   sourceIncludesVegas: true,
+
+  // Best plays analysis (from plays tab)
+  lastBestPlays: null,
+  bestPlaysContext: {},
+
+  // Quick Stack widget
+  quickStackSize: 4,
 };
 
 // ── DOM element cache — populated once at init, used in all hot-path functions ──
@@ -62,7 +77,7 @@ function cacheDOM() {
   const ids = [
     'team-sel', 'game-sel', 'search-inp', 'filter-confirmed', 'filter-hide-injured',
     'player-tbody', 'player-count', 'player-more', 'median-total', 'own-avg',
-    'sal-bar', 'sal-rem'
+    'sal-bar', 'sal-remain'
   ];
   ids.forEach(id => { _EL[id] = document.getElementById(id); });
 }
@@ -90,6 +105,119 @@ window.toggleDebug = function () {
 };
 // Sync engine debug state on load (engine module loaded before app.js runs this)
 if (window.Engine?.setDebug) Engine.setDebug(_debug);
+
+// ── Runtime triage tools ───────────────────────────────────────────────────────
+//
+// Tool 1: Session error log — intercept warn/error from the moment app.js loads.
+// Captures timestamped entries so window.downloadLog() can produce a JSON file.
+const _sessionLog = [];
+const _origWarn  = console.warn.bind(console);
+const _origError = console.error.bind(console);
+console.warn = (...args) => {
+  _sessionLog.push({ ts: new Date().toISOString(), level: 'warn',  msg: args.map(String).join(' ') });
+  _origWarn(...args);
+};
+console.error = (...args) => {
+  _sessionLog.push({ ts: new Date().toISOString(), level: 'error', msg: args.map(String).join(' ') });
+  _origError(...args);
+};
+
+window.downloadLog = function () {
+  const pool = window.STATE?.POOL || [];
+  const meta = {
+    exportedAt: new Date().toISOString(),
+    poolSize: pool.length,
+    projectedCount: pool.filter(p => (p.median || 0) > 0).length,
+    confirmedTeams: Object.keys(window.STATE?.confirmedLineups || {}).length,
+    vegasTeams: Object.keys(window.STATE?.vegasData || {}).length,
+    mode: window.STATE?.MODE || 'unknown',
+  };
+  const blob = new Blob(
+    [JSON.stringify({ meta, entries: _sessionLog }, null, 2)],
+    { type: 'application/json' }
+  );
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `mlbdfs-log-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  console.log('[mlbdfs] session log downloaded —', _sessionLog.length, 'entries');
+};
+
+// Tool 2: window.diag() — one-shot structured state snapshot.
+window.diag = function () {
+  const S = window.STATE || {};
+  const pool = S.POOL || [];
+  const pitchers = pool.filter(p => (p.rosterPos || p.dkPos || '').includes('P'));
+  const batters  = pool.filter(p => !(p.rosterPos || p.dkPos || '').includes('P'));
+
+  const projPitchers = pitchers.filter(p => (p.median || 0) > 0);
+  const projBatters  = batters.filter(p => (p.median || 0) > 0);
+  const confirmedPlayers = pool.filter(p => p.isConfirmed === true);
+  const unconfirmedTeams = [...new Set(
+    pool.filter(p => p.isConfirmed === false && !p.isOpener).map(p => p.team)
+  )];
+  const teamsWithVegas = Object.keys(S.vegasData || {});
+  const teamsInPool    = [...new Set(pool.map(p => p.team).filter(Boolean))];
+  const teamsNoVegas   = teamsInPool.filter(t => !teamsWithVegas.includes(t));
+
+  // realisticMin per slot — requires Engine + pool
+  let slotMins = null;
+  try {
+    if (window.Engine?.DK_SLOTS && projPitchers.length) {
+      const slots = Engine.DK_SLOTS;
+      const preplacedNames = new Set();
+      const openSlotRankByKey = {};
+      slotMins = slots.map(slot => {
+        const rank = openSlotRankByKey[slot.key] = (openSlotRankByKey[slot.key] || 0);
+        openSlotRankByKey[slot.key]++;
+        const eligible = pool.filter(p =>
+          slot.eligible(p) && p.salary > 0 && ((p.median || 0) > 0 || (p.ceiling || 0) > 0) &&
+          !preplacedNames.has(p.name)
+        ).sort((a, b) => a.salary - b.salary);
+        if (!eligible.length) return { slot: slot.key, min: 3000, note: 'no eligible players' };
+        const baseIdx = Math.max(0, Math.floor(eligible.length * 0.03));
+        const picked = eligible[Math.min(baseIdx + rank, eligible.length - 1)];
+        return { slot: slot.key, min: picked.salary, example: picked.name };
+      });
+    }
+  } catch (_) {}
+
+  const snap = {
+    '--- POOL ---': null,
+    poolTotal:       pool.length,
+    pitchers:        `${projPitchers.length} projected / ${pitchers.length} total`,
+    batters:         `${projBatters.length} projected / ${batters.length} total`,
+    confirmed:       `${confirmedPlayers.length} players confirmed`,
+    unconfirmedTeams: unconfirmedTeams.length ? unconfirmedTeams.join(', ') : 'all teams confirmed',
+    '--- COVERAGE ---': null,
+    vegasTeams:      `${teamsWithVegas.length} teams with Vegas data`,
+    teamsNoVegas:    teamsNoVegas.length ? teamsNoVegas.join(', ') : 'none',
+    confirmedGames:  Object.keys(S.confirmedLineups || {}).length + ' games',
+    ownershipFlags:  (S.ownershipFlags || []).map(f => `${f.name} ${f.uploadedOwn}%→${f.projectedOwn}%`).join(', ') || 'none',
+    '--- SLOT MINS ---': null,
+    realisticMin:    slotMins
+      ? slotMins.map(s => `${s.slot}=$${s.min}${s.example ? `(${s.example})` : ''}`).join('  ')
+      : 'unavailable (load pool first)',
+    '--- SESSION ---': null,
+    logEntries:      _sessionLog.length,
+    warnings:        _sessionLog.filter(e => e.level === 'warn').length,
+    errors:          _sessionLog.filter(e => e.level === 'error').length,
+    lastPortfolio:   S.lastPortfolioReceipt
+      ? `${S.lastPortfolioReceipt.generated}/${S.lastPortfolioReceipt.requested} lineups, ${S.lastPortfolioReceipt.elapsedMs}ms`
+      : 'none',
+    hint:            'window.downloadLog() to export full log as JSON',
+  };
+
+  console.group('%c[mlbdfs] diag snapshot', 'font-weight:bold;color:#4a9eff');
+  Object.entries(snap).forEach(([k, v]) => {
+    if (v === null) console.groupCollapsed('%c' + k, 'color:#aaa;font-style:italic');
+    else if (k.startsWith('---')) console.groupEnd();
+    else console.log('%c' + k + '%c', 'color:#888', '', v);
+  });
+  console.groupEnd();
+  return snap;
+};
 
 // ── Constants (from Engine) ────────────────────────────────────────────────────
 const SALARY_CAP = 50000, CAP = SALARY_CAP, ROSTER_SIZE = 10;
@@ -170,6 +298,77 @@ function addPlayerByPoolIdx(idx) { const p = STATE._playerPoolCache[idx]; if (p)
 function addPlayerByLuIdx(idx) { const p = STATE._luPoolCache[idx]; if (p) addToLineup(p); }
 function addStackPlayer(sid, pidx) { const s = [...STATE.STACKS3, ...STATE.STACKS5].find(st => st.id === sid); if (s && s.players[pidx]) addToLineupByName(s.players[pidx]); }
 
+// ── Projection Override Modal ─────────────────────────────────────────────────
+let _overrideTarget = null;
+
+function openOverrideModal(name) {
+  _overrideTarget = name;
+  const nameEl = document.getElementById('po-name');
+  if (nameEl) nameEl.textContent = name;
+  const ov = STATE.projOverrides[name] || {};
+  const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val != null ? val : ''; };
+  set('po-median', ov.median);
+  set('po-ceiling', ov.ceiling);
+  set('po-floor', ov.floor);
+  set('po-own', ov.own);
+  const statusEl = document.getElementById('po-status');
+  if (statusEl) statusEl.textContent = '';
+  document.getElementById('proj-override-backdrop').style.display = 'block';
+  document.getElementById('proj-override-modal').style.display = 'block';
+}
+
+function closeOverrideModal() {
+  document.getElementById('proj-override-backdrop').style.display = 'none';
+  document.getElementById('proj-override-modal').style.display = 'none';
+  _overrideTarget = null;
+}
+
+function applyOverrideModal() {
+  if (!_overrideTarget) return;
+  const get = id => { const v = parseFloat(document.getElementById(id)?.value); return isNaN(v) ? null : v; };
+  const ov = { median: get('po-median'), ceiling: get('po-ceiling'), floor: get('po-floor'), own: get('po-own') };
+  const hasAny = Object.values(ov).some(v => v != null);
+  if (!hasAny) {
+    const statusEl = document.getElementById('po-status');
+    if (statusEl) statusEl.textContent = 'No values entered.';
+    return;
+  }
+  STATE.projOverrides[_overrideTarget] = ov;
+  applyProjOverridesToPool();
+  invalidatePlayerRenderCache();
+  renderPlayers();
+  saveSession();
+  const statusEl = document.getElementById('po-status');
+  if (statusEl) { statusEl.textContent = 'Override applied.'; statusEl.style.color = 'var(--tsu)'; }
+  setTimeout(() => closeOverrideModal(), 700);
+}
+
+function clearOverrideModal() {
+  if (!_overrideTarget) return;
+  delete STATE.projOverrides[_overrideTarget];
+  applyProjOverridesToPool();
+  invalidatePlayerRenderCache();
+  renderPlayers();
+  saveSession();
+  closeOverrideModal();
+}
+
+function applyProjOverridesToPool() {
+  STATE.POOL.forEach(p => {
+    const ov = STATE.projOverrides[p.name];
+    if (!ov) {
+      // Restore original values when override is removed
+      if (p._origProj) { Object.assign(p, p._origProj); delete p._origProj; }
+      return;
+    }
+    if (!p._origProj) p._origProj = { median: p.median, ceiling: p.ceiling, floor: p.floor, own: p.own };
+    if (ov.median != null) p.median = ov.median;
+    if (ov.ceiling != null) p.ceiling = ov.ceiling;
+    if (ov.floor != null) p.floor = ov.floor;
+    if (ov.own != null) { p.own = ov.own; p.lev = Engine.calcLeverage(p, STATE.contestSize); }
+  });
+}
+
 function updatePlayerOwn(idx, val) {
   const p = STATE._playerPoolCache[idx];
   if (!p) return;
@@ -197,7 +396,7 @@ function getEngineContext() {
   // every scoring/sim/optimizer call — guarantees correlation math sees current state.
   if (Engine.setVegasContext) Engine.setVegasContext(STATE.vegasData);
   return { vegasData: STATE.vegasData, parkFactors: STATE.parkFactors, weatherData: STATE.weatherData, stadiums: STATE.stadiumData, teamScoring: STATE.TEAM_SCORING, contestSize: STATE.contestSize, pool, optimalExposure: STATE.optimalExposure, optimalStacks: STATE.optimalStacks, umpireData: STATE.umpireData, blendWeights: STATE.blendWeights, bullpenData: STATE.bullpenData, framingMap: STATE.framingMap, sprintSpeedData: STATE.sprintSpeedData, dvpData: STATE.dvpData, hasConfirmedData,
-    sourceIncludesPark: STATE.sourceIncludesPark, sourceIncludesVegas: STATE.sourceIncludesVegas };
+    sourceIncludesPark: STATE.sourceIncludesPark, sourceIncludesVegas: STATE.sourceIncludesVegas, bestPlaysContext: STATE.bestPlaysContext, useBestPlaysWeighting: document.getElementById('port-use-best-plays')?.checked || false };
 }
 
 // Returns calibrated pool for optimizer calls — scoring functions score individual
@@ -205,16 +404,33 @@ function getEngineContext() {
 function getCalibratedPool() {
   // Teams that have a confirmed batting order posted — non-starters from these teams are excluded.
   const confirmedTeams = new Set();
+  // Teams where a probable starting pitcher has been announced — non-starters excluded.
+  const teamsWithProbable = new Set();
   Object.values(STATE.confirmedLineups).forEach(g => {
     if (g.homeOrder?.length > 0) confirmedTeams.add(g.homeTeam);
     if (g.awayOrder?.length > 0) confirmedTeams.add(g.awayTeam);
+    if (g.homeProbable) teamsWithProbable.add(g.homeTeam);
+    if (g.awayProbable) teamsWithProbable.add(g.awayTeam);
   });
 
+  // Manually banned players entered in the "Ban Players" field (applies to all optimizer builds).
+  const bannedNames = new Set(
+    (document.getElementById('port-ban-players')?.value || '')
+      .split(',')
+      .map(s => s.trim().toLowerCase())
+      .filter(Boolean)
+  );
+
   return Engine.calibratePool(STATE.POOL.filter(p => {
-    if (p.dkStatus === 'O') return false;           // DK salary file marks player as Out
-    if (p.injuryType === 'IL') return false;         // injury API confirmed IL
+    if (bannedNames.size > 0 && bannedNames.has(p.name.toLowerCase())) return false; // manually banned
+    if (p.dkStatus === 'O' || p.dkStatus === 'D') return false; // Out or Doubtful per DK salary file
+    if (p.injuryType === 'IL' || p.injuryType === 'DL' || (p.injuryFlag && !p.injuryType)) return false; // injury API confirmed IL/DL or flagged with unknown type
+    // Min-salary placeholder with no projection — scratched/inactive roster spot
+    if (p.salary > 0 && p.salary <= 3000 && p.median === 0 && p.ceiling === 0 && !p.avgPpg) return false;
     // Batter whose team has posted its lineup but they're not in it — sitting out today
     if (!rp(p, 'P') && confirmedTeams.has(p.team) && !p.isConfirmed) return false;
+    // Pitcher on a team with a named probable starter but this pitcher isn't it — not starting today
+    if (rp(p, 'P') && teamsWithProbable.has(p.team) && !p.isConfirmed) return false;
     return true;
   }));
 }
@@ -235,6 +451,7 @@ function showTab(t) {
   if (t === 'slate') renderSlateSummary();
   if (t === 'plays') renderBestPlays();
   if (t === 'portfolio') renderPortfolioTeamSelectors();
+  if (t === 'simulator' && !STATE.simBenchmarksLoaded) loadSimBenchmarks();
   if (t === 'players' && STATE.POOL.length && !Object.keys(STATE.confirmedLineups).length) {
     // Auto-fetch confirmed lineups once per session when switching to Players tab
     const today = new Date().toISOString().split('T')[0];
@@ -270,6 +487,13 @@ function detectFileType(fields) {
   const hasProjVal = h.some(x => x === 'projected_value' || x === 'projected_fp');
   const hasStdDev = h.some(x => x === 'std_dev');
   if (hasProjVal && hasStdDev && hasPosition) return 'roo';
+
+  // Portfolio Manager export — unique markers: se_score + lineup_edge + geomean
+  // Must be checked before optimal detection (shares SP1/SP2/Stack columns).
+  const hasSEScore = h.some(x => x === 'se_score');
+  const hasLineupEdge = h.some(x => x === 'lineup_edge');
+  const hasGeomean = h.some(x => x === 'geomean');
+  if (hasSEScore && hasLineupEdge && hasGeomean) return 'pm_export';
 
   // Optimal lineups file — classic: SP1/SP2/C/1B/2B/3B/SS/OF1/OF2/OF3 + Salary + Proj + Stack
   const hasSP1 = h.some(x => x === 'sp1');
@@ -309,6 +533,7 @@ function parseFile(file) {
       else if (type === 'team_scoring') loadTeamScoring(res.data, file.name);
       else if (type === 'optimal') loadOptimalLineups(res.data, file.name);
       else if (type === 'optimal_showdown') loadShowdownOptimalLineups(res.data, file.name);
+      else if (type === 'pm_export') loadPortfolioManagerExport(res.data, file.name);
       else showUploadWarn('unknown', file.name, res.meta.fields || []);
     }, error(err) {
       console.error('Parse error:', err);
@@ -330,7 +555,12 @@ function loadDK(data, fname) {
   STATE.slateType = 'classic';
   STATE.lineup = new Array(ROSTER_SIZE).fill(null);
   STATE.DK_PLAYERS = data.map(r => {
-    const dkPos = (r.Position || '').trim();
+    // 'Roster Position' is the authoritative DK eligibility column — it defines exactly
+    // what contest slots the player can fill, and is what DK validates against on CSV upload.
+    // 'Position' is the player's real-life position (often single-value like "SS") and can
+    // omit multi-position eligibility granted by DK (e.g. a SS listed as "2B/SS" in DK).
+    // Prefer 'Roster Position' so generated lineups always match DK's upload validation.
+    const dkPos = (r['Roster Position'] || r.Position || '').trim();
     const rosterPos = toRosterPos(dkPos);
     const name = (r.Name || '').trim();
     const id = (r.ID || '').trim();
@@ -795,6 +1025,163 @@ function loadShowdownOptimalLineups(data, fname) {
   if (STATE.POOL.length) { renderPlayers(); }
 }
 
+// ── Portfolio Manager Export ──────────────────────────────────────────────────
+
+function loadPortfolioManagerExport(data, fname) {
+  STATE.PM_LINEUPS = data.map((r, i) => {
+    // PapaParse gives the unnamed index column an empty-string key
+    const rawRank = r[''] ?? r[Object.keys(r)[0]];
+    const rank = parseInt(rawRank);
+    return {
+      rank: isNaN(rank) ? i : rank,
+      sp1: (r['SP1'] || '').trim(),
+      sp2: (r['SP2'] || '').trim(),
+      c:   (r['C']   || '').trim(),
+      b1:  (r['1B']  || '').trim(),
+      b2:  (r['2B']  || '').trim(),
+      b3:  (r['3B']  || '').trim(),
+      ss:  (r['SS']  || '').trim(),
+      of1: (r['OF1'] || '').trim(),
+      of2: (r['OF2'] || '').trim(),
+      of3: (r['OF3'] || '').trim(),
+      stack:      (r['Stack'] || '').trim(),
+      stackSize:  parseInt(r['Size'] || 0) || 0,
+      salary:     parseFloat(r['salary'] || 0) || 0,
+      median:     parseFloat(r['median'] || 0) || 0,
+      own:        parseFloat(r['Own'] || 0) || 0,
+      finishPct:  parseFloat(r['Finish_percentile'] || 0) || 0,
+      winPct:     parseFloat(r['Win%'] || 0) || 0,
+      lineupEdge: parseFloat(r['Lineup Edge'] || 0) || 0,
+      weightedOwn:parseFloat(r['Weighted Own'] || 0) || 0,
+      geomean:    parseFloat(r['Geomean'] || 0) || 0,
+      diversity:  parseFloat(r['Diversity'] || 0) || 0,
+      seScore:    parseFloat(r['SE Score'] || 0) || 0,
+    };
+  }).filter(lu => lu.sp1 || lu.sp2);
+
+  STATE.pmSort = { col: 'rank', dir: 1 };
+  STATE.pmEdgeOnly = false;
+
+  setFileStatus('pm', fname, STATE.PM_LINEUPS.length + ' lineups');
+
+  const sec = document.getElementById('pm-lineups-section');
+  if (sec) sec.style.display = 'block';
+
+  // Switch to portfolio tab so the user can see the result immediately
+  if (document.getElementById('panel-portfolio')?.classList.contains('active') === false) {
+    showTab('portfolio');
+  }
+
+  renderPMLineups();
+}
+
+function setPMSort(col) {
+  if (STATE.pmSort.col === col) {
+    STATE.pmSort.dir *= -1;
+  } else {
+    STATE.pmSort.col = col;
+    // For score-like columns default to descending; rank and salary ascending
+    STATE.pmSort.dir = (col === 'rank' || col === 'salary') ? 1 : -1;
+  }
+  renderPMLineups();
+}
+
+function setPMEdgeOnly(v) {
+  STATE.pmEdgeOnly = v;
+  renderPMLineups();
+}
+
+function renderPMLineups() {
+  const sec = document.getElementById('pm-lineups-section');
+  if (!sec || !STATE.PM_LINEUPS?.length) return;
+
+  const { col, dir } = STATE.pmSort;
+  const edgeOnly = STATE.pmEdgeOnly;
+
+  let lineups = [...STATE.PM_LINEUPS];
+  if (edgeOnly) lineups = lineups.filter(lu => lu.lineupEdge >= 0);
+  lineups.sort((a, b) => {
+    const va = a[col] ?? 0, vb = b[col] ?? 0;
+    return (va < vb ? -1 : va > vb ? 1 : 0) * dir;
+  });
+
+  const total = STATE.PM_LINEUPS.length;
+  const posCount = STATE.PM_LINEUPS.filter(l => l.lineupEdge >= 0).length;
+  const avgSE  = STATE.PM_LINEUPS.reduce((s, l) => s + l.seScore, 0) / total;
+  const avgEdge = STATE.PM_LINEUPS.reduce((s, l) => s + l.lineupEdge, 0) / total;
+
+  const lname = s => {
+    if (!s) return '—';
+    const p = s.trim().split(' ');
+    return p.length > 1 ? p[p.length - 1] : s;
+  };
+
+  const seColor = v => v >= 0.8 ? 'var(--tsu)' : v >= 0.5 ? 'var(--ti)' : v >= 0.2 ? 'var(--tw)' : 'var(--tt)';
+  const edgeColor = v => v >= 0 ? 'var(--tsu)' : 'var(--td)';
+  const edgeStr = v => (v >= 0 ? '+' : '') + v.toFixed(3);
+  const arrow = c => col !== c
+    ? '<span style="color:var(--tt);font-size:9px;opacity:.5">⇅</span>'
+    : (dir === 1 ? ' ↑' : ' ↓');
+  const th = c => `style="cursor:pointer;user-select:none;white-space:nowrap" onclick="setPMSort('${c}')"`;
+
+  const rows = lineups.map(lu => {
+    const sc = seColor(lu.seScore);
+    const seW = Math.round(lu.seScore * 40);
+    return `<tr>
+      <td style="color:var(--tt);font-size:10px">${lu.rank + 1}</td>
+      <td title="${esc(lu.sp1)}">${esc(lname(lu.sp1))}</td>
+      <td title="${esc(lu.sp2)}">${esc(lname(lu.sp2))}</td>
+      <td><span class="pill pg" style="font-size:9px">${esc(lu.stack)}</span></td>
+      <td>$${(lu.salary / 1000).toFixed(1)}k</td>
+      <td>${lu.median.toFixed(1)}</td>
+      <td style="color:var(--ts)">${lu.own.toFixed(1)}%</td>
+      <td>
+        <div style="display:flex;align-items:center;gap:4px">
+          <div style="width:40px;height:4px;background:var(--bs);border-radius:2px;overflow:hidden">
+            <div style="width:${seW}px;height:4px;background:${sc}"></div>
+          </div>
+          <span style="color:${sc};font-weight:600;font-size:11px">${lu.seScore.toFixed(3)}</span>
+        </div>
+      </td>
+      <td style="color:${edgeColor(lu.lineupEdge)};font-weight:600">${edgeStr(lu.lineupEdge)}</td>
+      <td style="color:var(--ts)">${lu.weightedOwn.toFixed(1)}</td>
+      <td style="color:var(--ts)">${lu.geomean.toFixed(2)}</td>
+    </tr>`;
+  }).join('');
+
+  sec.innerHTML = `
+    <div style="padding:10px 12px;background:var(--bs);border-radius:var(--r);border:0.5px solid var(--brd-s)">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap">
+        <div style="font-size:12px;font-weight:600;color:var(--tp)">Portfolio Manager Import</div>
+        <span style="font-size:11px;color:var(--tt)">${total} lineups &middot; ${posCount} positive edge &middot; avg SE ${avgSE.toFixed(3)} &middot; avg edge ${avgEdge >= 0 ? '+' : ''}${avgEdge.toFixed(4)}</span>
+        <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;margin-left:auto">
+          <input type="checkbox" ${edgeOnly ? 'checked' : ''} onchange="setPMEdgeOnly(this.checked)"> Edge ≥ 0 only
+        </label>
+      </div>
+      <div style="max-height:320px;overflow-y:auto">
+        <table style="font-size:11px">
+          <thead><tr>
+            <th ${th('rank')}># ${arrow('rank')}</th>
+            <th ${th('sp1')}>SP1 ${arrow('sp1')}</th>
+            <th ${th('sp2')}>SP2 ${arrow('sp2')}</th>
+            <th ${th('stack')}>Stack ${arrow('stack')}</th>
+            <th ${th('salary')}>Salary ${arrow('salary')}</th>
+            <th ${th('median')}>Median ${arrow('median')}</th>
+            <th ${th('own')}>Own% ${arrow('own')}</th>
+            <th ${th('seScore')} title="Single Entry Score — higher = better for SE contests">SE Score ${arrow('seScore')}</th>
+            <th ${th('lineupEdge')} title="Edge vs the field — positive = favorable">Edge ${arrow('lineupEdge')}</th>
+            <th ${th('weightedOwn')} title="Portfolio-weighted ownership composite">Wgt Own ${arrow('weightedOwn')}</th>
+            <th ${th('geomean')} title="Geometric mean — risk-adjusted upside score">Geomean ${arrow('geomean')}</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+      <div style="margin-top:6px;font-size:10px;color:var(--tt)">
+        Click any column header to sort &middot; SE Score and Edge are the two novel signals not in the generator
+      </div>
+    </div>`;
+}
+
 function applyOptimalToPool() {
   STATE.POOL.forEach(p => {
     const exp = STATE.optimalExposure[p.name];
@@ -824,6 +1211,22 @@ function applyOptimalToStacks() {
   };
   boostStacks(STATE.STACKS3);
   boostStacks(STATE.STACKS5);
+}
+
+// Warn when a player's rosterPos doesn't match any DK slot — catches bad position data
+// from ROO files (e.g. 'DH', 'UTIL', 'RF/LF') that the optimizer silently ignores.
+function warnUnmatchedPositions() {
+  if (!STATE.POOL.length || STATE.slateType === 'showdown') return;
+  const slots = DK_SLOTS;
+  const unmatched = STATE.POOL.filter(p => {
+    if (!p.rosterPos && !p.dkPos) return false;
+    return !slots.some(s => s.eligible(p));
+  });
+  if (unmatched.length > 0) {
+    const names = unmatched.slice(0, 5).map(p => `${p.name} (${p.rosterPos || p.dkPos})`).join(', ');
+    const extra = unmatched.length > 5 ? ` and ${unmatched.length - 5} more` : '';
+    console.warn(`[mlbdfs] ${unmatched.length} player(s) have unrecognised DK positions and will be excluded from lineups: ${names}${extra}`);
+  }
 }
 
 function mergePools() {
@@ -860,6 +1263,12 @@ function mergePools() {
   if (Object.keys(STATE.TEAM_SCORING).length) applyTeamScoringToPool();
   if (Object.keys(STATE.optimalExposure).length) applyOptimalToPool();
   if (Object.keys(STATE.confirmedLineups).length) applyConfirmedToPool();
+  if (Object.keys(STATE.projOverrides).length) applyProjOverridesToPool();
+  // Apply internal projections to any player missing external ROO data
+  if (STATE.seasonStatsData && Engine.buildInternalProjections) {
+    STATE.POOL = Engine.buildInternalProjections(STATE.POOL, STATE.seasonStatsData, STATE.vegasData);
+  }
+  warnUnmatchedPositions();
   runOwnershipAudit(); // Fix #1 — validate/fill uploaded ownership before it drives leverage/sim
   invalidatePlayerRenderCache(); // pool changed — force re-filter on next render
   updateUI();
@@ -1028,8 +1437,14 @@ function checkAllLoaded() {
   if (!hasPlayers && !hasStacks) return;
   document.getElementById('upload-status').style.display = 'block';
   const poolSize = STATE.POOL.length || STATE.ROO.length;
+  const withExternal = STATE.POOL.filter(p => p.hasRoo && p.median > 0).length;
+  const withInternal = STATE.POOL.filter(p => p.hasInternalProj && !p.hasRoo && p.median > 0).length;
   const withProj = STATE.POOL.filter(p => p.median > 0).length || STATE.ROO.length;
-  const projLabel = rooCount > 1 ? rooCount + ' sources blended' : (STATE.MODE === 'dk' ? 'matched to ROO' : 'from ROO');
+  let projLabel;
+  if (rooCount > 1) projLabel = rooCount + ' sources blended';
+  else if (STATE.MODE === 'dk' && withInternal > 0 && withExternal > 0) projLabel = `${withExternal} ROO + ${withInternal} internal`;
+  else if (withInternal > 0 && withExternal === 0) projLabel = 'internal model';
+  else projLabel = STATE.MODE === 'dk' ? 'matched to ROO' : 'from ROO';
   document.getElementById('upload-metrics').innerHTML = [
     { l: 'Players', v: poolSize, s: STATE.MODE === 'dk' ? 'on DK slate' : 'in ROO' },
     { l: 'With projections', v: withProj, s: projLabel },
@@ -1042,6 +1457,7 @@ function checkAllLoaded() {
   const count = [hasPlayers, STATE.STACKS3.length > 0, STATE.STACKS5.length > 0, hasTeamScoring, hasOptimal].filter(Boolean).length;
   document.getElementById('slate-badge').textContent = count + '/5 files loaded';
   document.getElementById('slate-badge').className = 'pill ' + (count >= 5 ? 'psu' : 'pw');
+  populateQsTeamSel();
 }
 
 // ── Player Pool Rendering ─────────────────────────────────────────────────────
@@ -1077,7 +1493,20 @@ function sortPlayers(data, sc) {
   return data;
 }
 
-function renderPlayerRow(p, idx, maxC, usedNames) {
+// multContext is identical for every row in a render pass, so renderPlayers builds
+// it once and threads it through. (Previously each row re-allocated this object
+// literal — N allocations per render for no benefit.)
+function buildMultContext() {
+  return {
+    vegasData: STATE.vegasData, parkFactors: STATE.parkFactors,
+    weatherData: STATE.weatherData, stadiums: STATE.stadiumData,
+    teamScoring: STATE.TEAM_SCORING, blendWeights: STATE.blendWeights,
+    bullpenData: STATE.bullpenData, framingMap: STATE.framingMap,
+    sprintSpeedData: STATE.sprintSpeedData
+  };
+}
+
+function renderPlayerRow(p, idx, maxC, usedNames, multContext) {
   const bw = Math.round(p.ceiling / maxC * 55);
   const lc = p.lev > 5 ? 'lp' : p.lev < -2 ? 'ln' : 'lz';
   const inLu = usedNames.has(p.name);
@@ -1088,13 +1517,6 @@ function renderPlayerRow(p, idx, maxC, usedNames) {
   // factors (park + Vegas + weather + Statcast) are all stacking in the same
   // direction — which may double-count factors already in the projection CSV.
   let multBadge = '';
-  const multContext = {
-    vegasData: STATE.vegasData, parkFactors: STATE.parkFactors,
-    weatherData: STATE.weatherData, stadiums: STATE.stadiumData,
-    teamScoring: STATE.TEAM_SCORING, blendWeights: STATE.blendWeights,
-    bullpenData: STATE.bullpenData, framingMap: STATE.framingMap,
-    sprintSpeedData: STATE.sprintSpeedData
-  };
   try {
     const em = Engine.computeEffectiveMult(p, multContext);
     if (em.isOver) {
@@ -1149,7 +1571,12 @@ function renderPlayerRow(p, idx, maxC, usedNames) {
   const ownBorder = ownFlagged ? '1px solid var(--tw)' : ownEst ? '1px dashed var(--ti)' : '0.5px solid var(--brd-s)';
   const ownTitle = ownFlagged ? 'Uploaded ownership deviates sharply from the model estimate \u2014 verify it is not stale' : ownEst ? 'Modeled ownership estimate (no uploaded value) \u2014 edit to override' : 'Edit projected ownership %';
   const ownMark = ownFlagged ? ' <span style="font-size:10px;color:var(--tw)" title="deviates from model estimate">\u26a0</span>' : ownEst ? ' <span style="font-size:8px;color:var(--ti);vertical-align:super" title="modeled estimate">est</span>' : '';
-  return `<tr style="${inLu ? 'opacity:.38;' : ''}"><td><strong style="${formColor ? 'color:' + formColor : ''}">${esc(p.name)}</strong>${STATE.MODE === 'dk' && !p.hasRoo ? '<span style="font-size:10px;background:var(--bw);color:var(--tw);border-radius:3px;padding:1px 4px;margin-left:4px">no proj</span>' : ''}${confirmedBadge}${scBadge}${injuryBadge}${postponedBadge}${dvpBadge}${multBadge}</td><td><span class="pill pi" style="font-size:10px">${esc(p.dkPos) || '\u2014'}</span></td><td>${esc(p.team)}</td><td>${p.salary > 0 ? '$' + p.salary.toLocaleString() : '\u2014'}</td><td>${p.order > 0 ? '#' + p.order : '\u2014'}</td><td>${p.floor > 0 ? p.floor.toFixed(1) : '\u2014'}</td><td>${p.median > 0 ? '<strong>' + p.median.toFixed(1) + '</strong>' : '\u2014'}</td><td>${p.ceiling > 0 ? `<div class="bar-w"><div class="bar" style="width:${bw}px"></div><span style="font-size:11px;color:var(--ts)">${p.ceiling.toFixed(1)}</span></div>` : '\u2014'}</td><td style="white-space:nowrap"><input type="number" min="0" max="100" step="0.5" value="${p.own > 0 ? p.own.toFixed(1) : ''}" placeholder="0" title="${ownTitle}" style="width:50px;font-size:11px;padding:2px 4px;border:${ownBorder};border-radius:4px;background:var(--bp);color:${p.own > 50 ? 'var(--td)' : p.own > 25 ? 'var(--tw)' : p.own > 10 ? 'var(--ti)' : 'var(--tp)'};text-align:center" oninput="updatePlayerOwn(${idx},this.value)">${ownMark}</td><td class="${lc}">${p.lev !== 0 ? (p.lev > 0 ? '+' : '') + p.lev.toFixed(1) : '\u2014'}</td><td style="color:var(--ti);font-weight:500">${gppS > 0 ? gppS.toFixed(1) : '\u2014'}</td><td>${optExpVal}</td><td>${p.avgPpg > 0 ? p.avgPpg.toFixed(1) : '\u2014'}</td><td>${kDisplay}</td><td><button class="btn" style="padding:3px 8px;font-size:11px" ${inLu ? 'disabled' : ''} onclick="addPlayerByPoolIdx(${idx})">+</button></td></tr>`;
+  const projBadge = STATE.MODE === 'dk' && !p.hasRoo
+    ? (p.hasInternalProj
+        ? '<span style="font-size:9px;background:#1a3a1a;color:#5dba5d;border-radius:3px;padding:1px 4px;margin-left:4px" title="Projection built from season rate stats (no ROO CSV)">internal</span>'
+        : '<span style="font-size:10px;background:var(--bw);color:var(--tw);border-radius:3px;padding:1px 4px;margin-left:4px">no proj</span>')
+    : '';
+  return `<tr style="${inLu ? 'opacity:.38;' : ''}"><td><strong style="${formColor ? 'color:' + formColor : ''}">${esc(p.name)}</strong>${projBadge}${confirmedBadge}${scBadge}${injuryBadge}${postponedBadge}${dvpBadge}${multBadge}</td><td><span class="pill pi" style="font-size:10px">${esc(p.dkPos) || '\u2014'}</span></td><td>${esc(p.team)}</td><td>${p.salary > 0 ? '$' + p.salary.toLocaleString() : '\u2014'}</td><td>${p.order > 0 ? '#' + p.order : '\u2014'}</td><td>${p.floor > 0 ? p.floor.toFixed(1) : '\u2014'}</td><td>${p.median > 0 ? '<strong>' + p.median.toFixed(1) + '</strong>' : '\u2014'}</td><td>${p.ceiling > 0 ? `<div class="bar-w"><div class="bar" style="width:${bw}px"></div><span style="font-size:11px;color:var(--ts)">${p.ceiling.toFixed(1)}</span></div>` : '\u2014'}</td><td style="white-space:nowrap"><input type="number" min="0" max="100" step="0.5" value="${p.own > 0 ? p.own.toFixed(1) : ''}" placeholder="0" title="${ownTitle}" style="width:50px;font-size:11px;padding:2px 4px;border:${ownBorder};border-radius:4px;background:var(--bp);color:${p.own > 50 ? 'var(--td)' : p.own > 25 ? 'var(--tw)' : p.own > 10 ? 'var(--ti)' : 'var(--tp)'};text-align:center" oninput="updatePlayerOwn(${idx},this.value)">${ownMark}</td><td class="${lc}">${p.lev !== 0 ? (p.lev > 0 ? '+' : '') + p.lev.toFixed(1) : '\u2014'}</td><td style="color:var(--ti);font-weight:500">${gppS > 0 ? gppS.toFixed(1) : '\u2014'}</td><td>${optExpVal}</td><td>${p.avgPpg > 0 ? p.avgPpg.toFixed(1) : '\u2014'}</td><td>${kDisplay}</td><td style="white-space:nowrap"><button class="btn" style="padding:3px 6px;font-size:11px;margin-right:3px${STATE.projOverrides[p.name] ? ';border-color:var(--tsu);color:var(--tsu)' : ''}" onclick="openOverrideModal('${escAttr(p.name)}')" title="Override projection values">✎</button><button class="btn" style="padding:3px 8px;font-size:11px" ${inLu ? 'disabled' : ''} onclick="addPlayerByPoolIdx(${idx})">+</button></td></tr>`;
 }
 
 // Filter/sort result cache — avoids O(n log n) resort on every render when filters haven't changed
@@ -1179,8 +1606,9 @@ function renderPlayers() {
   const usedNames = new Set(STATE.lineup.filter(Boolean).map(p => p.name));
   const displayData = data.slice(0, STATE.playerLimit);
   STATE._playerPoolCache = displayData;
+  const multContext = buildMultContext(); // built once, shared across all rows
   const tbody = _EL['player-tbody'] || document.getElementById('player-tbody');
-  if (tbody) tbody.innerHTML = displayData.map((p, idx) => renderPlayerRow(p, idx, maxC, usedNames)).join('');
+  if (tbody) tbody.innerHTML = displayData.map((p, idx) => renderPlayerRow(p, idx, maxC, usedNames, multContext)).join('');
   const moreEl = _EL['player-more'] || document.getElementById('player-more');
   if (moreEl) moreEl.style.display = data.length > STATE.playerLimit ? 'block' : 'none';
   const countEl = _EL['player-count'] || document.getElementById('player-count');
@@ -1291,11 +1719,15 @@ function renderLineup() {
     }
     const ownDisplay = p.own > 0 ? ` \u00B7 ${p.own.toFixed(1)}% own` : '';
     const isBvP = !allowBvP && !rp(p, 'P') && bvpConflicts.has(p.team);
-    const slotClass = `lu-slot filled${isBvP ? ' lu-slot-bvp' : ''}${isCptSlot ? ' lu-slot-cpt' : ''}`;
+    const isLocked = STATE.lockedSlots?.[i] || false;
+    const slotClass = `lu-slot filled${isBvP ? ' lu-slot-bvp' : ''}${isCptSlot ? ' lu-slot-cpt' : ''}${isLocked ? ' lu-slot-locked' : ''}`;
     const bvpBadge = isBvP ? `<span style="font-size:10px;font-weight:600;color:var(--td);margin-left:6px" title="Batter vs. Pitcher conflict">BvP</span>` : '';
     const cptBadge = isCptSlot ? `<span style="font-size:10px;font-weight:700;color:var(--ti);margin-left:6px" title="Captain — scores 1.5× points">CPT 1.5×</span>` : '';
-    const posLabel = sd ? '' : (esc(p.dkPos || p.rosterPos) + ' \u00B7 ');
-    return `<div class="${slotClass}"${isBvP ? ' style="border-color:var(--brd-d);background:var(--bd)"' : ''}><div class="slot-pos" style="${isCptSlot ? 'color:var(--ti);font-weight:700' : isBvP ? 'color:var(--td)' : ''}">${slot.label}</div><div style="flex:1"><div class="slot-name">${esc(p.name)}${cptBadge}${bvpBadge}</div><div class="slot-info">${posLabel}${esc(p.team)}${p.opp ? ' vs ' + esc(p.opp) : ''} \u00B7 $${p.salary.toLocaleString()}${ownDisplay}</div></div><button class="slot-rm" onclick="removeFromLineup(${i})">x</button></div>`;
+    const lockBadge = isLocked ? `<span style="font-size:10px;font-weight:600;color:#f59e0b;margin-left:6px">LOCKED</span>` : '';
+    const posLabel = sd ? '' : (esc(p.dkPos || p.rosterPos) + ' · ');
+    const slotInlineStyle = isBvP ? 'border-color:var(--brd-d);background:var(--bd)' : isLocked ? 'border-color:#f59e0b;background:rgba(245,158,11,.07)' : '';
+    const lockBtn = `<button class="slot-lock${isLocked ? ' locked' : ''}" onclick="toggleLock(${i})" title="${isLocked ? 'Unlock player' : 'Lock player in place'}">&#x1F512;</button>`;
+    return `<div class="${slotClass}"${slotInlineStyle ? ` style="${slotInlineStyle}"` : ''}><div class="slot-pos" style="${isCptSlot ? 'color:var(--ti);font-weight:700' : isBvP ? 'color:var(--td)' : isLocked ? 'color:#f59e0b' : ''}">${slot.label}</div><div style="flex:1"><div class="slot-name">${esc(p.name)}${cptBadge}${bvpBadge}${lockBadge}</div><div class="slot-info">${posLabel}${esc(p.team)}${p.opp ? ' vs ' + esc(p.opp) : ''} · $${p.salary.toLocaleString()}${ownDisplay}</div></div>${lockBtn}<button class="slot-rm" onclick="removeFromLineup(${i})">x</button></div>`;
   }).join('');
   const used = getSalaryUsed(), rem = cap - used, pct = Math.min(used / cap * 100, 100);
   document.getElementById('sal-used').textContent = '$' + used.toLocaleString();
@@ -1367,7 +1799,85 @@ function renderLineup() {
     analysisEl.style.display = 'none';
   }
 
+  // Best Plays guidance panel
+  renderBestPlaysGuidance();
   checkPositionScarcity();
+}
+
+function renderBestPlaysGuidance() {
+  const el = document.getElementById('best-plays-guidance');
+  if (!el || !STATE.lastBestPlays) return;
+
+  const ctx = STATE.bestPlaysContext;
+  const plays = STATE.lastBestPlays;
+  const lineup = STATE.lineup.filter(Boolean);
+  const lineupNames = new Set(lineup.map(p => p.name));
+
+  // Count plays in current lineup
+  const leverageCount = lineup.filter(p => ctx.leveragePlays.has(p.name)).length;
+  const chalkCount = lineup.filter(p => ctx.chalkPlayers.has(p.name)).length;
+  const contrarianCount = lineup.filter(p => ctx.contrarianPlayers.has(p.name)).length;
+  const bringBackCount = lineup.filter(p => ctx.bringBackPlayers.has(p.name)).length;
+
+  // Identify missing recommendations
+  const missingLeverage = plays.gpp.leveragePlays.filter(e => !lineupNames.has(e.p.name)).slice(0, 3);
+  const missingContrarian = plays.gpp.contrarianStack?.top5.filter(e => !lineupNames.has(e.p.name)).slice(0, 2) || [];
+
+  let html = '<div style="display:flex;gap:12px;flex-wrap:wrap;font-size:11px">';
+
+  // Leverage count
+  const leverageStyle = leverageCount >= 2 ? 'var(--tsu)' : leverageCount === 1 ? 'var(--ti)' : 'var(--ts)';
+  html += `<div style="flex:1;min-width:150px;padding:8px;background:var(--bs);border-radius:var(--r);border-left:3px solid ${leverageStyle}">`;
+  html += `<div style="color:var(--ts);margin-bottom:2px">⚡ Leverage Plays</div>`;
+  html += `<div style="font-weight:700;color:${leverageStyle};margin-bottom:4px">${leverageCount} in lineup</div>`;
+  if (missingLeverage.length > 0) {
+    html += `<div style="font-size:10px;color:var(--tt);margin-top:4px">${missingLeverage.length} available:<br>`;
+    html += missingLeverage.map(e => `<div onclick="addToLineupByName('${escAttr(e.p.name)}')" style="cursor:pointer;color:var(--ti);text-decoration:underline;padding:1px 0">${esc(e.p.name)}</div>`).join('');
+    html += '</div>';
+  }
+  html += '</div>';
+
+  // Chalk count
+  const chalkStyle = chalkCount === 0 ? 'var(--tsu)' : chalkCount <= 1 ? 'var(--ti)' : 'var(--tw)';
+  html += `<div style="flex:1;min-width:150px;padding:8px;background:var(--bs);border-radius:var(--r);border-left:3px solid ${chalkStyle}">`;
+  html += `<div style="color:var(--ts);margin-bottom:2px">⚠️ Chalk Alert</div>`;
+  html += `<div style="font-weight:700;color:${chalkStyle};margin-bottom:4px">${chalkCount} in lineup</div>`;
+  if (chalkCount > 1) {
+    html += `<div style="font-size:10px;color:var(--tw)">Consider fading chalk for GPP uniqueness</div>`;
+  } else if (chalkCount === 0) {
+    html += `<div style="font-size:10px;color:var(--tsu)">Good — avoiding chalk concentration</div>`;
+  }
+  html += '</div>';
+
+  // Contrarian count
+  const contrarianStyle = contrarianCount >= 2 ? 'var(--tsu)' : contrarianCount === 1 ? 'var(--ti)' : 'var(--ts)';
+  html += `<div style="flex:1;min-width:150px;padding:8px;background:var(--bs);border-radius:var(--r);border-left:3px solid ${contrarianStyle}">`;
+  html += `<div style="color:var(--ts);margin-bottom:2px">🎯 Contrarian Stack</div>`;
+  html += `<div style="font-weight:700;color:${contrarianStyle};margin-bottom:4px">${contrarianCount}/${plays.gpp.contrarianStack?.top5.length || 0}</div>`;
+  if (plays.gpp.contrarianStack && missingContrarian.length > 0) {
+    html += `<div style="font-size:10px;color:var(--ti);margin-top:4px">Add <strong>${esc(plays.gpp.contrarianStack.team)}</strong>:<br>`;
+    html += missingContrarian.map(e => `<div onclick="addToLineupByName('${escAttr(e.p.name)}')" style="cursor:pointer;color:var(--ti);text-decoration:underline;padding:1px 0">${esc(e.p.name)}</div>`).join('');
+    html += '</div>';
+  }
+  html += '</div>';
+
+  // Bring-back count
+  if (plays.gpp.bringBack) {
+    const bbStyle = bringBackCount >= 1 ? 'var(--tsu)' : 'var(--ts)';
+    html += `<div style="flex:1;min-width:150px;padding:8px;background:var(--bs);border-radius:var(--r);border-left:3px solid ${bbStyle}">`;
+    html += `<div style="color:var(--ts);margin-bottom:2px">↩️ Bring-Back (${esc(plays.gpp.bringBack.team)})</div>`;
+    html += `<div style="font-weight:700;color:${bbStyle};margin-bottom:4px">${bringBackCount} in lineup</div>`;
+    if (bringBackCount === 0 && plays.gpp.bringBack.entries.length > 0) {
+      html += `<div style="font-size:10px;color:var(--ti);margin-top:4px">Game correlation:<br>`;
+      html += plays.gpp.bringBack.entries.slice(0, 2).map(e => `<div onclick="addToLineupByName('${escAttr(e.p.name)}')" style="cursor:pointer;color:var(--ti);text-decoration:underline;padding:1px 0">${esc(e.p.name)}</div>`).join('');
+      html += '</div>';
+    }
+    html += '</div>';
+  }
+
+  html += '</div>';
+  el.innerHTML = html;
+  el.style.display = 'block';
 }
 
 function renderLuPool() {
@@ -1412,6 +1922,10 @@ function useStackById(id) {
   showTab('lineup');
 }
 function removeFromLineup(i) {
+  if (STATE.lockedSlots?.[i]) {
+    showToast('Unlock this player first before removing them', 'warn', 3000);
+    return;
+  }
   const removed = STATE.lineup[i];
   STATE.lineup[i] = null;
   renderLineup(); renderLuPool(); saveSession();
@@ -1421,28 +1935,195 @@ function removeFromLineup(i) {
     });
   }
 }
-function clearLineup() { STATE.lineup = new Array(activeRosterSize()).fill(null); renderLineup(); renderLuPool(); document.getElementById('export-out').style.display = 'none'; saveSession(); }
+function clearLineup() {
+  STATE.lineup = new Array(activeRosterSize()).fill(null);
+  STATE.lockedSlots = new Array(activeRosterSize()).fill(false);
+  const optEl = document.getElementById('optimal-status');
+  if (optEl) optEl.style.display = 'none';
+  renderLineup(); renderLuPool(); document.getElementById('export-out').style.display = 'none'; saveSession();
+}
+function toggleLock(i) {
+  if (!STATE.lineup[i]) return;
+  if (!STATE.lockedSlots) STATE.lockedSlots = new Array(activeRosterSize()).fill(false);
+  STATE.lockedSlots[i] = !STATE.lockedSlots[i];
+  renderLineup();
+  saveSession();
+}
+
+// ── Quick Stack ───────────────────────────────────────────────────────────────
+function setQsSize(size, btn) {
+  STATE.quickStackSize = size;
+  document.querySelectorAll('#qs-size-btns .pb').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  updateQsPreview();
+}
+
+function populateQsTeamSel() {
+  const sel = document.getElementById('qs-team-sel');
+  if (!sel) return;
+  const batters = STATE.POOL.filter(p => !rp(p, 'P') && p.salary > 0);
+  const teams = [...new Set(batters.map(p => p.team))];
+  teams.sort((a, b) => ((STATE.vegasData?.[b]?.impliedTotal ?? 0) - (STATE.vegasData?.[a]?.impliedTotal ?? 0)));
+  const cur = sel.value;
+  sel.innerHTML = '<option value="auto">Auto (Best Team)</option>' +
+    teams.map(t => {
+      const it = STATE.vegasData?.[t]?.impliedTotal;
+      const label = it != null ? `${t}  ·  ${it.toFixed(1)} impl` : t;
+      return `<option value="${t}"${t === cur ? ' selected' : ''}>${label}</option>`;
+    }).join('');
+  updateQsPreview();
+}
+
+function resolveQsTeam() {
+  const val = document.getElementById('qs-team-sel')?.value || 'auto';
+  if (val !== 'auto') return val;
+  const size = STATE.quickStackSize || 4;
+  const batters = STATE.POOL.filter(p => !rp(p, 'P') && p.salary > 0 && (p.median > 0 || p.avgPpg > 0));
+  const teams = [...new Set(batters.map(p => p.team))];
+  teams.sort((a, b) => ((STATE.vegasData?.[b]?.impliedTotal ?? 0) - (STATE.vegasData?.[a]?.impliedTotal ?? 0)));
+  return teams.find(t => batters.filter(p => p.team === t).length >= size) || teams[0] || null;
+}
+
+function updateQsPreview() {
+  const el = document.getElementById('qs-preview');
+  if (!el || !STATE.POOL.length) { if (el) el.style.display = 'none'; return; }
+  const team = resolveQsTeam();
+  if (!team) { el.style.display = 'none'; return; }
+  const size = STATE.quickStackSize || 4;
+  const stack = Engine.buildVirtualStack(team, STATE.POOL, new Set(), size, STATE.vegasData || {});
+  if (!stack) { el.style.display = 'none'; return; }
+  const it = STATE.vegasData?.[team]?.impliedTotal;
+  const itStr = it != null ? ` · ${it.toFixed(1)} impl` : '';
+  let bbStr = '';
+  if (document.getElementById('qs-bringback')?.checked) {
+    const opp = STATE.POOL.find(p => p.team === team && !rp(p, 'P'))?.opp;
+    if (opp) {
+      const bbPlayer = STATE.POOL
+        .filter(p => p.team === opp && !rp(p, 'P') && p.salary > 0 && p.order >= 1 && p.order <= 7)
+        .sort((a, b) => ((b.ceiling || b.median || 0) - (a.ceiling || a.median || 0)))[0];
+      if (bbPlayer) {
+        const oit = STATE.vegasData?.[opp]?.impliedTotal;
+        bbStr = ` <span style="color:var(--ts)">+ ${esc(bbPlayer.name)} <em>(${opp}${oit != null ? ' ' + oit.toFixed(1) : ''} BB)</em></span>`;
+      }
+    }
+  }
+  el.style.display = 'block';
+  el.innerHTML = `<strong style="color:var(--ti)">${team} ${size}-stack${itStr}:</strong> ${stack.players.map(n => `<strong>${esc(n)}</strong>`).join(' · ')}${bbStr}`;
+}
+
+function applyQuickStack() {
+  if (!STATE.POOL.length) return;
+  const team = resolveQsTeam();
+  if (!team) { showToast('No eligible team found — load player pool first', 'warn', 3000); return; }
+  const size = STATE.quickStackSize || 4;
+  const stack = Engine.buildVirtualStack(team, STATE.POOL, new Set(), size, STATE.vegasData || {});
+  if (!stack || stack.players.length < size) {
+    showToast(`Not enough ${team} batters for a ${size}-man stack`, 'warn', 3000);
+    return;
+  }
+  // Clear batter slots; preserve pitchers and locked players
+  activeSlots().forEach((slot, i) => {
+    if (STATE.lineup[i] && !rp(STATE.lineup[i], 'P') && !STATE.lockedSlots?.[i]) STATE.lineup[i] = null;
+  });
+  stack.players.forEach(name => {
+    const p = STATE.POOL.find(r => r.name === name);
+    if (p) addToLineup(p);
+  });
+  // Bring-back: best batter (by ceiling) from opposing team, batting order 1-7
+  let bbAdded = null;
+  if (document.getElementById('qs-bringback')?.checked) {
+    const opp = STATE.POOL.find(p => p.team === team && !rp(p, 'P'))?.opp;
+    if (opp) {
+      const inLineup = new Set(STATE.lineup.filter(Boolean).map(p => p.name));
+      const bbPlayer = STATE.POOL
+        .filter(p => p.team === opp && !rp(p, 'P') && p.salary > 0 && p.order >= 1 && p.order <= 7 && !inLineup.has(p.name))
+        .sort((a, b) => ((b.ceiling || b.median || 0) - (a.ceiling || a.median || 0)))[0];
+      if (bbPlayer) { addToLineup(bbPlayer); bbAdded = bbPlayer; }
+    }
+  }
+  const bbNote = bbAdded ? ` + ${esc(bbAdded.name)} (BB)` : '';
+  showToast(`${team} ${size}-stack applied${bbNote}`, 'success', 3000);
+  const statusEl = document.getElementById('qs-status');
+  if (statusEl) {
+    statusEl.style.display = 'block';
+    statusEl.innerHTML = `Stack locked in. <a href="#" onclick="event.preventDefault();showTab('simulator');setTimeout(runSimulation,150)" style="color:var(--ti);text-decoration:underline">Run sim →</a>`;
+  }
+}
+
+function clearQuickStack() {
+  activeSlots().forEach((slot, i) => {
+    if (STATE.lineup[i] && !rp(STATE.lineup[i], 'P') && !STATE.lockedSlots?.[i]) STATE.lineup[i] = null;
+  });
+  const statusEl = document.getElementById('qs-status');
+  if (statusEl) statusEl.style.display = 'none';
+  renderLineup(); renderLuPool(); saveSession();
+}
 
 // ── Auto-fill / Generate Lineups (using Engine) ──────────────────────────────
 function autoFill() {
-  clearLineup();
+  const sz = activeRosterSize();
+  if (!STATE.lockedSlots || STATE.lockedSlots.length !== sz) STATE.lockedSlots = new Array(sz).fill(false);
+
+  // Clear only unlocked slots — locked players stay put
+  for (let i = 0; i < sz; i++) {
+    if (!STATE.lockedSlots[i]) STATE.lineup[i] = null;
+  }
+
   const ctx = getEngineContext();
   const pool = getCalibratedPool();
   const contestType = document.getElementById('contest-type-sel')?.value || 'single';
   const allowBvP = document.getElementById('allow-bvp')?.checked || false;
+  const btn = document.getElementById('autofill-btn');
+  const optEl = document.getElementById('optimal-status');
+  if (optEl) optEl.style.display = 'none';
 
   if (isShowdown()) {
-    const scoreFn = p => Engine.scoreGpp(p, { ...ctx, pool });
-    STATE.lineup = Engine.optimizeShowdownLineup(pool, scoreFn) || new Array(SHOWDOWN_ROSTER_SIZE).fill(null);
-  } else {
-    let scoreFn;
-    if (contestType === 'cash') scoreFn = p => Engine.scoreCash(p, ctx);
-    else if (contestType === 'gpp') scoreFn = p => Engine.scoreGpp(p, ctx);
-    else scoreFn = p => Engine.scoreSingle(p, ctx);
-    const stackBonusFn = contestType === 'gpp' ? lu => Engine.gppStackBonus(lu, null) : null;
-    STATE.lineup = Engine.optimizeLineup(pool, scoreFn, { iterations: OPTIMIZER_ITERATIONS, stackBonusFn, allowBvP, contestType }) || new Array(ROSTER_SIZE).fill(null);
+    const sdScoreFn = p => contestType === 'cash'
+      ? Engine.scoreCash(p, { ...ctx, pool })
+      : Engine.scoreGpp(p, { ...ctx, pool });
+    STATE.lineup = Engine.optimizeShowdownLineup(pool, sdScoreFn) || new Array(SHOWDOWN_ROSTER_SIZE).fill(null);
+    renderLineup(); renderLuPool(); saveSession();
+    return;
   }
-  renderLineup(); renderLuPool(); saveSession();
+
+  // Classic: exact branch-and-bound optimal solver, building around locked players
+  const requiredSlots = STATE.lineup.map((p, i) => (STATE.lockedSlots[i] ? p : null));
+  if (btn) { btn.textContent = 'Solving…'; btn.disabled = true; }
+  let scoreFn;
+  if (contestType === 'cash') scoreFn = p => Engine.scoreCash(p, ctx);
+  else if (contestType === 'gpp') scoreFn = p => Engine.scoreGpp(p, ctx);
+  else scoreFn = p => Engine.scoreSingle(p, ctx);
+
+  setTimeout(() => {
+    try {
+      const result = Engine.solveOptimal(pool, scoreFn, { allowBvP, requiredSlots });
+      STATE.lineup = result.lineup || new Array(ROSTER_SIZE).fill(null);
+      renderLineup(); renderLuPool(); saveSession();
+      showOptimalStatus(result, contestType);
+    } catch (err) {
+      console.error('Optimal solver error:', err);
+      const stackBonusFn = contestType === 'gpp' ? lu => Engine.gppStackBonus(lu, null) : null;
+      STATE.lineup = Engine.optimizeLineup(pool, scoreFn, { iterations: OPTIMIZER_ITERATIONS, stackBonusFn, allowBvP, contestType }) || new Array(ROSTER_SIZE).fill(null);
+      renderLineup(); renderLuPool(); saveSession();
+    } finally {
+      if (btn) { btn.textContent = 'Auto-fill'; btn.disabled = false; }
+    }
+  }, 50);
+}
+
+function showOptimalStatus(result, contestType) {
+  const el = document.getElementById('optimal-status');
+  if (!el) return;
+  const badge = result.optimal
+    ? `<span style="background:rgba(34,197,94,.15);color:#22c55e;border:0.5px solid rgba(34,197,94,.3);padding:2px 8px;border-radius:4px;font-weight:700;font-size:11px">Provably Optimal ✓</span>`
+    : `<span style="background:var(--bw);color:var(--tw);border:0.5px solid var(--brd-w);padding:2px 8px;border-radius:4px;font-weight:700;font-size:11px">Best Found</span>`;
+  const score = result.score != null ? `<strong>${result.score.toFixed(1)}</strong> pts` : '';
+  const gap = result.warmScore != null && result.score != null && result.score > result.warmScore
+    ? `<span style="color:#22c55e">+${(result.score - result.warmScore).toFixed(1)} vs greedy</span>` : '';
+  const stats = `<span style="color:var(--ts)">${result.nodesExplored.toLocaleString()} nodes · ${result.solveMs}ms</span>`;
+  const note = contestType === 'gpp' ? `<span style="color:var(--ts)" title="Stack bonus is non-linear and applied as a projection boost per player. The exact solver maximizes projected score.">proj-optimal</span>` : '';
+  el.style.display = 'flex';
+  el.innerHTML = [badge, score, gap, stats, note].filter(Boolean).join(' · ');
 }
 
 function generateThreeLineups() {
@@ -1482,11 +2163,159 @@ function generateShowdownLineups() {
   for (let v = 0; v < 3; v++) {
     const jitter = v * 0.4;
     const exclude = new Set(v > 0 ? (STATE.generatedLineups[v - 1] || []).filter(Boolean).map(p => p.name).slice(0, 2) : []);
-    const scoreFn = p => Engine.scoreGpp(p, { ...ctx, pool }) + (Math.random() - 0.5) * jitter;
+    const sdContest = document.getElementById('contest-type-sel')?.value || 'single';
+    const scoreFn = p => (sdContest === 'cash' ? Engine.scoreCash(p, { ...ctx, pool }) : Engine.scoreGpp(p, { ...ctx, pool })) + (Math.random() - 0.5) * jitter;
     const lu = Engine.optimizeShowdownLineup(pool, scoreFn, { excludeNames: exclude });
     STATE.generatedLineups.push(lu || new Array(SHOWDOWN_ROSTER_SIZE).fill(null));
   }
   displayThreeLineups();
+}
+
+function generateLineupsFromBestPlays() {
+  if (!STATE.POOL.length) return;
+  if (!STATE.lastBestPlays) {
+    showToast('Load Best Plays first (click Best Plays tab)', 'warn', 3000);
+    return;
+  }
+  if (isShowdown()) {
+    showToast('Best Plays lineups not yet supported for Showdown', 'warn', 3000);
+    return;
+  }
+
+  STATE.generatedLineups = [];
+  const ctx = getEngineContext();
+  const pool = getCalibratedPool();
+  const allowBvP = document.getElementById('allow-bvp')?.checked || false;
+  const plays = STATE.lastBestPlays;
+  dlog('[BestPlays lineups] pool=%d allowBvP=%s', pool.length, allowBvP);
+  dlog('[BestPlays lineups] SE pitcher=%s seStack=%s contrarian=%s',
+    plays.singleEntry.pitchers[0]?.p.name || 'NONE',
+    plays.singleEntry.stack?.team || 'NONE',
+    plays.gpp.contrarianStack?.team || 'NONE');
+
+  // Helper: seed optimizer with specific players
+  function seedOptimizer(seedNames, scoreFn, excludeNames = new Set()) {
+    const missing = seedNames.filter(n => !STATE.POOL.find(p => p.name === n));
+    if (missing.length) dlog('[BestPlays lineups] seedOptimizer: missing from POOL: %s', missing.join(', '));
+    const seedPlayers = seedNames
+      .map(name => STATE.POOL.find(p => p.name === name))
+      .filter(p => p && !excludeNames.has(p.name));
+    const exclude = new Set([...excludeNames, ...missing]);
+    const usable = pool.filter(p => !exclude.has(p.name));
+    if (seedPlayers.length < 2) {
+      console.warn('[BestPlays lineups] seedOptimizer: only %d seed players (need ≥2) — lineup skipped. seeds=%s', seedPlayers.length, seedNames.join(', '));
+      return null;
+    }
+    return Engine.optimizeLineup([...seedPlayers, ...usable], scoreFn, {
+      iterations: OPTIMIZER_ITERATIONS,
+      allowBvP,
+      forceInclude: new Set(seedPlayers.map(p => p.name))
+    });
+  }
+
+  // Lineup 1: CASH — Chalk SP + Best stack + Value plays
+  const cashSeedNames = [
+    plays.singleEntry.pitchers[0]?.p.name,
+    ...plays.singleEntry.stack?.entries.map(e => e.p.name) || [],
+    ...plays.singleEntry.valuePlays.slice(0, 2).map(e => e.p.name) || []
+  ].filter(Boolean);
+  dlog('[BestPlays lineups] Lineup 1 (CASH) seeds: %s', cashSeedNames.join(', '));
+  const cashLu = seedOptimizer(cashSeedNames, p => Engine.scoreCash(p, ctx));
+  if (!cashLu) console.warn('[BestPlays lineups] Lineup 1 (CASH) failed — null result from optimizer');
+  STATE.generatedLineups.push(cashLu || null);
+
+  // Lineup 2: SINGLE — Recommended SP + Stack + Leverage
+  const singleSeedNames = [
+    plays.singleEntry.pitchers[0]?.p.name,
+    ...plays.singleEntry.stack?.entries.map(e => e.p.name) || [],
+    plays.gpp.leveragePlays[0]?.p.name,
+  ].filter(Boolean);
+  dlog('[BestPlays lineups] Lineup 2 (SINGLE) seeds: %s', singleSeedNames.join(', '));
+  const singleLu = seedOptimizer(singleSeedNames, p => Engine.scoreSingle(p, ctx));
+  if (!singleLu) console.warn('[BestPlays lineups] Lineup 2 (SINGLE) failed — null result from optimizer');
+  STATE.generatedLineups.push(singleLu || null);
+
+  // Lineup 3: GPP CONTRARIAN — Contrarian 5-man + Bring-back + Leverage plays
+  const contrarianSeedNames = [
+    ...plays.gpp.contrarianStack?.top5.map(e => e.p.name) || [],
+    ...plays.gpp.bringBack?.entries.slice(0, 2).map(e => e.p.name) || [],
+    plays.gpp.leveragePlays[0]?.p.name,
+    plays.gpp.leveragePlays[1]?.p.name,
+  ].filter(Boolean);
+  dlog('[BestPlays lineups] Lineup 3 (CONTRARIAN) seeds: %s', contrarianSeedNames.join(', '));
+  const contrarianLu = seedOptimizer(contrarianSeedNames, p => Engine.scoreGpp(p, ctx));
+  if (!contrarianLu) console.warn('[BestPlays lineups] Lineup 3 (CONTRARIAN) failed — null result from optimizer');
+  STATE.generatedLineups.push(contrarianLu || null);
+
+  // Lineup 4: LEVERAGE STACK — All ceiling/own ratio plays
+  const leverageSeedNames = plays.gpp.leveragePlays.slice(0, 4).map(e => e.p.name).filter(Boolean);
+  dlog('[BestPlays lineups] Lineup 4 (LEVERAGE) seeds: %s', leverageSeedNames.join(', '));
+  const leverageLu = seedOptimizer(leverageSeedNames, p => Engine.scoreGpp(p, ctx));
+  if (!leverageLu) console.warn('[BestPlays lineups] Lineup 4 (LEVERAGE) failed — null result from optimizer');
+  STATE.generatedLineups.push(leverageLu || null);
+
+  // Lineup 5: VALUE + BOOM — Value at middle positions + Boom/bust candidates
+  const valueSeedNames = [
+    ...plays.singleEntry.valuePlays.slice(0, 3).map(e => e.p.name),
+    ...plays.gpp.boomBust.slice(0, 2).map(e => e.p.name),
+  ].filter(Boolean);
+  dlog('[BestPlays lineups] Lineup 5 (VALUE/BOOM) seeds: %s', valueSeedNames.join(', '));
+  const valueLu = seedOptimizer(valueSeedNames, p => Engine.scoreSingle(p, ctx));
+  if (!valueLu) console.warn('[BestPlays lineups] Lineup 5 (VALUE/BOOM) failed — null result from optimizer');
+  STATE.generatedLineups.push(valueLu || null);
+
+  displayBestPlaysLineups();
+}
+
+function displayBestPlaysLineups() {
+  const slots = activeSlots();
+  const rosterSz = activeRosterSize();
+  const plays = STATE.lastBestPlays;
+  const types = [
+    { name: 'CASH STACK', idx: 0, strategy: 'Chalk SP + Best Stack + Value plays', emoji: '💰' },
+    { name: 'SINGLE ENTRY', idx: 1, strategy: 'SE Stack + Leverage plays', emoji: '⚖️' },
+    { name: 'GPP CONTRARIAN', idx: 2, strategy: 'Contrarian 5-man + Bring-back + Leverage', emoji: '🎯' },
+    { name: 'LEVERAGE STACK', idx: 3, strategy: 'High ceiling/own ratio plays (GPP)', emoji: '⚡' },
+    { name: 'VALUE + BOOM', idx: 4, strategy: 'Value base + Boom/bust upside', emoji: '💡' },
+  ];
+  const html = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px">${types.map(type => {
+    const lu = STATE.generatedLineups[type.idx];
+    if (!lu) return `<div style="border:0.5px dashed var(--brd-t);border-radius:var(--rl);padding:12px;background:var(--bp);text-align:center;color:var(--ts)">Could not generate ${type.name} lineup</div>`;
+    const filled = lu.filter(Boolean);
+    const mediaScore = filled.reduce((s, p) => s + (p.median || 0), 0);
+    const ceilScore = filled.reduce((s, p) => s + (p.ceiling || 0), 0);
+    const salUsed = filled.reduce((s, p) => s + p.salary, 0);
+    const avgOwn = filled.length > 0 ? filled.reduce((s, p) => s + (p.own || 0), 0) / filled.length : 0;
+    const analysis = Engine.analyzeLineup(lu);
+    const stackInfo = analysis ? analysis.stacks.map(s => s.team + ' x' + s.count).join(', ') : '';
+
+    return `<div style="border:0.5px solid var(--brd-t);border-radius:var(--rl);padding:12px;background:var(--bp)">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;padding-bottom:8px;border-bottom:0.5px solid var(--brd-s)">
+        <div style="font-size:16px">${type.emoji}</div>
+        <div style="flex:1"><div style="font-size:13px;font-weight:600;color:var(--tp)">${type.name}</div><div style="font-size:10px;color:var(--ts);margin-top:2px">${type.strategy}</div></div>
+      </div>
+      <div style="margin-bottom:8px;max-height:280px;overflow-y:auto">${lu.map((p, i) => {
+        const slotLabel = slots[i]?.label || '?';
+        if (!p) return `<div style="padding:4px 6px;font-size:11px;color:var(--ts);background:var(--bs);border-radius:4px;margin-bottom:3px">${slotLabel}: EMPTY</div>`;
+        const isLeverage = STATE.bestPlaysContext.leveragePlays.has(p.name);
+        const isChalk = STATE.bestPlaysContext.chalkPlayers.has(p.name);
+        const isContrarian = STATE.bestPlaysContext.contrarianPlayers.has(p.name);
+        const tags = (isLeverage ? '⚡' : '') + (isChalk ? '⚠️' : '') + (isContrarian ? '🎯' : '');
+        return `<div style="padding:4px 6px;font-size:11px;background:${isContrarian ? 'rgba(34,197,94,.08)' : isLeverage ? 'rgba(34,197,94,.08)' : isChalk ? 'rgba(239,68,68,.08)' : 'var(--bs)'};border-radius:4px;margin-bottom:3px">${tags ? '<span style="margin-right:3px">' + tags + '</span>' : ''}<strong>${esc(p.name)}</strong> (${esc(p.dkPos)}) $${p.salary.toLocaleString()} <span style="color:var(--ts)">${p.median.toFixed(1)}pts ${p.own > 0 ? p.own.toFixed(1) + '%' : ''}</span></div>`;
+      }).join('')}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:8px;background:var(--bs);border-radius:var(--r);font-size:10px">
+        <div>Salary: <strong>$${salUsed.toLocaleString()}</strong></div>
+        <div>Median: <strong>${mediaScore.toFixed(1)}</strong></div>
+        <div>Ceiling: <strong>${ceilScore.toFixed(1)}</strong></div>
+        <div>Own: <strong>${avgOwn.toFixed(1)}%</strong></div>
+      </div>
+      ${stackInfo ? `<div style="margin-top:6px;padding:4px 8px;background:var(--bi);border-radius:4px;font-size:10px;color:var(--ti)">Stack: ${stackInfo}</div>` : ''}
+      ${analysis ? `<div style="margin-top:4px;font-size:10px;color:var(--tt)">Corr: ${analysis.correlationScore.toFixed(3)}</div>` : ''}
+      <button class="btn-p" onclick="STATE.lineup = [...STATE.generatedLineups[${type.idx}]]; renderLineup(); renderLuPool(); showToast('Loaded ${esc(type.name)} lineup', 'info', 2000);" style="width:100%;margin-top:8px;font-size:11px">Load This Lineup</button>
+    </div>`;
+  }).join('')}</div>`;
+  document.getElementById('best-plays-lineups-display').innerHTML = html;
+  document.getElementById('best-plays-lineups-display').style.display = 'block';
 }
 
 function displayThreeLineups() {
@@ -2149,13 +2978,40 @@ function onPayoutTypeChange() {
 // Fires once per change to avoid spam.
 function onContestTypeChange() {
   const ct = document.getElementById('port-contest-type')?.value;
-  if (ct !== 'cash') return;
-  const sd = parseFloat(document.getElementById('sim-diversity')?.value);
-  if (sd > 1.05) {
-    showToast(
-      `Score Diversity is ${sd.toFixed(1)}× (GPP setting). For cash floor accuracy, reset to 1.0× in the Simulator tab.`,
-      'warn', 6000
-    );
+
+  // Ownership penalty and max avg ownership are GPP-only concepts — they have no
+  // effect when contestType is cash or single (those use different lineup generators
+  // that don't accept an ownershipLambda). Dim and disable the controls to prevent
+  // users from thinking their settings are active when they aren't.
+  const isGpp = ct === 'gpp';
+  const ownershipIds = ['port-own-lambda', 'own-lambda-label', 'port-max-avg-own'];
+  ownershipIds.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (el.tagName === 'INPUT') el.disabled = !isGpp;
+    el.style.opacity = isGpp ? '' : '0.4';
+  });
+  // Also dim the parent config-item labels so the whole block looks inactive
+  ['port-own-lambda', 'port-max-avg-own'].forEach(id => {
+    const item = document.getElementById(id)?.closest('.config-item');
+    if (item) item.style.opacity = isGpp ? '' : '0.4';
+  });
+
+  // Dim and disable GPP-only controls (Enforce Contrarian, etc.)
+  document.querySelectorAll('.port-gpp-only').forEach(el => {
+    if (el.tagName === 'INPUT') el.disabled = !isGpp;
+    el.closest('label,div')?.querySelectorAll('strong,span').forEach(s => s.style.opacity = isGpp ? '' : '0.4');
+    el.style.opacity = isGpp ? '' : '0.4';
+  });
+
+  if (ct === 'cash') {
+    const sd = parseFloat(document.getElementById('sim-diversity')?.value);
+    if (sd > 1.05) {
+      showToast(
+        `Score Diversity is ${sd.toFixed(1)}× (GPP setting). For cash floor accuracy, reset to 1.0× in the Simulator tab.`,
+        'warn', 6000
+      );
+    }
   }
 }
 
@@ -2222,6 +3078,7 @@ async function loadPitcherHands() {
 function applySlateDefaults() {
   const gameCount = new Set(STATE.POOL.filter(p => p.game).map(p => p.game)).size || 8;
   const defaults = Engine.getSlateDefaults(gameCount);
+  const numLu = parseInt(document.getElementById('port-num-lineups')?.value) || 20;
 
   const set = (id, val) => {
     const el = document.getElementById(id);
@@ -2231,6 +3088,8 @@ function applySlateDefaults() {
   set('port-max-overlap', defaults.maxOverlap);
   set('port-stack-pct5', defaults.stackPct5);
   set('port-max-game-exposure', Math.round(defaults.maxGameExposure * 100));
+  // SP pair cap scales with lineup count: max 25% share any pitcher duo across the portfolio
+  set('port-max-sp-pair', Math.max(3, Math.ceil(numLu * 0.25)));
 
   showToast(`Slate defaults applied: ${defaults.label} (${gameCount} games) — overlap=${defaults.maxOverlap}, 5-man=${defaults.stackPct5}%, game cap=${Math.round(defaults.maxGameExposure * 100)}%`, 'info', 5000);
   saveSession();
@@ -2368,6 +3227,22 @@ function validatePortfolioSettings() {
     warnings.push(`<strong>${esc(t)}</strong> is both locked and banned — it will be treated as banned.`);
   });
 
+  // Warn when Sim ROI Filter is on with a max ROI ≤ 0 in GPP (filters out all positive-ROI lineups)
+  const simFilterOn = document.getElementById('port-sim-filter')?.checked;
+  if (simFilterOn) {
+    const roiMaxRaw = document.getElementById('port-sim-roi-max')?.value;
+    const roiMinRaw = document.getElementById('port-sim-roi-min')?.value;
+    const roiMax = roiMaxRaw !== '' ? parseFloat(roiMaxRaw) : null;
+    const roiMin = roiMinRaw !== '' ? parseFloat(roiMinRaw) : null;
+    const ct = document.getElementById('port-contest-type')?.value;
+    if (roiMax !== null && roiMax <= 0 && ct === 'gpp') {
+      warnings.push(`<strong>ROI Band max is ${roiMax}%</strong> — this filters out all lineups with positive expected ROI, keeping only break-even or losing lineups. In GPP you almost certainly want a <em>higher</em> max (or leave it blank to keep top N by ROI). <a href="#" onclick="document.getElementById('port-sim-roi-max').value='';saveSession();validatePortfolioSettings();return false" style="color:var(--ti)">Clear it</a>.`);
+    }
+    if (roiMin !== null && roiMax !== null && roiMin > roiMax) {
+      warnings.push(`<strong>ROI Band min (${roiMin}%) &gt; max (${roiMax}%)</strong> — no lineups can satisfy this range. Swap the values or clear the band.`);
+    }
+  }
+
   if (warnings.length) {
     warningsEl.style.display = 'block';
     warningsEl.innerHTML = warnings.map(w => `<div class="ib warn" style="margin-bottom:6px">${w}</div>`).join('');
@@ -2390,20 +3265,39 @@ function buildPortfolioWorker(pool, opts, onProgress, simControls = null) {
     }
     const worker = new Worker('sim-worker.js');
     _activePortfolioWorker = worker;
+
+    // Safety timeout: if the worker stops sending progress for 3 minutes, assume it
+    // crashed silently (OOM, browser kill) without firing onerror. Without this, the
+    // promise hangs forever and the Generate button never re-enables.
+    const WORKER_TIMEOUT_MS = 180_000;
+    let lastActivityAt = Date.now();
+    const timeoutId = setInterval(() => {
+      if (Date.now() - lastActivityAt > WORKER_TIMEOUT_MS) {
+        clearInterval(timeoutId);
+        worker.terminate();
+        _activePortfolioWorker = null;
+        reject(new Error('Portfolio worker timed out after 3 minutes with no response. Try reducing lineup count or disabling Sim Filter.'));
+      }
+    }, 5000);
+
     worker.onmessage = ({ data }) => {
+      lastActivityAt = Date.now();
       if (data.type === 'progress') {
         if (onProgress) onProgress(data.built, data.target);
       } else if (data.type === 'result') {
+        clearInterval(timeoutId);
         worker.terminate();
         _activePortfolioWorker = null;
         resolve(data.result);
       } else if (data.type === 'error') {
+        clearInterval(timeoutId);
         worker.terminate();
         _activePortfolioWorker = null;
         reject(new Error(data.message));
       }
     };
     worker.onerror = (e) => {
+      clearInterval(timeoutId);
       worker.terminate();
       _activePortfolioWorker = null;
       reject(new Error(e.message || 'Portfolio worker error'));
@@ -2495,6 +3389,11 @@ function generatePortfolio() {
   const ownershipLambda = parseFloat(document.getElementById('port-own-lambda')?.value || '4') / 100;
   const maxAvgOwnership = parseFloat(document.getElementById('port-max-avg-own')?.value) || 0;
 
+  // Phase 3: Best Plays Automation controls
+  const enforceContrarian = document.getElementById('port-enforce-contrarian')?.checked || false;
+  const bringBackTargetPct = parseInt(document.getElementById('port-bring-back-target')?.value || '50') / 100;
+  const showDiversityAnalysis = document.getElementById('port-diversity-analysis')?.checked || false;
+
   // Custom payout config (only when payoutType === 'custom')
   let customPayoutConfig = null;
   if (payoutType === 'custom') {
@@ -2515,6 +3414,10 @@ function generatePortfolio() {
     if (playerOverrides[name].min == null) delete playerOverrides[name].min;
     if (playerOverrides[name].max == null) delete playerOverrides[name].max;
   });
+  // DEBUG: Log the actual overrides being sent to engine
+  if (Object.keys(playerOverrides).length > 0) {
+    console.log('[Portfolio] DEBUG - Player Overrides being sent to engine:', JSON.stringify(playerOverrides, null, 2));
+  }
 
   // Convert teamExposureOverrides from % to 0-1 ratios for engine
   const teamOverrides = {};
@@ -2566,7 +3469,7 @@ function generatePortfolio() {
     }
     const hasConfirmed = STATE.POOL.some(p => p.isConfirmed === true);
     if (!hasConfirmed && STATE.POOL.length > 0) {
-      warnings.push('Batting orders not yet confirmed — unconfirmed multiplier will not apply');
+      warnings.push('No confirmed batting orders — scratched/benched players may appear in lineups. Lineups will be refreshed automatically before generation.');
     }
     if (warnings.length) {
       showToast('⚠ ' + warnings.join(' · '), 'warn', 7000);
@@ -2576,11 +3479,61 @@ function generatePortfolio() {
   const btn = document.getElementById('gen-portfolio-btn');
   btn.textContent = 'Generating...'; btn.disabled = true;
 
+  const _portStartMs = Date.now();
+
   // Use requestAnimationFrame + async to keep UI responsive
   requestAnimationFrame(async () => {
     try {
+      // Silently refresh confirmed lineups before building the pool so late
+      // scratches (Bolte, Muncy, etc.) are caught without requiring a manual refresh.
+      if (STATE.POOL.length > 0) {
+        try {
+          const today = new Date().toISOString().substring(0, 10);
+          const res = await fetch('/api/lineups/' + today);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.success) {
+              STATE.confirmedLineups = {};
+              (data.games || []).forEach(g => { STATE.confirmedLineups[g.gamePk] = g; });
+              applyConfirmedToPool();
+            }
+          }
+        } catch (_) { /* network failure — use whatever lineup data we already have */ }
+      }
+
+      // Warn about teams that still don't have confirmed lineups after the refresh.
+      // Players from these teams are NOT filtered for "not in lineup" — non-starters may appear.
+      {
+        const poolTeams = new Set(STATE.POOL.filter(p => !rp(p, 'P')).map(p => p.team).filter(Boolean));
+        const confirmedTeams = new Set();
+        Object.values(STATE.confirmedLineups).forEach(g => {
+          if (g.homeOrder?.length > 0) confirmedTeams.add(g.homeTeam);
+          if (g.awayOrder?.length > 0) confirmedTeams.add(g.awayTeam);
+        });
+        const unconfirmedTeams = [...poolTeams].filter(t => !confirmedTeams.has(t)).sort();
+        if (unconfirmedTeams.length > 0 && poolTeams.size > 0) {
+          showToast(`⚠ Lineup not yet posted for: ${unconfirmedTeams.join(', ')} — non-starters from these teams may appear in your portfolio.`, 'warn', 9000);
+        }
+      }
+
       const ctx = getEngineContext();
       ctx.contestSize = portContestSize;
+
+      // Pool diagnostics after lineup refresh
+      {
+        const raw = STATE.POOL;
+        const calibrated = getCalibratedPool();
+        const filteredOut = raw.length - calibrated.length;
+        dlog('[Portfolio] raw pool=%d calibrated=%d filtered=%d', raw.length, calibrated.length, filteredOut);
+        const noProjection = calibrated.filter(p => !p.median && !p.ceiling && !p.avgPpg);
+        if (noProjection.length) dlog('[Portfolio] %d players in pool with no projection (median=ceiling=avgPpg=0): %s',
+          noProjection.length, noProjection.slice(0,5).map(p=>p.name).join(', '));
+        const pitchers = calibrated.filter(p => rp(p, 'P'));
+        const batters  = calibrated.filter(p => !rp(p, 'P'));
+        dlog('[Portfolio] pitchers=%d batters=%d stacks3=%d stacks5=%d',
+          pitchers.length, batters.length, STATE.STACKS3?.length || 0, STATE.STACKS5?.length || 0);
+        if (pitchers.length < 4) console.warn('[Portfolio] Only %d projected pitchers — exposure caps will be hit early', pitchers.length);
+      }
 
       // ── Showdown portfolio path ────────────────────────────────────────────
       if (isShowdown()) {
@@ -2594,10 +3547,15 @@ function generatePortfolio() {
           // Fall through to classic path below
         } else {
           ctx.minImpliedTotal = 0; ctx.minGameTotal = 0;
+          const sdMinSalaryRaw = document.getElementById('port-min-salary')?.value;
+          // Showdown: respect the UI field if set; blank = no floor (0).
+          // A hard-coded default here silently rejects lineups on thin/low-salary pools.
+          const sdMinSalary = sdMinSalaryRaw !== '' && sdMinSalaryRaw != null ? parseFloat(sdMinSalaryRaw) : 0;
           const sdResult = await Engine.buildShowdownPortfolio(calibratedPool, {
             numLineups, maxExposure, contestType,
             maxOverlap: maxOverlapVal,
             playerExposureOverrides: playerOverrides,
+            minSalary: sdMinSalary,
             context: ctx,
           }, pct => { btn.textContent = `Generating... ${Math.round(pct * 100)}%`; });
           STATE.portfolioLineups = sdResult.lineups;
@@ -2614,7 +3572,14 @@ function generatePortfolio() {
             };
           });
           STATE.portfolioExposure = playerExposure;
-          renderPortfolioResults({ lineups: sdResult.lineups, playerExposure, totalLineups: sdResult.lineups.length });
+          renderPortfolioResults({
+            lineups: sdResult.lineups,
+            playerExposure,
+            totalLineups: sdResult.lineups.length,
+            requested: sdResult.requested,
+            _diag: sdResult._diag,
+            exposureRelaxUsed: sdResult.exposureRelaxUsed,
+          });
           return;
         }
       }
@@ -2658,8 +3623,128 @@ function generatePortfolio() {
         }
         btn.textContent = `Generating... ${phase}`;
       }, { corrScale: 1.0, simDiversity: 1.0 });
+
+      // Phase 3: Apply best plays automation constraints
+      if (STATE.lastBestPlays && STATE.bestPlaysContext) {
+        const contrarianTeam = STATE.lastBestPlays.gpp?.contrarianStack?.team;
+        const contrarianPlayers = STATE.lastBestPlays.gpp?.contrarianStack?.top5 || [];
+        const bringBackPlayers = STATE.lastBestPlays.gpp?.bringBack?.entries || [];
+
+        // Enforce contrarian stack in GPP lineups
+        if (enforceContrarian && contestType === 'gpp' && contrarianTeam && contrarianPlayers.length > 0) {
+          let contrarianSuccessCount = 0;
+          let contrarianFailCount = 0;
+          result.lineups = result.lineups.map(lu => {
+            if (!lu) return lu;
+            const hasContrarian = lu.some(p => contrarianPlayers.some(cp => cp.p.name === p.name));
+            if (!hasContrarian) {
+              const newLu = Engine.enforceContrarianStack(lu, contrarianTeam, contrarianPlayers.map(p => p.p), getCalibratedPool(), ctx);
+              // Check if injection actually placed a contrarian player
+              const injected = newLu && newLu.some(p => contrarianPlayers.some(cp => cp.p.name === p.name));
+              if (injected) {
+                // Roll back if injection reduced the primary stack below the forced stack size
+                if (stackSize != null) {
+                  const teamCts = {};
+                  newLu.forEach(p => { if (p && !rp(p, 'P')) teamCts[p.team] = (teamCts[p.team] || 0) + 1; });
+                  if (Math.max(0, ...Object.values(teamCts)) < stackSize) { contrarianFailCount++; return lu; }
+                }
+                contrarianSuccessCount++; return newLu;
+              }
+              else { contrarianFailCount++; return lu; }
+            } else {
+              contrarianSuccessCount++;
+              return lu;
+            }
+          });
+          result.contrarianStats = {
+            requested: result.lineups.length,
+            success: contrarianSuccessCount,
+            failed: contrarianFailCount,
+          };
+        }
+
+        // Enforce bring-back inclusion target
+        if (bringBackTargetPct > 0 && bringBackPlayers.length > 0) {
+          // Snapshot lineups before modification so we can restore any that now violate stackSize
+          const preInjection = stackSize != null ? result.lineups.map(lu => lu ? [...lu] : lu) : null;
+          result.lineups = Engine.enforcePlayInclusionTarget(
+            result.lineups,
+            bringBackPlayers.map(p => p.p.name),
+            bringBackTargetPct,
+            getCalibratedPool()
+          );
+          if (preInjection) {
+            result.lineups.forEach((lu, i) => {
+              if (!lu) return;
+              const teamCts = {};
+              lu.forEach(p => { if (p && !rp(p, 'P')) teamCts[p.team] = (teamCts[p.team] || 0) + 1; });
+              if (Math.max(0, ...Object.values(teamCts)) < stackSize) result.lineups[i] = preInjection[i];
+            });
+          }
+        }
+
+        // Analyze portfolio diversity if enabled
+        if (showDiversityAnalysis) {
+          const diversity = Engine.analyzePortfolioDiversity(result.lineups, STATE.bestPlaysContext);
+          result.diversityAnalysis = diversity;
+        }
+      }
+
       STATE.portfolioLineups = result.lineups;
       STATE.portfolioExposure = result.playerExposure;
+
+      // Tool 3: Portfolio run receipt — one structured object summarising the run.
+      // Emitted to console as a collapsed group so it's always visible without flooding.
+      (() => {
+        const diag = result._diag || {};
+        const elapsed = Date.now() - _portStartMs;
+        const complete = result.lineups.filter(lu => lu && lu.every(Boolean));
+        const incomplete = result.lineups.filter(lu => lu && lu.some(p => !p));
+        const avgSal = complete.length
+          ? Math.round(complete.reduce((s, lu) => s + lu.reduce((ss, p) => ss + (p?.salary || 0), 0), 0) / complete.length)
+          : 0;
+        const avgMed = complete.length
+          ? (complete.reduce((s, lu) => s + lu.reduce((ss, p) => ss + (p?.median || 0), 0), 0) / complete.length).toFixed(1)
+          : 0;
+
+        const receipt = {
+          requested:   result.requested || result.lineups.length,
+          generated:   result.lineups.length,
+          complete:    complete.length,
+          incomplete:  incomplete.length,
+          avgSalary:   `$${avgSal.toLocaleString()}`,
+          avgMedian:   `${avgMed} pts`,
+          elapsedMs:   elapsed,
+          rejections: {
+            nullLineup:    diag.nullLu        || 0,
+            incompleteSlot:diag.incompleteLu  || 0,
+            wrongStackSize:diag.stackSizeFail || 0,
+            duplicate:     diag.dupFail       || 0,
+            tooSimilar:    diag.overlapFail   || 0,
+            gameCap:       diag.gameCapFail   || 0,
+            salaryFail:    diag.salaryFail    || 0,
+          },
+          incompleteSlotPatterns: diag.incompleteSlotPatterns || null,
+          ownershipFlags: (STATE.ownershipFlags || []).map(f => `${f.name} ${f.uploadedOwn}%→${f.projectedOwn}%`),
+          poolSize:    (STATE.POOL || []).length,
+          projCount:   (STATE.POOL || []).filter(p => (p.median || 0) > 0).length,
+        };
+        STATE.lastPortfolioReceipt = { ...receipt, generated: complete.length };
+
+        const warn = receipt.incomplete > 0 || receipt.rejections.incompleteSlot > 0;
+        const label = warn
+          ? '%c[mlbdfs] Portfolio receipt ⚠'
+          : '%c[mlbdfs] Portfolio receipt ✓';
+        const style = warn ? 'font-weight:bold;color:#f5a623' : 'font-weight:bold;color:#4a9eff';
+        console.groupCollapsed(label, style);
+        console.table(receipt.rejections);
+        console.log('generated', receipt.generated, '/', receipt.requested,
+          `| avg salary ${receipt.avgSalary} | avg median ${receipt.avgMedian} | ${receipt.elapsedMs}ms`);
+        if (receipt.incompleteSlotPatterns) console.log('incomplete slot patterns:', receipt.incompleteSlotPatterns);
+        if (receipt.ownershipFlags.length) console.log('ownership flags:', receipt.ownershipFlags.join(', '));
+        console.groupEnd();
+      })();
+
       renderPortfolioResults(result);
     } catch (e) {
       console.error('Portfolio generation failed:', e);
@@ -2750,6 +3835,15 @@ function renderPortfolioResults(result) {
       tipsList.push(`${d.nullLu} stack placement attempts returned null — verify that the player names in your ${stackSizeOpt}-man stacks file exactly match names in the player CSV.`);
     }
 
+    // Mix mode with high 5-man failure rate: explain thin-team batter depth
+    if (d.nullLu > 20 && stackSizeOpt == null) {
+      if (d.thinTeams && d.thinTeams.length > 0) {
+        tipsList.push(`<strong>${d.nullLu} 5-man stack attempts failed</strong> — ${d.thinTeams.length} team(s) don't have enough projectable batters to form a 5-man stack: <strong>${d.thinTeams.join(', ')}</strong>. The engine falls back to 3-man for these teams. Consider lowering 5-Man Stack % or loading projections for those teams.`);
+      } else {
+        tipsList.push(`<strong>${d.nullLu} stack placement attempts failed</strong> — some teams may not have enough projectable batters for a 5-man stack, or all their stacks were already used. Try lowering 5-Man Stack % from 100% (e.g. to 60–70%) to allow 3-man fallbacks more often.`);
+      }
+    }
+
     if (d.gameCapFail > 5 && !d.gameCapRelaxed) {
       const curGE = parseFloat(document.getElementById('port-max-game-exposure')?.value) / 100 || 0.65;
       const suggested = Math.min(1.0, curGE + 0.15);
@@ -2807,6 +3901,20 @@ function renderPortfolioResults(result) {
   if (result.pitcherWarnings?.length) {
     postWarnings.push(`<strong>Pitcher cap exceeded:</strong> ${result.pitcherWarnings.map(w => `${esc(w.name)} (${w.pct}%)`).join(', ')} — not enough viable pitchers to stay within the cap.`);
   }
+  if (result.stackShortfallCount > 0 && result.stackSize != null) {
+    const pct = Math.round(result.stackShortfallCount / result.totalLineups * 100);
+    postWarnings.push(`<strong>${result.stackShortfallCount} lineup${result.stackShortfallCount > 1 ? 's' : ''} (${pct}%) did not achieve the forced ${result.stackSize}-man stack</strong> — only ${result.stackSize - 1} batters from one team were placed. This happens when one stack player is exposure-capped or salary-constrained. To fix: add more stacks, raise Max Exposure, or switch to Mix mode.`);
+  }
+  // CPT concentration warning (showdown only): single-captain dominance = high single-player downside
+  if (isShowdown() && result.playerExposure && result.totalLineups > 0) {
+    const cptHeavy = Object.entries(result.playerExposure)
+      .filter(([, d]) => (d.cptCount || 0) / result.totalLineups > 0.40)
+      .sort(([, a], [, b]) => (b.cptCount || 0) - (a.cptCount || 0));
+    if (cptHeavy.length) {
+      const names = cptHeavy.map(([nm, d]) => `<strong>${esc(nm)}</strong> (${Math.round(d.cptCount / result.totalLineups * 100)}% CPT)`).join(', ');
+      postWarnings.push(`<strong>High captain concentration:</strong> ${names} — concentrated CPT exposure amplifies downside if this player underperforms. Consider adding more captain variety or raising Max Exposure % to allow other players to captain.`);
+    }
+  }
   if (result.bannedTeams?.length) {
     postWarnings.push(`Banned teams excluded: <strong>${result.bannedTeams.map(esc).join(', ')}</strong>`);
   }
@@ -2818,6 +3926,29 @@ function renderPortfolioResults(result) {
   }
   if (postWarnings.length) {
     html += postWarnings.map(w => `<div class="ib blue" style="margin-bottom:6px;font-size:12px">${w}</div>`).join('');
+  }
+
+  // Contrarian injection warning: shown when Phase 3 enforcement failed for some lineups.
+  if (result.contrarianStats && result.contrarianStats.failed > 0) {
+    const cs = result.contrarianStats;
+    const failPct = Math.round(cs.failed / cs.requested * 100);
+    html += `<div class="ib" style="margin-bottom:6px;font-size:12px;border-color:var(--brd-w)">
+      <strong>Contrarian Injection:</strong> ${cs.success}/${cs.requested} lineups injected successfully · <strong style="color:var(--tw)">${cs.failed} failed (${failPct}%)</strong> — salary or exposure constraints blocked replacement. Lower Min Salary or raise Max Exposure to improve coverage.
+    </div>`;
+  }
+
+  // Bring-back rate summary (GPP only): shows the actual placement rate so users can
+  // diagnose when salary constraints or exposure caps are blocking bring-back batters.
+  const contestTypeForBB = document.getElementById('port-contest-type')?.value;
+  if (contestTypeForBB === 'gpp' && result.bringBackCount != null && result.totalLineups > 0) {
+    const bbPct = Math.round(result.bringBackCount / result.totalLineups * 100);
+    const bbColor = bbPct >= 70 ? 'var(--tsu)' : bbPct >= 40 ? 'var(--ti)' : 'var(--tw)';
+    const bbNote = bbPct < 40
+      ? ' — low bring-back rate. Check salary headroom or raise Min Opp Implied.'
+      : bbPct < 70 ? ' — moderate. Consider lowering Min Opp Implied to allow more bring-backs.' : '';
+    html += `<div style="margin-bottom:6px;padding:6px 10px;background:var(--bs);border-radius:var(--r);border:0.5px solid var(--brd-s);font-size:12px">
+      <strong>Bring-Back Rate:</strong> <span style="color:${bbColor};font-weight:700">${result.bringBackCount}/${result.totalLineups} lineups (${bbPct}%)</span>${esc(bbNote)}
+    </div>`;
   }
 
   // Sim filter transparency block — shows how many lineups hit the band vs were backfilled
@@ -2891,6 +4022,60 @@ function renderPortfolioResults(result) {
   <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">${divBars}</div>
   ${div.score < 35 ? `<div class="ib warn" style="font-size:11px;margin-bottom:8px">Low diversity (${div.score}%) — consider lowering Max Lineup Overlap below ${div.maxOverlap} to spread variance across your portfolio.</div>` : ''}
   ${maxGamePct >= 70 ? `<div class="ib warn" style="font-size:11px;margin-bottom:8px">High game concentration (${maxGamePct}% in ${topGameLabel}) — if this game is rained out or goes low-scoring, most of your portfolio is at risk. Consider locking a second game's stack.</div>` : ''}`;
+
+  // Phase 3: Render best plays diversity analysis if available
+  if (result.diversityAnalysis) {
+    const da = result.diversityAnalysis;
+    const leverageBarHtml = `<div style="display:flex;align-items:center;gap:4px;font-size:11px">
+      <div style="width:80px;height:6px;background:var(--bs);border-radius:2px;overflow:hidden">
+        <div style="width:${da.leveragePct}%;height:6px;background:var(--tsu)"></div>
+      </div>
+      <span style="color:var(--ti)">${da.withLeverage}/${da.total} lineups (${da.leveragePct}%) | avg ${da.avgLeverageCount} plays/lu</span>
+    </div>`;
+    
+    const contrarianBarHtml = `<div style="display:flex;align-items:center;gap:4px;font-size:11px">
+      <div style="width:80px;height:6px;background:var(--bs);border-radius:2px;overflow:hidden">
+        <div style="width:${da.contrarianPct}%;height:6px;background:var(--tw)"></div>
+      </div>
+      <span style="color:var(--ti)">${da.withContrarian}/${da.total} lineups (${da.contrarianPct}%) | avg ${da.avgContrarianCount} plays/lu</span>
+    </div>`;
+    
+    const bringBackBarHtml = `<div style="display:flex;align-items:center;gap:4px;font-size:11px">
+      <div style="width:80px;height:6px;background:var(--bs);border-radius:2px;overflow:hidden">
+        <div style="width:${da.bringBackPct}%;height:6px;background:var(--tb)"></div>
+      </div>
+      <span style="color:var(--ti)">${da.withBringBack}/${da.total} lineups (${da.bringBackPct}%) | avg ${da.avgBringBackCount} plays/lu</span>
+    </div>`;
+    
+    const chalkBarHtml = `<div style="display:flex;align-items:center;gap:4px;font-size:11px">
+      <div style="width:80px;height:6px;background:var(--bs);border-radius:2px;overflow:hidden">
+        <div style="width:${da.chalkPct}%;height:6px;background:var(--ts)"></div>
+      </div>
+      <span style="color:var(--ti)">${da.withChalk}/${da.total} lineups (${da.chalkPct}%) | avg ${da.avgChalkCount} plays/lu</span>
+    </div>`;
+
+    html += `<div style="margin-top:12px;padding:10px 12px;background:var(--bs);border-radius:var(--r);border:0.5px solid var(--brd-s)">
+      <div style="margin-bottom:8px;font-size:12px;font-weight:600;color:var(--ti)">📊 Best Plays Distribution</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <div>
+          <div style="font-size:11px;color:var(--tp);margin-bottom:3px;font-weight:500">⚡ Leverage</div>
+          ${leverageBarHtml}
+        </div>
+        <div>
+          <div style="font-size:11px;color:var(--tp);margin-bottom:3px;font-weight:500">🏃 Contrarian</div>
+          ${contrarianBarHtml}
+        </div>
+        <div>
+          <div style="font-size:11px;color:var(--tp);margin-bottom:3px;font-weight:500">🔄 Bring-Back</div>
+          ${bringBackBarHtml}
+        </div>
+        <div>
+          <div style="font-size:11px;color:var(--tp);margin-bottom:3px;font-weight:500">💰 Chalk (lower is better)</div>
+          ${chalkBarHtml}
+        </div>
+      </div>
+    </div>`;
+  }
 
   // Separate pitcher and batter exposure tables
   const allEntries = Object.entries(result.playerExposure).sort((a, b) => b[1].count - a[1].count);
@@ -3862,6 +5047,8 @@ function runSimulation() {
   if (!Number.isNaN(simDiversity)) Engine.setSimDiversity(simDiversity);
   const btn = document.getElementById('run-sim-btn');
   btn.textContent = 'Simulating...'; btn.disabled = true;
+  const ecEl = document.getElementById('edge-card');
+  if (ecEl) ecEl.style.display = 'none';
 
   // Show how many historical pair correlations are active
   const pairStatus = document.getElementById('sim-pair-corr-status');
@@ -3877,7 +5064,24 @@ function runSimulation() {
   setTimeout(() => {
     try {
       const result = Engine.simulateLineup(STATE.lineup, numSims);
-      renderSimResults(result);
+      const parseLine = id => { const v = parseFloat(document.getElementById(id)?.value); return isNaN(v) ? null : v; };
+      const rates = Engine.computeLineupRates(
+        result.rawTotals,
+        parseLine('sim-cash-line'),
+        parseLine('sim-top10-line'),
+        parseLine('sim-win-line')
+      );
+      renderSimResults(result, rates);
+      // Know Your Edge: edge profile vs chalk field baseline
+      const edgeProfile = Engine.computeEdgeProfile(STATE.lineup, result.rawTotals, STATE.POOL, {
+        payoutType: document.getElementById('edge-payout-type')?.value || 'top20',
+        fieldSize:  parseFloat(document.getElementById('edge-field-size')?.value)  || 10000,
+        entryFee:   parseFloat(document.getElementById('edge-entry-fee')?.value)   || 20,
+        cashLine:   parseLine('sim-cash-line'),
+        top10Line:  parseLine('sim-top10-line'),
+        winLine:    parseLine('sim-win-line'),
+      });
+      renderEdgeCard(edgeProfile);
     } catch (err) {
       document.getElementById('sim-results').innerHTML = `<div class="ib warn">Simulation error: ${err.message}</div>`;
     } finally {
@@ -3886,9 +5090,32 @@ function runSimulation() {
   }, 50);
 }
 
-function renderSimResults(result) {
+function renderSimResults(result, rates) {
   if (!result) return;
   const el = document.getElementById('sim-results');
+
+  // Verdict card (Cash %, Top 10 %, Win % + plain-English analysis)
+  let verdictHtml = '';
+  if (rates) {
+    const { cashPct, top10Pct, winPct } = rates;
+    const verdict = computeSimVerdict(cashPct, top10Pct, winPct, result.correlationScore);
+    const chipColor = (pct, gt, yt) =>
+      pct == null ? 'var(--ts)' : pct >= gt ? '#22c55e' : pct >= yt ? '#f59e0b' : '#ef4444';
+    const chip = (pct, label, gt, yt) => pct == null ? '' :
+      `<div style="text-align:center;min-width:72px">
+        <div style="font-size:26px;font-weight:700;color:${chipColor(pct,gt,yt)};line-height:1.1">${(pct*100).toFixed(1)}%</div>
+        <div style="font-size:11px;color:var(--ts);margin-top:2px">${label}</div>
+       </div>`;
+    verdictHtml = `<div style="background:var(--bs);border:1px solid var(--brd);border-radius:var(--r);padding:14px 16px;margin-bottom:12px">
+      <div style="display:flex;gap:20px;justify-content:center;margin-bottom:10px;flex-wrap:wrap">
+        ${chip(cashPct,  'Cash %',   0.50, 0.40)}
+        ${chip(top10Pct, 'Top 10 %', 0.20, 0.12)}
+        ${chip(winPct,   'Win %',    0.10, 0.05)}
+      </div>
+      ${verdict ? `<div style="font-size:13px;font-weight:700;color:${verdict.color};margin-bottom:4px">${verdict.label}</div>
+      <div style="font-size:12px;color:var(--ts);line-height:1.5">${verdict.text}</div>` : ''}
+    </div>`;
+  }
 
   // Summary stats
   // meanSE / p50SE are bootstrap standard errors — they quantify how much the
@@ -3909,7 +5136,7 @@ function renderSimResults(result) {
   } else if (relSE < 0.005 && result.meanSE > 0) {
     stabilityNote = `<div class="ib" style="margin-bottom:8px;font-size:12px;color:var(--tsu)">Estimates are stable (SE=${result.meanSE.toFixed(2)}, ${(relSE * 100).toFixed(2)}% of mean).</div>`;
   }
-  let html = stabilityNote + `<div class="mc-row">
+  let html = verdictHtml + stabilityNote + `<div class="mc-row">
     <div class="mc"><div class="mc-l">Mean</div><div class="mc-v">${result.mean.toFixed(1)}${meanCIStr}</div></div>
     <div class="mc"><div class="mc-l">Std Dev</div><div class="mc-v">${result.std.toFixed(1)}</div></div>
     <div class="mc"><div class="mc-l">P10</div><div class="mc-v">${result.p10.toFixed(1)}</div></div>
@@ -3945,6 +5172,174 @@ function renderSimResults(result) {
   </tbody></table></div>`;
 
   el.innerHTML = html;
+}
+
+function computeSimVerdict(cashPct, top10Pct, winPct, corrScore) {
+  const c = cashPct  != null ? cashPct  * 100 : null;
+  const t = top10Pct != null ? top10Pct * 100 : null;
+  const w = winPct   != null ? winPct   * 100 : null;
+  if (c == null && w == null) return null;
+
+  let label, color, text;
+  if (w != null && w >= 15) {
+    label = 'High Upside GPP Play';
+    color = '#3b82f6';
+    text = `Win probability is ${w.toFixed(1)}% — this stack booms when it connects. Big ceiling, but${c != null ? ` a ${c.toFixed(1)}% cash rate means` : ''} you need your correlation to fire.`;
+  } else if (c != null && c >= 55) {
+    label = 'Cash Game Lock';
+    color = '#22c55e';
+    text = `Cashes ${c.toFixed(1)}% of the time — well above break-even for double-ups and 50/50s. Consider adding more stack upside for large-field GPPs.`;
+  } else if (c != null && c >= 48 && (t == null || t >= 20) && w != null && w >= 8) {
+    label = 'Well-Rounded Build';
+    color = '#22c55e';
+    text = `Strong floor (${c.toFixed(1)}% cash rate) with real upside (${w.toFixed(1)}% win rate${t != null ? `, ${t.toFixed(1)}% top-10` : ''}). Suitable for most contest types.`;
+  } else if (c != null && c >= 48 && (w == null || w < 8)) {
+    label = 'Cash Game Build';
+    color = '#84cc16';
+    text = `Reliable ${c.toFixed(1)}% cash rate with modest GPP ceiling (${w != null ? w.toFixed(1) + '% win rate' : 'limited win potential'}). Great for cash; needs more stack correlation for large-field tournaments.`;
+  } else if ((c == null || c < 38) && (w == null || w < 5)) {
+    label = 'Risky Build';
+    color = '#ef4444';
+    text = `Low floor${c != null ? ` (${c.toFixed(1)}% cash rate)` : ''} and limited ceiling${w != null ? ` (${w.toFixed(1)}% win rate)` : ''}. Reconsider your stack structure or projections. Corr score: ${corrScore != null ? corrScore.toFixed(3) : 'n/a'}.`;
+  } else {
+    label = 'Tournament Contender';
+    color = '#f59e0b';
+    text = `${c != null ? `${c.toFixed(1)}% cash rate with ` : ''}${w != null ? `${w.toFixed(1)}% win potential` : 'moderate upside'}. Competes in mid-to-large GPPs. Corr score ${corrScore != null ? corrScore.toFixed(3) : 'n/a'} — higher correlation stacks your best outcomes together.`;
+  }
+  return { label, color, text };
+}
+
+async function loadSimBenchmarks() {
+  const statusEl = document.getElementById('sim-bench-status');
+  if (statusEl) statusEl.textContent = 'Loading…';
+  try {
+    const data = await fetch('/api/history/score-benchmarks').then(r => r.json());
+    if (!data.sufficient) {
+      if (statusEl) statusEl.textContent = `Need ${5 - (data.count || 0)} more scored entries.`;
+      return;
+    }
+    if (data.estCashLine != null) {
+      const el = document.getElementById('sim-cash-line');
+      if (el) el.value = Math.round(data.estCashLine);
+    }
+    if (data.scorePercentiles?.p90 != null) {
+      const el = document.getElementById('sim-top10-line');
+      if (el) el.value = Math.round(data.scorePercentiles.p90);
+    }
+    if (data.estWinLine != null) {
+      const el = document.getElementById('sim-win-line');
+      if (el) el.value = Math.round(data.estWinLine);
+    }
+    const n = data.benchmarkMeta?.cashSampleSize ?? data.scorePercentiles?.p50 ?? 0;
+    if (statusEl) statusEl.textContent = `Lines from ${data.entriesWithResults || ''} scored entries.`;
+    STATE.simBenchmarksLoaded = true;
+  } catch {
+    if (statusEl) statusEl.textContent = 'History fetch failed.';
+  }
+}
+
+function renderEdgeCard(profile) {
+  const el = document.getElementById('edge-card');
+  if (!el) return;
+  if (!profile) { el.style.display = 'none'; return; }
+
+  const roiColor = profile.roi == null ? 'var(--ts)'
+    : profile.roi > 25  ? '#22c55e'
+    : profile.roi > 5   ? '#84cc16'
+    : profile.roi > -5  ? '#f59e0b'
+    : '#ef4444';
+
+  const fmt   = (v, d=1) => v != null ? v.toFixed(d) : '—';
+  const pct   = v => v != null ? fmt(v) + '%' : '—';
+  const sgn   = v => v > 0 ? '+' : '';
+  const roiStr  = profile.roi != null ? sgn(profile.roi) + fmt(profile.roi) + '%' : '—';
+  const evStr   = profile.ev  != null ? '$' + fmt(profile.ev, 2) + ' avg payout on $' + profile.entryFee + ' entry' : '';
+
+  const ownColor  = profile.ownDelta > 5 ? '#22c55e' : profile.ownDelta > 0 ? '#84cc16' : profile.ownDelta > -3 ? '#f59e0b' : '#ef4444';
+  const ownLabel  = profile.ownDelta > 0
+    ? sgn(profile.ownDelta) + fmt(profile.ownDelta) + '% below chalk (contrarian edge)'
+    : fmt(-profile.ownDelta) + '% above chalk (chalk-heavy)';
+  const dupeColor = { Unique: '#22c55e', Low: '#84cc16', Med: '#f59e0b', High: '#ef4444' }[profile.dupeRisk] || 'var(--ts)';
+  const levColor  = profile.levDelta > 1 ? '#22c55e' : profile.levDelta > 0 ? '#84cc16' : '#f59e0b';
+
+  const rowEdge = (v, goodThresh, badThresh) => {
+    const color = v > goodThresh ? '#22c55e' : v > badThresh ? '#f59e0b' : '#ef4444';
+    return `<span style="color:${color}">${sgn(v)}${fmt(v)}</span>`;
+  };
+
+  el.style.display = 'block';
+  el.innerHTML = `
+    <div style="display:flex;gap:6px;align-items:center;margin-bottom:12px">
+      <span style="font-size:13px;font-weight:700;color:var(--tp)">Know Your Edge</span>
+      <span style="font-size:11px;color:var(--ts)">${profile.payoutType === 'top20' ? 'GPP Top 20%' : profile.payoutType === 'top10' ? 'Large Field Top 10%' : profile.payoutType === 'winner' ? 'Winner Take Most' : 'Double-Up'} · ${Number(profile.fieldSize).toLocaleString()} entries · $${profile.entryFee}</span>
+    </div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px;align-items:flex-start">
+      <div style="min-width:100px">
+        <div style="font-size:10px;color:var(--ts);margin-bottom:2px;text-transform:uppercase;letter-spacing:.04em">Est. GPP ROI</div>
+        <div style="font-size:38px;font-weight:800;color:${roiColor};line-height:1">${roiStr}</div>
+        <div style="font-size:10px;color:var(--ts);margin-top:3px">${evStr}</div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;flex:1">
+        <div style="background:var(--bp);border:0.5px solid var(--brd);border-radius:6px;padding:8px 12px;min-width:90px;text-align:center">
+          <div style="font-size:20px;font-weight:700;color:${ownColor}">${pct(profile.lineupAvgOwn)}</div>
+          <div style="font-size:10px;color:var(--ts)">avg ownership</div>
+          <div style="font-size:10px;color:${ownColor};margin-top:2px">${ownLabel}</div>
+        </div>
+        <div style="background:var(--bp);border:0.5px solid var(--brd);border-radius:6px;padding:8px 12px;min-width:90px;text-align:center">
+          <div style="font-size:20px;font-weight:700;color:${levColor}">${fmt(profile.lineupLev)}</div>
+          <div style="font-size:10px;color:var(--ts)">leverage score</div>
+          <div style="font-size:10px;color:${levColor};margin-top:2px">${sgn(profile.levDelta)}${fmt(profile.levDelta)} vs chalk</div>
+        </div>
+        <div style="background:var(--bp);border:0.5px solid var(--brd);border-radius:6px;padding:8px 12px;min-width:90px;text-align:center">
+          <div style="font-size:20px;font-weight:700;color:${dupeColor}">${profile.dupeRisk}</div>
+          <div style="font-size:10px;color:var(--ts)">lineup uniqueness</div>
+          <div style="font-size:10px;color:var(--ts);margin-top:2px">${fmt(profile.dupesExpected, 1)} expected dupes</div>
+        </div>
+      </div>
+    </div>
+    <div style="font-size:11px;font-weight:600;color:var(--ts);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">vs Chalk Baseline</div>
+    <div style="overflow-x:auto">
+      <table style="font-size:12px">
+        <thead><tr>
+          <th style="text-align:left;color:var(--ts);font-weight:500">Stat</th>
+          <th style="text-align:right;color:var(--tp)">Your Lineup</th>
+          <th style="text-align:right;color:var(--ts)">Chalk Entry</th>
+          <th style="text-align:right;color:var(--ts)">Your Edge</th>
+        </tr></thead>
+        <tbody>
+          <tr>
+            <td style="color:var(--ts)">Projected Score</td>
+            <td style="text-align:right;font-weight:600">${fmt(profile.lineupProj)} pts</td>
+            <td style="text-align:right;color:var(--ts)">${fmt(profile.chalkProj)} pts</td>
+            <td style="text-align:right">${rowEdge(profile.projDelta, 3, 0)}</td>
+          </tr>
+          <tr>
+            <td style="color:var(--ts)">Avg Hitter Own%</td>
+            <td style="text-align:right;font-weight:600">${pct(profile.lineupBatOwn)}</td>
+            <td style="text-align:right;color:var(--ts)">${pct(profile.chalkBatOwn)}</td>
+            <td style="text-align:right">${rowEdge(profile.chalkBatOwn - profile.lineupBatOwn, 5, 0)}</td>
+          </tr>
+          <tr>
+            <td style="color:var(--ts)">Avg Pitcher Own%</td>
+            <td style="text-align:right;font-weight:600">${pct(profile.lineupPitOwn)}</td>
+            <td style="text-align:right;color:var(--ts)">${pct(profile.chalkPitOwn)}</td>
+            <td style="text-align:right">${rowEdge(profile.chalkPitOwn - profile.lineupPitOwn, 10, 0)}</td>
+          </tr>
+          <tr>
+            <td style="color:var(--ts)">Leverage Score</td>
+            <td style="text-align:right;font-weight:600">${fmt(profile.lineupLev)}</td>
+            <td style="text-align:right;color:var(--ts)">${fmt(profile.chalkLev)}</td>
+            <td style="text-align:right">${rowEdge(profile.levDelta, 1, 0)}</td>
+          </tr>
+          <tr>
+            <td style="color:var(--ts)">Lineup Uniqueness</td>
+            <td style="text-align:right;font-weight:600;color:${dupeColor}">${profile.dupeRisk}</td>
+            <td style="text-align:right;color:var(--ts)">Med–High</td>
+            <td style="text-align:right;color:${dupeColor};font-size:11px">${(profile.pUnique * 100).toFixed(0)}% chance unique</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>`;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -4353,6 +5748,13 @@ async function saveLineupToHistory() {
       return { name: src.fname, weight: STATE.rooWeights[i], projections };
     })
     .filter(Boolean);
+  // Include internal projections as a source for quality tracking (when no ROO was loaded)
+  const internalPlayers = STATE.POOL.filter(p => p.hasInternalProj && !p.hasRoo && p.median > 0);
+  if (internalPlayers.length > 0) {
+    const projections = {};
+    internalPlayers.forEach(p => { projections[p.name] = p.median; });
+    sourcesSnapshot.push({ name: 'Internal (season rates)', weight: 100, projections });
+  }
 
   try {
     await fetch('/api/history', {
@@ -5788,6 +7190,8 @@ async function loadStatcast() {
     loadFraming();
     // Load sprint speed data
     loadSprintSpeed();
+    // Load season rate stats for internal projections
+    loadSeasonStats();
   } catch (e) {
     if (el) el.innerHTML = `<div class="ib warn">Statcast failed: ${esc(e.message)}</div>`;
     if (btn) { btn.textContent = 'Fetch Statcast'; btn.disabled = false; }
@@ -5848,6 +7252,44 @@ async function loadPitcherStatcast() {
       el.innerHTML = existing + ` · <span class="warn">Pitcher Statcast failed</span>`;
     }
   }
+}
+
+// ── Season Rate Stats (internal projection anchor) ────────────────────────────
+async function loadSeasonStats() {
+  const el = document.getElementById('statcast-status');
+  try {
+    const res = await fetch('/api/season-stats');
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error || 'Failed');
+    STATE.seasonStatsData = { batters: data.batters || {}, pitchers: data.pitchers || {} };
+    // Re-apply internal projections now that we have season stats
+    applyInternalProjections();
+    if (el) {
+      const existing = el.innerHTML;
+      const cacheNote = data.stale ? ' (stale)' : data.cached ? ' (cached)' : '';
+      el.innerHTML = existing + ` · Season stats: ${data.batterCount}B/${data.pitcherCount}P${cacheNote}`;
+    }
+  } catch (e) {
+    if (el) {
+      const existing = el.innerHTML;
+      el.innerHTML = existing + ` · <span class="warn">Season stats failed</span>`;
+    }
+  }
+}
+
+function applyInternalProjections() {
+  if (!STATE.seasonStatsData || !STATE.POOL.length) return;
+  if (!Engine.buildInternalProjections) return;
+  const ctx = { vegasData: STATE.vegasData };
+  const updated = Engine.buildInternalProjections(STATE.POOL, STATE.seasonStatsData, ctx.vegasData);
+  // Apply only changed projections back to pool (preserve reference for players without internal data)
+  updated.forEach((p, i) => {
+    if (p.hasInternalProj && !STATE.POOL[i].hasInternalProj) {
+      STATE.POOL[i] = p;
+    }
+  });
+  runOwnershipAudit();
+  renderPlayers();
 }
 
 async function loadBullpen() {
@@ -5997,12 +7439,14 @@ async function loadInjuries() {
 }
 
 function applyInjuriesToPool() {
+  // Index by normalized key (accent-stripped, punctuation-removed) so "José García"
+  // matches "Jose Garcia" in the pool. No substring fallback — the old .includes() check
+  // caused false positives (e.g. "Al" matched "Albert", "Smith" matched "Smith Jr.").
   const flagMap = {};
-  STATE.injuryData.forEach(f => { flagMap[f.name.toLowerCase()] = f; });
+  STATE.injuryData.forEach(f => { flagMap[_normConfirmKey(f.name)] = f; });
   STATE.POOL.forEach(p => {
-    const key = p.name.toLowerCase();
-    const match = flagMap[key] || Object.keys(flagMap).find(k => key.includes(k) || k.includes(key));
-    const flag = match ? (flagMap[match] || flagMap[key]) : null;
+    const key = _normConfirmKey(p.name);
+    const flag = flagMap[key] || null;
     p.injuryFlag = !!flag;
     p.injuryType = flag?.type || null;
     p.injuryDesc = flag?.description || null;
@@ -6313,6 +7757,8 @@ function renderBlendControls() {
   if (STATE.statcastData && Object.keys(STATE.statcastData).length) sources.push({ name: 'Statcast', count: Object.keys(STATE.statcastData).length });
   if (STATE.formData && Object.keys(STATE.formData).length) sources.push({ name: 'Form (14d) Batters', count: Object.keys(STATE.formData).length });
   if (STATE.formData && Object.keys(STATE.formData).length) sources.push({ name: 'Form (14d) Pitchers', count: Object.keys(STATE.formData).length });
+  const internalCount = STATE.POOL.filter(p => p.hasInternalProj && !p.hasRoo).length;
+  if (internalCount > 0) sources.push({ name: 'Internal Proj', count: internalCount });
 
   // Source-aware flags row — shown whenever ROO is loaded, regardless of source count.
   // These tell the engine whether the projection CSV already prices in park/Vegas so
@@ -6414,6 +7860,8 @@ function saveSession() {
       sourceIncludesPark: STATE.sourceIncludesPark,
       sourceIncludesVegas: STATE.sourceIncludesVegas,
       lineup: STATE.lineup.map(p => p ? { name: p.name } : null),
+      lockedSlots: STATE.lockedSlots ? [...STATE.lockedSlots] : null,
+      contestTypeSel: document.getElementById('contest-type-sel')?.value,
       allowBvP: document.getElementById('allow-bvp')?.checked || false,
       simulatorConfig: {
         simCount: document.getElementById('sim-count')?.value,
@@ -6454,7 +7902,13 @@ function saveSession() {
         customWinPct: document.getElementById('custom-win-pct')?.value,
         customWinMult: document.getElementById('custom-win-mult')?.value,
         maxGameExposure: document.getElementById('port-max-game-exposure')?.value,
+        banPlayers: document.getElementById('port-ban-players')?.value,
+        useBestPlays: document.getElementById('port-use-best-plays')?.checked || false,
+        enforceContrarian: document.getElementById('port-enforce-contrarian')?.checked || false,
+        diversityAnalysis: document.getElementById('port-diversity-analysis')?.checked || false,
+        bringBackTargetPct: document.getElementById('port-bring-back-target')?.value,
       },
+      projOverrides: STATE.projOverrides,
       playerExposureOverrides: STATE.playerExposureOverrides,
       teamExposureOverrides: STATE.teamExposureOverrides
     };
@@ -6505,6 +7959,9 @@ function restoreSession() {
     // Restore contest size
     if (session.contestSize) STATE.contestSize = session.contestSize;
 
+    // Restore single-lineup contest type
+    if (session.contestTypeSel) { const el = document.getElementById('contest-type-sel'); if (el) el.value = session.contestTypeSel; }
+
     // Restore source-aware multiplier flags
     if (typeof session.sourceIncludesPark === 'boolean') STATE.sourceIncludesPark = session.sourceIncludesPark;
     if (typeof session.sourceIncludesVegas === 'boolean') STATE.sourceIncludesVegas = session.sourceIncludesVegas;
@@ -6520,7 +7977,7 @@ function restoreSession() {
       const el = document.getElementById('port-max-pitcher'); if (el) el.value = pc.maxPitcher;
       const lbl = document.getElementById('pitcher-exp-label'); if (lbl) lbl.textContent = pc.maxPitcher + '%';
     }
-    if (pc.contestType) { const el = document.getElementById('port-contest-type'); if (el) el.value = pc.contestType; }
+    if (pc.contestType) { const el = document.getElementById('port-contest-type'); if (el) { el.value = pc.contestType; onContestTypeChange(); } }
     if (pc.contestSize) { const el = document.getElementById('port-contest-size'); if (el) el.value = pc.contestSize; }
     if (pc.maxOverlap != null) { const el = document.getElementById('port-max-overlap'); if (el) el.value = pc.maxOverlap; }
     if (pc.minImplied != null) { const el = document.getElementById('port-min-implied'); if (el) el.value = pc.minImplied; }
@@ -6533,10 +7990,10 @@ function restoreSession() {
     if (pc.cashLine) { const el = document.getElementById('port-cash-line'); if (el) el.value = pc.cashLine; }
     if (pc.winLine) { const el = document.getElementById('port-win-line'); if (el) el.value = pc.winLine; }
     if (pc.simFilter != null) { const el = document.getElementById('port-sim-filter'); if (el) { el.checked = pc.simFilter; toggleSimFilter(); } }
-    if (pc.simFilterPct != null) { const el = document.getElementById('port-sim-filter-pct'); if (el) el.value = pc.simFilterPct; }
+    if (pc.simFilterPct != null) { const el = document.getElementById('port-sim-filter-pct'); if (el) el.value = Math.min(500, Math.max(10, +pc.simFilterPct || 50)); }
     if (pc.simFilterSims != null) { const el = document.getElementById('port-sim-filter-sims'); if (el) el.value = pc.simFilterSims; }
-    if (pc.simROIMin != null) { const el = document.getElementById('port-sim-roi-min'); if (el) el.value = pc.simROIMin; }
-    if (pc.simROIMax != null) { const el = document.getElementById('port-sim-roi-max'); if (el) el.value = pc.simROIMax; }
+    if (pc.simROIMin != null && pc.simROIMin !== '') { const el = document.getElementById('port-sim-roi-min'); if (el) el.value = pc.simROIMin; }
+    if (pc.simROIMax != null && pc.simROIMax !== '') { const el = document.getElementById('port-sim-roi-max'); if (el) el.value = pc.simROIMax; }
     if (pc.bbEnabled != null) { const el = document.getElementById('port-bb-enabled'); if (el) { el.checked = pc.bbEnabled; toggleBringBackOptions(); } }
     if (pc.bbMinOppImplied != null) { const el = document.getElementById('port-bb-min-implied'); if (el) el.value = pc.bbMinOppImplied; }
     if (pc.bbTarget != null) { const el = document.getElementById('port-bb-target'); if (el) el.value = pc.bbTarget; }
@@ -6553,6 +8010,18 @@ function restoreSession() {
     if (pc.customWinPct != null) { const el = document.getElementById('custom-win-pct'); if (el) el.value = pc.customWinPct; }
     if (pc.customWinMult != null) { const el = document.getElementById('custom-win-mult'); if (el) el.value = pc.customWinMult; }
     if (pc.maxGameExposure != null) { const el = document.getElementById('port-max-game-exposure'); if (el) el.value = pc.maxGameExposure; }
+    if (pc.banPlayers != null) { const el = document.getElementById('port-ban-players'); if (el) el.value = pc.banPlayers; }
+    if (pc.useBestPlays != null) { const el = document.getElementById('port-use-best-plays'); if (el) el.checked = pc.useBestPlays; }
+    if (pc.enforceContrarian != null) { const el = document.getElementById('port-enforce-contrarian'); if (el) el.checked = pc.enforceContrarian; }
+    if (pc.diversityAnalysis != null) { const el = document.getElementById('port-diversity-analysis'); if (el) el.checked = pc.diversityAnalysis; }
+    if (pc.bringBackTargetPct != null) {
+      const el = document.getElementById('port-bring-back-target');
+      if (el) {
+        el.value = pc.bringBackTargetPct;
+        const lbl = document.getElementById('bb-target-label');
+        if (lbl) lbl.textContent = pc.bringBackTargetPct + '%';
+      }
+    }
 
     // Restore player exposure overrides
     if (session.playerExposureOverrides) {
@@ -6566,12 +8035,23 @@ function restoreSession() {
       renderTeamExposureOverrides();
     }
 
+    // Restore projection overrides (applied to pool in mergePools when pool is loaded)
+    if (session.projOverrides && typeof session.projOverrides === 'object') {
+      STATE.projOverrides = session.projOverrides;
+    }
+
     // Restore lineup-builder BvP checkbox
     if (session.allowBvP != null) { const el = document.getElementById('allow-bvp'); if (el) el.checked = session.allowBvP; }
+
+    // Run validation so any bad stored ROI band or other settings surface immediately
+    validatePortfolioSettings();
 
     // Restore lineup slots — resolved against POOL once POOL is loaded
     if (session.lineup) {
       window._pendingLineupRestore = session.lineup;
+    }
+    if (session.lockedSlots) {
+      window._pendingLockedSlotsRestore = session.lockedSlots;
     }
   } catch (e) { /* corrupt or old session — ignore */ }
 }
@@ -6586,6 +8066,10 @@ function applyPendingLineupRestore() {
     const p = STATE.POOL.find(pl => pl.name === entry.name);
     if (p && !STATE.lineup[i]) STATE.lineup[i] = p;
   });
+  if (window._pendingLockedSlotsRestore) {
+    STATE.lockedSlots = window._pendingLockedSlotsRestore;
+    window._pendingLockedSlotsRestore = null;
+  }
   renderLineup();
   renderLuPool();
 }
@@ -6630,7 +8114,10 @@ function renderBestPlays() {
   const empty  = document.getElementById('plays-empty');
   if (!panel || !empty) return;
 
-  const pool = getCalibratedPool().filter(p => p.median > 0 || p.salary > 0);
+  const rawPool = getCalibratedPool();
+  const pool = rawPool.filter(p => p.median > 0 || p.salary > 0);
+  dlog('[BestPlays] calibrated pool=%d projected=%d', rawPool.length, pool.length);
+  if (rawPool.length && !pool.length) console.warn('[BestPlays] All players filtered out — no median or salary data');
   if (!pool.length) {
     panel.style.display = 'none';
     empty.style.display = 'block';
@@ -6641,7 +8128,28 @@ function renderBestPlays() {
 
   const ctx = getEngineContext();
   const contestSize = parseInt(document.getElementById('port-contest-size')?.value) || STATE.contestSize || 1000;
+  dlog('[BestPlays] hasConfirmedData=%s vegasTeams=%d contestSize=%d',
+    ctx.hasConfirmedData, Object.keys(ctx.vegasData || {}).length, contestSize);
   const plays = Engine.getBestPlays(pool, ctx, contestSize);
+  dlog('[BestPlays] results — SE pitchers=%d seStack=%s contrarian=%s bringBack=%s leverage=%d boomBust=%d',
+    plays.singleEntry.pitchers.length,
+    plays.singleEntry.stack?.team || 'NONE',
+    plays.gpp.contrarianStack?.team || 'NONE',
+    plays.gpp.bringBack?.team || 'NONE',
+    plays.gpp.leveragePlays.length,
+    plays.gpp.boomBust.length);
+
+  // Store best plays data for lineup builder integration
+  STATE.lastBestPlays = plays;
+  STATE.bestPlaysContext = {
+    leveragePlays: new Set(plays.gpp.leveragePlays.map(e => e.p.name)),
+    chalkPlayers: new Set(plays.gpp.chalkStacks.flatMap(c => c.top5).map(e => e.p.name)),
+    contrarianPlayers: new Set(plays.gpp.contrarianStack?.top5.map(e => e.p.name) || []),
+    bringBackPlayers: new Set(plays.gpp.bringBack?.entries.map(e => e.p.name) || []),
+    contrarianTeam: plays.gpp.contrarianStack?.team || null,
+    singleEntryPitchers: new Set(plays.singleEntry.pitchers.map(e => e.p.name)),
+    valuePlayNames: new Set(plays.singleEntry.valuePlays.map(e => e.p.name)),
+  };
 
   // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -6843,6 +8351,9 @@ function renderSlateSummary() {
   if (!content || !empty) return;
 
   const pool = STATE.POOL.filter(p => p.median > 0 || p.salary > 0);
+  dlog('[SlateSummary] pool=%d vegasTeams=%d parkFactors=%d weatherEntries=%d',
+    pool.length, Object.keys(STATE.vegasData || {}).length,
+    Object.keys(STATE.parkFactors || {}).length, Object.keys(STATE.weatherData || {}).length);
   if (!pool.length) {
     content.style.display = 'none';
     empty.style.display = 'block';
@@ -6853,6 +8364,8 @@ function renderSlateSummary() {
 
   // ── Build game objects ─────────────────────────────────────────────────────
   const gameKeys = [...new Set(pool.map(p => p.game).filter(Boolean))];
+  const playersWithoutGame = pool.filter(p => !p.game);
+  if (playersWithoutGame.length) dlog('[SlateSummary] %d players have no game field: %s', playersWithoutGame.length, playersWithoutGame.slice(0,5).map(p=>p.name).join(', '));
   const games = gameKeys.map(game => {
     const [away, home] = game.split('@');
     const homeVD = STATE.vegasData?.[home] || {};
@@ -6872,6 +8385,13 @@ function renderSlateSummary() {
     const envScore = ou > 0 ? ou * (pf.overall || 1.0) * wm.hitting : 0;
     return { game, away, home, homeImplied, awayImplied, ou, pf, isDome, weather, wm, we, windLabel, homeMvt, awayMvt, envScore };
   }).sort((a, b) => b.envScore - a.envScore);
+
+  if (_debug) {
+    games.forEach(g => dlog('[SlateSummary] game %s O/U=%.1f (home %.1f / away %.1f) pf=%.3f weather=%s envScore=%.2f',
+      g.game, g.ou, g.homeImplied, g.awayImplied, g.pf.overall, g.wm.label || 'none', g.envScore));
+    const gamesWithoutVegas = games.filter(g => g.ou === 0);
+    if (gamesWithoutVegas.length) console.warn('[SlateSummary] Games with no vegas O/U: %s', gamesWithoutVegas.map(g=>g.game).join(', '));
+  }
 
   const gameMap = {};
   games.forEach(g => { gameMap[g.game] = g; });
@@ -6902,6 +8422,15 @@ function renderSlateSummary() {
       wRisk: g.wm?.risk || 'none', weatherLabel: g.wm?.label || '', isDome: g.isDome || false
     };
   }).filter(t => t.implied > 0 || t.avgMed5 > 3).sort((a, b) => b.score - a.score);
+
+  dlog('[SlateSummary] stackTargets=%d top-3: %s', stackTargets.length,
+    stackTargets.slice(0,3).map(t=>`${t.team} impl=${t.implied.toFixed(1)} avgMed=${t.avgMed5.toFixed(1)}`).join(' | '));
+  const teamsFiltered = Object.values(teamBatters).filter(t => {
+    const implied = STATE.vegasData?.[t.team]?.impliedTotal || 0;
+    const avgMed5 = [...t.players].sort((a,b)=>b.median-a.median).slice(0,5).reduce((s,p)=>s+p.median,0)/Math.min(t.players.length,5)||0;
+    return !(implied > 0 || avgMed5 > 3);
+  });
+  if (teamsFiltered.length) dlog('[SlateSummary] %d teams dropped from stack targets (no implied, avgMed ≤3): %s', teamsFiltered.length, teamsFiltered.map(t=>t.team).join(', '));
 
   // ── Pitcher landscape ──────────────────────────────────────────────────────
   const pitchers = pool.filter(p => rp(p, 'P')).map(p => {

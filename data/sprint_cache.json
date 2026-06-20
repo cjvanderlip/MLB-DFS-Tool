@@ -6,17 +6,17 @@
       "bolts": 117,
       "hpTo1b": 4.22
     },
-    "bobby witt jr": {
-      "name": "Bobby Witt Jr.",
-      "sprintSpeed": 30.2,
-      "bolts": 101,
-      "hpTo1b": 4.15
-    },
     "victor scott ii": {
       "name": "Victor Scott II",
       "sprintSpeed": 30.2,
       "bolts": 87,
       "hpTo1b": 4.13
+    },
+    "bobby witt jr": {
+      "name": "Bobby Witt Jr.",
+      "sprintSpeed": 30.2,
+      "bolts": 101,
+      "hpTo1b": 4.15
     },
     "byron buxton": {
       "name": "Byron Buxton",
@@ -186,17 +186,17 @@
       "bolts": 25,
       "hpTo1b": 4.36
     },
-    "travis jankowski": {
-      "name": "Travis Jankowski",
-      "sprintSpeed": 29.3,
-      "bolts": 8,
-      "hpTo1b": 0
-    },
     "david hamilton": {
       "name": "David Hamilton",
       "sprintSpeed": 29.3,
       "bolts": 19,
       "hpTo1b": 4.02
+    },
+    "travis jankowski": {
+      "name": "Travis Jankowski",
+      "sprintSpeed": 29.3,
+      "bolts": 8,
+      "hpTo1b": 0
     },
     "jorge mateo": {
       "name": "Jorge Mateo",
@@ -222,17 +222,17 @@
       "bolts": 13,
       "hpTo1b": 4.35
     },
-    "tyrone taylor": {
-      "name": "Tyrone Taylor",
-      "sprintSpeed": 29.3,
-      "bolts": 11,
-      "hpTo1b": 4.38
-    },
     "daniel johnson": {
       "name": "Daniel Johnson",
       "sprintSpeed": 29.2,
       "bolts": 4,
       "hpTo1b": 4.2
+    },
+    "tyrone taylor": {
+      "name": "Tyrone Taylor",
+      "sprintSpeed": 29.3,
+      "bolts": 11,
+      "hpTo1b": 4.38
     },
     "julio rodrguez": {
       "name": "Julio Rodríguez",
@@ -252,12 +252,6 @@
       "bolts": 20,
       "hpTo1b": 4.21
     },
-    "ryan ritter": {
-      "name": "Ryan Ritter",
-      "sprintSpeed": 29.2,
-      "bolts": 4,
-      "hpTo1b": 4.29
-    },
     "jackson chourio": {
       "name": "Jackson Chourio",
       "sprintSpeed": 29.2,
@@ -269,6 +263,12 @@
       "sprintSpeed": 29.2,
       "bolts": 42,
       "hpTo1b": 4.26
+    },
+    "ryan ritter": {
+      "name": "Ryan Ritter",
+      "sprintSpeed": 29.2,
+      "bolts": 4,
+      "hpTo1b": 4.29
     },
     "liover peguero": {
       "name": "Liover Peguero",
@@ -288,22 +288,16 @@
       "bolts": 1,
       "hpTo1b": 0
     },
-    "ceddanne rafaela": {
-      "name": "Ceddanne Rafaela",
-      "sprintSpeed": 29.1,
-      "bolts": 18,
-      "hpTo1b": 4.19
-    },
     "christian koss": {
       "name": "Christian Koss",
       "sprintSpeed": 29.1,
       "bolts": 4,
       "hpTo1b": 4.33
     },
-    "blake perkins": {
-      "name": "Blake Perkins",
+    "ceddanne rafaela": {
+      "name": "Ceddanne Rafaela",
       "sprintSpeed": 29.1,
-      "bolts": 13,
+      "bolts": 18,
       "hpTo1b": 4.19
     },
     "jarren duran": {
@@ -311,6 +305,12 @@
       "sprintSpeed": 29.1,
       "bolts": 13,
       "hpTo1b": 4.2
+    },
+    "blake perkins": {
+      "name": "Blake Perkins",
+      "sprintSpeed": 29.1,
+      "bolts": 13,
+      "hpTo1b": 4.19
     },
     "gustavo campero": {
       "name": "Gustavo Campero",
@@ -354,12 +354,6 @@
       "bolts": 3,
       "hpTo1b": 4.29
     },
-    "kyren paris": {
-      "name": "Kyren Paris",
-      "sprintSpeed": 29,
-      "bolts": 2,
-      "hpTo1b": 4.44
-    },
     "luis robert jr": {
       "name": "Luis Robert Jr.",
       "sprintSpeed": 29,
@@ -372,11 +366,11 @@
       "bolts": 5,
       "hpTo1b": 4.24
     },
-    "dylan crews": {
-      "name": "Dylan Crews",
+    "kyren paris": {
+      "name": "Kyren Paris",
       "sprintSpeed": 29,
-      "bolts": 5,
-      "hpTo1b": 4.24
+      "bolts": 2,
+      "hpTo1b": 4.44
     },
     "noelvi marte": {
       "name": "Noelvi Marte",
@@ -390,6 +384,12 @@
       "bolts": 7,
       "hpTo1b": 4.23
     },
+    "dylan crews": {
+      "name": "Dylan Crews",
+      "sprintSpeed": 29,
+      "bolts": 5,
+      "hpTo1b": 4.24
+    },
     "mason mccoy": {
       "name": "Mason McCoy",
       "sprintSpeed": 29,
@@ -402,17 +402,17 @@
       "bolts": 6,
       "hpTo1b": 4.13
     },
-    "sam haggerty": {
-      "name": "Sam Haggerty",
-      "sprintSpeed": 28.9,
-      "bolts": 6,
-      "hpTo1b": 4.28
-    },
     "sam hilliard": {
       "name": "Sam Hilliard",
       "sprintSpeed": 28.9,
       "bolts": 3,
       "hpTo1b": 0
+    },
+    "sam haggerty": {
+      "name": "Sam Haggerty",
+      "sprintSpeed": 28.9,
+      "bolts": 6,
+      "hpTo1b": 4.28
     },
     "dylan beavers": {
       "name": "Dylan Beavers",
@@ -480,29 +480,29 @@
       "bolts": 1,
       "hpTo1b": 4.33
     },
-    "blaze alexander": {
-      "name": "Blaze Alexander",
-      "sprintSpeed": 28.8,
-      "bolts": 4,
-      "hpTo1b": 4.34
-    },
     "stuart fairchild": {
       "name": "Stuart Fairchild",
       "sprintSpeed": 28.8,
       "bolts": 0,
       "hpTo1b": 0
     },
-    "connor norby": {
-      "name": "Connor Norby",
+    "blaze alexander": {
+      "name": "Blaze Alexander",
       "sprintSpeed": 28.8,
-      "bolts": 3,
-      "hpTo1b": 4.42
+      "bolts": 4,
+      "hpTo1b": 4.34
     },
     "bryson stott": {
       "name": "Bryson Stott",
       "sprintSpeed": 28.8,
       "bolts": 17,
       "hpTo1b": 4.15
+    },
+    "connor norby": {
+      "name": "Connor Norby",
+      "sprintSpeed": 28.8,
+      "bolts": 3,
+      "hpTo1b": 4.42
     },
     "leody taveras": {
       "name": "Leody Taveras",
@@ -516,17 +516,17 @@
       "bolts": 1,
       "hpTo1b": 4.2
     },
-    "jared triolo": {
-      "name": "Jared Triolo",
-      "sprintSpeed": 28.8,
-      "bolts": 0,
-      "hpTo1b": 4.38
-    },
     "harrison bader": {
       "name": "Harrison Bader",
       "sprintSpeed": 28.8,
       "bolts": 37,
       "hpTo1b": 4.31
+    },
+    "jared triolo": {
+      "name": "Jared Triolo",
+      "sprintSpeed": 28.8,
+      "bolts": 0,
+      "hpTo1b": 4.38
     },
     "joey ortiz": {
       "name": "Joey Ortiz",
@@ -546,12 +546,6 @@
       "bolts": 0,
       "hpTo1b": 4.08
     },
-    "luke raley": {
-      "name": "Luke Raley",
-      "sprintSpeed": 28.7,
-      "bolts": 1,
-      "hpTo1b": 4.32
-    },
     "heriberto hernndez": {
       "name": "Heriberto Hernández",
       "sprintSpeed": 28.7,
@@ -564,11 +558,11 @@
       "bolts": 2,
       "hpTo1b": 0
     },
-    "nathan church": {
-      "name": "Nathan Church",
+    "luke raley": {
+      "name": "Luke Raley",
       "sprintSpeed": 28.7,
       "bolts": 1,
-      "hpTo1b": 4.22
+      "hpTo1b": 4.32
     },
     "jasson domnguez": {
       "name": "Jasson Domínguez",
@@ -576,11 +570,17 @@
       "bolts": 21,
       "hpTo1b": 4.25
     },
-    "jordan walker": {
-      "name": "Jordan Walker",
+    "nathan church": {
+      "name": "Nathan Church",
       "sprintSpeed": 28.7,
-      "bolts": 2,
-      "hpTo1b": 4.4
+      "bolts": 1,
+      "hpTo1b": 4.22
+    },
+    "zach cole": {
+      "name": "Zach Cole",
+      "sprintSpeed": 28.7,
+      "bolts": 3,
+      "hpTo1b": 0
     },
     "jordan beck": {
       "name": "Jordan Beck",
@@ -588,16 +588,16 @@
       "bolts": 1,
       "hpTo1b": 4.4
     },
+    "jordan walker": {
+      "name": "Jordan Walker",
+      "sprintSpeed": 28.7,
+      "bolts": 2,
+      "hpTo1b": 4.4
+    },
     "matt gorski": {
       "name": "Matt Gorski",
       "sprintSpeed": 28.7,
       "bolts": 0,
-      "hpTo1b": 0
-    },
-    "zach cole": {
-      "name": "Zach Cole",
-      "sprintSpeed": 28.7,
-      "bolts": 3,
       "hpTo1b": 0
     },
     "ernie clement": {
@@ -612,12 +612,6 @@
       "bolts": 17,
       "hpTo1b": 4.37
     },
-    "trevor story": {
-      "name": "Trevor Story",
-      "sprintSpeed": 28.6,
-      "bolts": 1,
-      "hpTo1b": 4.37
-    },
     "colby thomas": {
       "name": "Colby Thomas",
       "sprintSpeed": 28.6,
@@ -629,6 +623,12 @@
       "sprintSpeed": 28.6,
       "bolts": 5,
       "hpTo1b": 4.35
+    },
+    "trevor story": {
+      "name": "Trevor Story",
+      "sprintSpeed": 28.6,
+      "bolts": 1,
+      "hpTo1b": 4.37
     },
     "nico hoerner": {
       "name": "Nico Hoerner",
@@ -654,23 +654,17 @@
       "bolts": 1,
       "hpTo1b": 4.22
     },
-    "james outman": {
-      "name": "James Outman",
-      "sprintSpeed": 28.5,
-      "bolts": 0,
-      "hpTo1b": 4.29
-    },
     "dashawn keirsey jr": {
       "name": "DaShawn Keirsey Jr.",
       "sprintSpeed": 28.5,
       "bolts": 6,
       "hpTo1b": 4.3
     },
-    "marcus semien": {
-      "name": "Marcus Semien",
+    "james outman": {
+      "name": "James Outman",
       "sprintSpeed": 28.5,
-      "bolts": 2,
-      "hpTo1b": 4.4
+      "bolts": 0,
+      "hpTo1b": 4.29
     },
     "joey loperfido": {
       "name": "Joey Loperfido",
@@ -678,11 +672,23 @@
       "bolts": 1,
       "hpTo1b": 4.34
     },
+    "marcus semien": {
+      "name": "Marcus Semien",
+      "sprintSpeed": 28.5,
+      "bolts": 2,
+      "hpTo1b": 4.4
+    },
     "mickey moniak": {
       "name": "Mickey Moniak",
       "sprintSpeed": 28.5,
       "bolts": 1,
       "hpTo1b": 4.33
+    },
+    "bryce johnson": {
+      "name": "Bryce Johnson",
+      "sprintSpeed": 28.5,
+      "bolts": 4,
+      "hpTo1b": 0
     },
     "alejandro osuna": {
       "name": "Alejandro Osuna",
@@ -696,18 +702,6 @@
       "bolts": 1,
       "hpTo1b": 4.43
     },
-    "bryce johnson": {
-      "name": "Bryce Johnson",
-      "sprintSpeed": 28.5,
-      "bolts": 4,
-      "hpTo1b": 0
-    },
-    "miles mastrobuoni": {
-      "name": "Miles Mastrobuoni",
-      "sprintSpeed": 28.5,
-      "bolts": 0,
-      "hpTo1b": 4.25
-    },
     "dansby swanson": {
       "name": "Dansby Swanson",
       "sprintSpeed": 28.5,
@@ -718,6 +712,12 @@
       "name": "Jackson Merrill",
       "sprintSpeed": 28.5,
       "bolts": 1,
+      "hpTo1b": 4.25
+    },
+    "miles mastrobuoni": {
+      "name": "Miles Mastrobuoni",
+      "sprintSpeed": 28.5,
+      "bolts": 0,
       "hpTo1b": 4.25
     },
     "michael harris ii": {
@@ -738,11 +738,11 @@
       "bolts": 0,
       "hpTo1b": 0
     },
-    "trey sweeney": {
-      "name": "Trey Sweeney",
+    "warming bernabel": {
+      "name": "Warming Bernabel",
       "sprintSpeed": 28.4,
       "bolts": 0,
-      "hpTo1b": 4.35
+      "hpTo1b": 4.41
     },
     "luke williams": {
       "name": "Luke Williams",
@@ -756,23 +756,23 @@
       "bolts": 0,
       "hpTo1b": 4.51
     },
-    "warming bernabel": {
-      "name": "Warming Bernabel",
+    "trey sweeney": {
+      "name": "Trey Sweeney",
       "sprintSpeed": 28.4,
       "bolts": 0,
-      "hpTo1b": 4.41
-    },
-    "jos ramrez": {
-      "name": "José Ramírez",
-      "sprintSpeed": 28.4,
-      "bolts": 7,
-      "hpTo1b": 4.29
+      "hpTo1b": 4.35
     },
     "ryan bliss": {
       "name": "Ryan Bliss",
       "sprintSpeed": 28.4,
       "bolts": 2,
       "hpTo1b": 0
+    },
+    "jos ramrez": {
+      "name": "José Ramírez",
+      "sprintSpeed": 28.4,
+      "bolts": 7,
+      "hpTo1b": 4.29
     },
     "thomas saggese": {
       "name": "Thomas Saggese",
@@ -798,29 +798,17 @@
       "bolts": 7,
       "hpTo1b": 4.32
     },
-    "tommy edman": {
-      "name": "Tommy Edman",
-      "sprintSpeed": 28.4,
-      "bolts": 0,
-      "hpTo1b": 4.28
-    },
     "daulton varsho": {
       "name": "Daulton Varsho",
       "sprintSpeed": 28.4,
       "bolts": 2,
       "hpTo1b": 4.24
     },
-    "joey wiemer": {
-      "name": "Joey Wiemer",
+    "tommy edman": {
+      "name": "Tommy Edman",
       "sprintSpeed": 28.4,
       "bolts": 0,
-      "hpTo1b": 4.43
-    },
-    "kevin pillar": {
-      "name": "Kevin Pillar",
-      "sprintSpeed": 28.4,
-      "bolts": 0,
-      "hpTo1b": 4.38
+      "hpTo1b": 4.28
     },
     "dane myers": {
       "name": "Dane Myers",
@@ -828,17 +816,23 @@
       "bolts": 0,
       "hpTo1b": 4.36
     },
+    "kevin pillar": {
+      "name": "Kevin Pillar",
+      "sprintSpeed": 28.4,
+      "bolts": 0,
+      "hpTo1b": 4.38
+    },
     "nick loftin": {
       "name": "Nick Loftin",
       "sprintSpeed": 28.4,
       "bolts": 0,
       "hpTo1b": 4.48
     },
-    "seiya suzuki": {
-      "name": "Seiya Suzuki",
+    "joey wiemer": {
+      "name": "Joey Wiemer",
       "sprintSpeed": 28.4,
-      "bolts": 2,
-      "hpTo1b": 4.35
+      "bolts": 0,
+      "hpTo1b": 4.43
     },
     "kameron misner": {
       "name": "Kameron Misner",
@@ -851,6 +845,12 @@
       "sprintSpeed": 28.4,
       "bolts": 0,
       "hpTo1b": 4.38
+    },
+    "seiya suzuki": {
+      "name": "Seiya Suzuki",
+      "sprintSpeed": 28.4,
+      "bolts": 2,
+      "hpTo1b": 4.35
     },
     "anthony volpe": {
       "name": "Anthony Volpe",
@@ -870,23 +870,17 @@
       "bolts": 3,
       "hpTo1b": 4.34
     },
-    "xavier edwards": {
-      "name": "Xavier Edwards",
-      "sprintSpeed": 28.3,
-      "bolts": 8,
-      "hpTo1b": 4.2
-    },
     "everson pereira": {
       "name": "Everson Pereira",
       "sprintSpeed": 28.3,
       "bolts": 0,
       "hpTo1b": 4.33
     },
-    "henry davis": {
-      "name": "Henry Davis",
+    "xavier edwards": {
+      "name": "Xavier Edwards",
       "sprintSpeed": 28.3,
-      "bolts": 0,
-      "hpTo1b": 4.52
+      "bolts": 8,
+      "hpTo1b": 4.2
     },
     "zach mckinstry": {
       "name": "Zach McKinstry",
@@ -899,6 +893,12 @@
       "sprintSpeed": 28.3,
       "bolts": 0,
       "hpTo1b": 4.49
+    },
+    "henry davis": {
+      "name": "Henry Davis",
+      "sprintSpeed": 28.3,
+      "bolts": 0,
+      "hpTo1b": 4.52
     },
     "austin martin": {
       "name": "Austin Martin",
@@ -954,12 +954,6 @@
       "bolts": 0,
       "hpTo1b": 0
     },
-    "darell hernaiz": {
-      "name": "Darell Hernaiz",
-      "sprintSpeed": 28.2,
-      "bolts": 4,
-      "hpTo1b": 4.25
-    },
     "austin riley": {
       "name": "Austin Riley",
       "sprintSpeed": 28.2,
@@ -971,6 +965,12 @@
       "sprintSpeed": 28.3,
       "bolts": 0,
       "hpTo1b": 0
+    },
+    "darell hernaiz": {
+      "name": "Darell Hernaiz",
+      "sprintSpeed": 28.2,
+      "bolts": 4,
+      "hpTo1b": 4.25
     },
     "tim tawa": {
       "name": "Tim Tawa",
@@ -984,17 +984,17 @@
       "bolts": 0,
       "hpTo1b": 0
     },
-    "cody bellinger": {
-      "name": "Cody Bellinger",
-      "sprintSpeed": 28.2,
-      "bolts": 1,
-      "hpTo1b": 4.11
-    },
     "willi castro": {
       "name": "Willi Castro",
       "sprintSpeed": 28.2,
       "bolts": 1,
       "hpTo1b": 4.29
+    },
+    "cody bellinger": {
+      "name": "Cody Bellinger",
+      "sprintSpeed": 28.2,
+      "bolts": 1,
+      "hpTo1b": 4.11
     },
     "taylor walls": {
       "name": "Taylor Walls",
@@ -1008,29 +1008,29 @@
       "bolts": 2,
       "hpTo1b": 4.24
     },
-    "max muncy": {
-      "name": "Max Muncy",
-      "sprintSpeed": 27,
-      "bolts": 0,
-      "hpTo1b": 4.45
-    },
     "jake meyers": {
       "name": "Jake Meyers",
       "sprintSpeed": 28.2,
       "bolts": 0,
       "hpTo1b": 4.41
     },
-    "cj abrams": {
-      "name": "CJ Abrams",
-      "sprintSpeed": 28.2,
-      "bolts": 1,
-      "hpTo1b": 4.27
+    "max muncy": {
+      "name": "Max Muncy",
+      "sprintSpeed": 27,
+      "bolts": 0,
+      "hpTo1b": 4.45
     },
     "christian yelich": {
       "name": "Christian Yelich",
       "sprintSpeed": 28.2,
       "bolts": 5,
       "hpTo1b": 4.37
+    },
+    "cj abrams": {
+      "name": "CJ Abrams",
+      "sprintSpeed": 28.2,
+      "bolts": 1,
+      "hpTo1b": 4.27
     },
     "jonathan india": {
       "name": "Jonathan India",
@@ -1050,17 +1050,17 @@
       "bolts": 0,
       "hpTo1b": 4.19
     },
-    "caleb durbin": {
-      "name": "Caleb Durbin",
-      "sprintSpeed": 28.1,
-      "bolts": 0,
-      "hpTo1b": 4.38
-    },
     "weston wilson": {
       "name": "Weston Wilson",
       "sprintSpeed": 28.1,
       "bolts": 0,
       "hpTo1b": 4.5
+    },
+    "caleb durbin": {
+      "name": "Caleb Durbin",
+      "sprintSpeed": 28.1,
+      "bolts": 0,
+      "hpTo1b": 4.38
     },
     "zach dezenzo": {
       "name": "Zach Dezenzo",
@@ -1080,12 +1080,6 @@
       "bolts": 0,
       "hpTo1b": 4.49
     },
-    "jake cronenworth": {
-      "name": "Jake Cronenworth",
-      "sprintSpeed": 28.1,
-      "bolts": 0,
-      "hpTo1b": 4.38
-    },
     "matt chapman": {
       "name": "Matt Chapman",
       "sprintSpeed": 28.1,
@@ -1098,29 +1092,17 @@
       "bolts": 0,
       "hpTo1b": 4.49
     },
+    "jake cronenworth": {
+      "name": "Jake Cronenworth",
+      "sprintSpeed": 28.1,
+      "bolts": 0,
+      "hpTo1b": 4.38
+    },
     "zach neto": {
       "name": "Zach Neto",
       "sprintSpeed": 28.1,
       "bolts": 0,
       "hpTo1b": 4.43
-    },
-    "andy pages": {
-      "name": "Andy Pages",
-      "sprintSpeed": 28.1,
-      "bolts": 0,
-      "hpTo1b": 4.4
-    },
-    "jakob marsee": {
-      "name": "Jakob Marsee",
-      "sprintSpeed": 28.1,
-      "bolts": 2,
-      "hpTo1b": 4.38
-    },
-    "victor robles": {
-      "name": "Victor Robles",
-      "sprintSpeed": 28.1,
-      "bolts": 8,
-      "hpTo1b": 4.36
     },
     "cavan biggio": {
       "name": "Cavan Biggio",
@@ -1128,11 +1110,29 @@
       "bolts": 0,
       "hpTo1b": 0
     },
+    "jakob marsee": {
+      "name": "Jakob Marsee",
+      "sprintSpeed": 28.1,
+      "bolts": 2,
+      "hpTo1b": 4.38
+    },
     "tyler wade": {
       "name": "Tyler Wade",
       "sprintSpeed": 28.1,
       "bolts": 0,
       "hpTo1b": 4.24
+    },
+    "andy pages": {
+      "name": "Andy Pages",
+      "sprintSpeed": 28.1,
+      "bolts": 0,
+      "hpTo1b": 4.4
+    },
+    "victor robles": {
+      "name": "Victor Robles",
+      "sprintSpeed": 28.1,
+      "bolts": 8,
+      "hpTo1b": 4.36
     },
     "alexander canario": {
       "name": "Alexander Canario",
@@ -1164,11 +1164,11 @@
       "bolts": 0,
       "hpTo1b": 4.29
     },
-    "zack gelof": {
-      "name": "Zack Gelof",
+    "austin slater": {
+      "name": "Austin Slater",
       "sprintSpeed": 28,
       "bolts": 1,
-      "hpTo1b": 4.32
+      "hpTo1b": 4.45
     },
     "javier sanoja": {
       "name": "Javier Sanoja",
@@ -1176,11 +1176,11 @@
       "bolts": 7,
       "hpTo1b": 4.3
     },
-    "austin slater": {
-      "name": "Austin Slater",
+    "zack gelof": {
+      "name": "Zack Gelof",
       "sprintSpeed": 28,
       "bolts": 1,
-      "hpTo1b": 4.45
+      "hpTo1b": 4.32
     },
     "shay whitcomb": {
       "name": "Shay Whitcomb",
@@ -1218,6 +1218,12 @@
       "bolts": 0,
       "hpTo1b": 4.5
     },
+    "mauricio dubn": {
+      "name": "Mauricio Dubón",
+      "sprintSpeed": 28,
+      "bolts": 0,
+      "hpTo1b": 4.31
+    },
     "nick sogard": {
       "name": "Nick Sogard",
       "sprintSpeed": 28,
@@ -1230,11 +1236,11 @@
       "bolts": 0,
       "hpTo1b": 4.48
     },
-    "mauricio dubn": {
-      "name": "Mauricio Dubón",
+    "andrs gimnez": {
+      "name": "Andrés Giménez",
       "sprintSpeed": 28,
-      "bolts": 0,
-      "hpTo1b": 4.31
+      "bolts": 1,
+      "hpTo1b": 4.3
     },
     "connor wong": {
       "name": "Connor Wong",
@@ -1242,10 +1248,22 @@
       "bolts": 0,
       "hpTo1b": 4.5
     },
-    "andrs gimnez": {
-      "name": "Andrés Giménez",
-      "sprintSpeed": 28,
-      "bolts": 1,
+    "kody clemens": {
+      "name": "Kody Clemens",
+      "sprintSpeed": 27.9,
+      "bolts": 0,
+      "hpTo1b": 4.36
+    },
+    "gavin lux": {
+      "name": "Gavin Lux",
+      "sprintSpeed": 27.9,
+      "bolts": 0,
+      "hpTo1b": 4.27
+    },
+    "jack suwinski": {
+      "name": "Jack Suwinski",
+      "sprintSpeed": 27.9,
+      "bolts": 0,
       "hpTo1b": 4.3
     },
     "ronald acua jr": {
@@ -1254,32 +1272,14 @@
       "bolts": 2,
       "hpTo1b": 4.4
     },
-    "gavin lux": {
-      "name": "Gavin Lux",
-      "sprintSpeed": 27.9,
-      "bolts": 0,
-      "hpTo1b": 4.27
-    },
-    "kody clemens": {
-      "name": "Kody Clemens",
-      "sprintSpeed": 27.9,
-      "bolts": 0,
-      "hpTo1b": 4.36
-    },
-    "jack suwinski": {
-      "name": "Jack Suwinski",
-      "sprintSpeed": 27.9,
-      "bolts": 0,
-      "hpTo1b": 4.3
-    },
     "coby mayo": {
       "name": "Coby Mayo",
       "sprintSpeed": 27.9,
       "bolts": 0,
       "hpTo1b": 4.5
     },
-    "carson williams": {
-      "name": "Carson Williams",
+    "jake burger": {
+      "name": "Jake Burger",
       "sprintSpeed": 27.9,
       "bolts": 0,
       "hpTo1b": 4.43
@@ -1290,17 +1290,17 @@
       "bolts": 0,
       "hpTo1b": 4.35
     },
-    "jake burger": {
-      "name": "Jake Burger",
+    "carson williams": {
+      "name": "Carson Williams",
       "sprintSpeed": 27.9,
       "bolts": 0,
       "hpTo1b": 4.43
     },
-    "jo adell": {
-      "name": "Jo Adell",
+    "daniel schneemann": {
+      "name": "Daniel Schneemann",
       "sprintSpeed": 27.9,
       "bolts": 0,
-      "hpTo1b": 4.56
+      "hpTo1b": 4.31
     },
     "will robertson": {
       "name": "Will Robertson",
@@ -1308,11 +1308,11 @@
       "bolts": 0,
       "hpTo1b": 0
     },
-    "daniel schneemann": {
-      "name": "Daniel Schneemann",
+    "jo adell": {
+      "name": "Jo Adell",
       "sprintSpeed": 27.9,
       "bolts": 0,
-      "hpTo1b": 4.31
+      "hpTo1b": 4.56
     },
     "maikel garcia": {
       "name": "Maikel Garcia",
@@ -1326,17 +1326,17 @@
       "bolts": 0,
       "hpTo1b": 4.33
     },
-    "alan roden": {
-      "name": "Alan Roden",
-      "sprintSpeed": 27.8,
-      "bolts": 0,
-      "hpTo1b": 4.43
-    },
     "tim anderson": {
       "name": "Tim Anderson",
       "sprintSpeed": 27.9,
       "bolts": 3,
       "hpTo1b": 4.4
+    },
+    "alan roden": {
+      "name": "Alan Roden",
+      "sprintSpeed": 27.8,
+      "bolts": 0,
+      "hpTo1b": 4.43
     },
     "mike trout": {
       "name": "Mike Trout",
@@ -1368,23 +1368,17 @@
       "bolts": 1,
       "hpTo1b": 4.33
     },
-    "chris taylor": {
-      "name": "Chris Taylor",
-      "sprintSpeed": 27.8,
-      "bolts": 0,
-      "hpTo1b": 4.44
-    },
     "kyle isbel": {
       "name": "Kyle Isbel",
       "sprintSpeed": 27.8,
       "bolts": 0,
       "hpTo1b": 4.31
     },
-    "bryan de la cruz": {
-      "name": "Bryan De La Cruz",
+    "chris taylor": {
+      "name": "Chris Taylor",
       "sprintSpeed": 27.8,
       "bolts": 0,
-      "hpTo1b": 0
+      "hpTo1b": 4.44
     },
     "oliver dunn": {
       "name": "Oliver Dunn",
@@ -1404,23 +1398,29 @@
       "bolts": 0,
       "hpTo1b": 4.49
     },
+    "bryan de la cruz": {
+      "name": "Bryan De La Cruz",
+      "sprintSpeed": 27.8,
+      "bolts": 0,
+      "hpTo1b": 0
+    },
     "michael a taylor": {
       "name": "Michael A. Taylor",
       "sprintSpeed": 27.8,
       "bolts": 1,
       "hpTo1b": 4.39
     },
-    "ramn laureano": {
-      "name": "Ramón Laureano",
-      "sprintSpeed": 27.8,
-      "bolts": 0,
-      "hpTo1b": 4.31
-    },
     "jose iglesias": {
       "name": "Jose Iglesias",
       "sprintSpeed": 27.8,
       "bolts": 0,
       "hpTo1b": 4.27
+    },
+    "ramn laureano": {
+      "name": "Ramón Laureano",
+      "sprintSpeed": 27.8,
+      "bolts": 0,
+      "hpTo1b": 4.31
     },
     "roman anthony": {
       "name": "Roman Anthony",
@@ -1446,29 +1446,17 @@
       "bolts": 0,
       "hpTo1b": 4.37
     },
-    "dalton rushing": {
-      "name": "Dalton Rushing",
-      "sprintSpeed": 27.7,
-      "bolts": 0,
-      "hpTo1b": 4.37
-    },
     "jared young": {
       "name": "Jared Young",
       "sprintSpeed": 27.8,
       "bolts": 0,
       "hpTo1b": 0
     },
-    "jos tena": {
-      "name": "José Tena",
+    "dalton rushing": {
+      "name": "Dalton Rushing",
       "sprintSpeed": 27.7,
       "bolts": 0,
-      "hpTo1b": 4.25
-    },
-    "randy arozarena": {
-      "name": "Randy Arozarena",
-      "sprintSpeed": 27.7,
-      "bolts": 2,
-      "hpTo1b": 4.39
+      "hpTo1b": 4.37
     },
     "brett harris": {
       "name": "Brett Harris",
@@ -1476,11 +1464,23 @@
       "bolts": 0,
       "hpTo1b": 4.56
     },
+    "jos tena": {
+      "name": "José Tena",
+      "sprintSpeed": 27.7,
+      "bolts": 0,
+      "hpTo1b": 4.25
+    },
     "isaac collins": {
       "name": "Isaac Collins",
       "sprintSpeed": 27.7,
       "bolts": 1,
       "hpTo1b": 4.38
+    },
+    "randy arozarena": {
+      "name": "Randy Arozarena",
+      "sprintSpeed": 27.7,
+      "bolts": 2,
+      "hpTo1b": 4.39
     },
     "heston kjerstad": {
       "name": "Heston Kjerstad",
@@ -1488,23 +1488,23 @@
       "bolts": 0,
       "hpTo1b": 4.47
     },
-    "matt vierling": {
-      "name": "Matt Vierling",
-      "sprintSpeed": 27.7,
-      "bolts": 0,
-      "hpTo1b": 4.5
-    },
     "seth brown": {
       "name": "Seth Brown",
       "sprintSpeed": 27.7,
       "bolts": 0,
       "hpTo1b": 4.51
     },
-    "angel martnez": {
-      "name": "Angel Martínez",
+    "matt vierling": {
+      "name": "Matt Vierling",
       "sprintSpeed": 27.7,
       "bolts": 0,
-      "hpTo1b": 4.37
+      "hpTo1b": 4.5
+    },
+    "andruw monasterio": {
+      "name": "Andruw Monasterio",
+      "sprintSpeed": 27.7,
+      "bolts": 0,
+      "hpTo1b": 4.51
     },
     "dylan moore": {
       "name": "Dylan Moore",
@@ -1512,11 +1512,11 @@
       "bolts": 0,
       "hpTo1b": 4.42
     },
-    "andruw monasterio": {
-      "name": "Andruw Monasterio",
+    "angel martnez": {
+      "name": "Angel Martínez",
       "sprintSpeed": 27.7,
       "bolts": 0,
-      "hpTo1b": 4.51
+      "hpTo1b": 4.37
     },
     "nick castellanos": {
       "name": "Nick Castellanos",
@@ -1548,23 +1548,17 @@
       "bolts": 0,
       "hpTo1b": 4.32
     },
-    "jazz chisholm jr": {
-      "name": "Jazz Chisholm Jr.",
-      "sprintSpeed": 27.6,
-      "bolts": 3,
-      "hpTo1b": 4.29
-    },
     "ezequiel tovar": {
       "name": "Ezequiel Tovar",
       "sprintSpeed": 27.6,
       "bolts": 0,
       "hpTo1b": 4.47
     },
-    "griffin conine": {
-      "name": "Griffin Conine",
+    "jazz chisholm jr": {
+      "name": "Jazz Chisholm Jr.",
       "sprintSpeed": 27.6,
-      "bolts": 0,
-      "hpTo1b": 4.35
+      "bolts": 3,
+      "hpTo1b": 4.29
     },
     "cj kayfus": {
       "name": "CJ Kayfus",
@@ -1578,17 +1572,23 @@
       "bolts": 0,
       "hpTo1b": 4.51
     },
-    "casey schmitt": {
-      "name": "Casey Schmitt",
+    "griffin conine": {
+      "name": "Griffin Conine",
       "sprintSpeed": 27.6,
       "bolts": 0,
-      "hpTo1b": 4.55
+      "hpTo1b": 4.35
     },
     "xander bogaerts": {
       "name": "Xander Bogaerts",
       "sprintSpeed": 27.6,
       "bolts": 0,
       "hpTo1b": 4.37
+    },
+    "casey schmitt": {
+      "name": "Casey Schmitt",
+      "sprintSpeed": 27.6,
+      "bolts": 0,
+      "hpTo1b": 4.55
     },
     "jacob amaya": {
       "name": "Jacob Amaya",
@@ -1602,11 +1602,11 @@
       "bolts": 0,
       "hpTo1b": 4.49
     },
-    "alex jackson": {
-      "name": "Alex Jackson",
+    "austin hays": {
+      "name": "Austin Hays",
       "sprintSpeed": 27.6,
       "bolts": 0,
-      "hpTo1b": 4.52
+      "hpTo1b": 4.39
     },
     "korey lee": {
       "name": "Korey Lee",
@@ -1614,11 +1614,17 @@
       "bolts": 0,
       "hpTo1b": 0
     },
-    "austin hays": {
-      "name": "Austin Hays",
+    "alex jackson": {
+      "name": "Alex Jackson",
       "sprintSpeed": 27.6,
       "bolts": 0,
-      "hpTo1b": 4.39
+      "hpTo1b": 4.52
+    },
+    "nolan jones": {
+      "name": "Nolan Jones",
+      "sprintSpeed": 27.6,
+      "bolts": 0,
+      "hpTo1b": 4.59
     },
     "wilyer abreu": {
       "name": "Wilyer Abreu",
@@ -1631,12 +1637,6 @@
       "sprintSpeed": 27.6,
       "bolts": 0,
       "hpTo1b": 4.35
-    },
-    "nolan jones": {
-      "name": "Nolan Jones",
-      "sprintSpeed": 27.6,
-      "bolts": 0,
-      "hpTo1b": 4.59
     },
     "bo naylor": {
       "name": "Bo Naylor",
@@ -1668,17 +1668,17 @@
       "bolts": 0,
       "hpTo1b": 4.57
     },
-    "ben rice": {
-      "name": "Ben Rice",
-      "sprintSpeed": 27.5,
-      "bolts": 0,
-      "hpTo1b": 4.53
-    },
     "carter jensen": {
       "name": "Carter Jensen",
       "sprintSpeed": 27.5,
       "bolts": 0,
       "hpTo1b": 4.3
+    },
+    "ben rice": {
+      "name": "Ben Rice",
+      "sprintSpeed": 27.5,
+      "bolts": 0,
+      "hpTo1b": 4.53
     },
     "andy ibez": {
       "name": "Andy Ibáñez",
@@ -1692,17 +1692,17 @@
       "bolts": 0,
       "hpTo1b": 4.52
     },
-    "cody freeman": {
-      "name": "Cody Freeman",
-      "sprintSpeed": 27.5,
-      "bolts": 0,
-      "hpTo1b": 4.45
-    },
     "christian encarnacionstrand": {
       "name": "Christian Encarnacion-Strand",
       "sprintSpeed": 27.5,
       "bolts": 0,
       "hpTo1b": 4.54
+    },
+    "cody freeman": {
+      "name": "Cody Freeman",
+      "sprintSpeed": 27.5,
+      "bolts": 0,
+      "hpTo1b": 4.45
     },
     "willie maciver": {
       "name": "Willie MacIver",
@@ -1722,17 +1722,17 @@
       "bolts": 0,
       "hpTo1b": 4.43
     },
-    "brent rooker": {
-      "name": "Brent Rooker",
-      "sprintSpeed": 27.5,
-      "bolts": 0,
-      "hpTo1b": 4.59
-    },
     "amed rosario": {
       "name": "Amed Rosario",
       "sprintSpeed": 27.5,
       "bolts": 0,
       "hpTo1b": 4.46
+    },
+    "brent rooker": {
+      "name": "Brent Rooker",
+      "sprintSpeed": 27.5,
+      "bolts": 0,
+      "hpTo1b": 4.59
     },
     "heliot ramos": {
       "name": "Heliot Ramos",
@@ -1740,17 +1740,17 @@
       "bolts": 0,
       "hpTo1b": 4.44
     },
-    "javier bez": {
-      "name": "Javier Báez",
-      "sprintSpeed": 27.5,
-      "bolts": 0,
-      "hpTo1b": 4.48
-    },
     "josh smith": {
       "name": "Josh Smith",
       "sprintSpeed": 27.5,
       "bolts": 5,
       "hpTo1b": 4.38
+    },
+    "javier bez": {
+      "name": "Javier Báez",
+      "sprintSpeed": 27.5,
+      "bolts": 0,
+      "hpTo1b": 4.48
     },
     "marcelo mayer": {
       "name": "Marcelo Mayer",
@@ -1758,17 +1758,17 @@
       "bolts": 1,
       "hpTo1b": 4.44
     },
-    "edouard julien": {
-      "name": "Edouard Julien",
-      "sprintSpeed": 27.5,
-      "bolts": 0,
-      "hpTo1b": 4.4
-    },
     "kyle teel": {
       "name": "Kyle Teel",
       "sprintSpeed": 27.5,
       "bolts": 0,
       "hpTo1b": 4.41
+    },
+    "edouard julien": {
+      "name": "Edouard Julien",
+      "sprintSpeed": 27.5,
+      "bolts": 0,
+      "hpTo1b": 4.4
     },
     "willson contreras": {
       "name": "Willson Contreras",
@@ -1800,17 +1800,17 @@
       "bolts": 0,
       "hpTo1b": 4.44
     },
-    "francisco lindor": {
-      "name": "Francisco Lindor",
-      "sprintSpeed": 27.4,
-      "bolts": 1,
-      "hpTo1b": 4.4
-    },
     "zack short": {
       "name": "Zack Short",
       "sprintSpeed": 27.4,
       "bolts": 0,
       "hpTo1b": 0
+    },
+    "francisco lindor": {
+      "name": "Francisco Lindor",
+      "sprintSpeed": 27.4,
+      "bolts": 1,
+      "hpTo1b": 4.4
     },
     "nick martini": {
       "name": "Nick Martini",
@@ -1866,11 +1866,11 @@
       "bolts": 0,
       "hpTo1b": 4.57
     },
-    "colson montgomery": {
-      "name": "Colson Montgomery",
+    "brandon nimmo": {
+      "name": "Brandon Nimmo",
       "sprintSpeed": 27.3,
       "bolts": 0,
-      "hpTo1b": 4.5
+      "hpTo1b": 4.33
     },
     "nathan lukes": {
       "name": "Nathan Lukes",
@@ -1878,23 +1878,23 @@
       "bolts": 0,
       "hpTo1b": 4.44
     },
-    "brandon nimmo": {
-      "name": "Brandon Nimmo",
+    "colson montgomery": {
+      "name": "Colson Montgomery",
       "sprintSpeed": 27.3,
       "bolts": 0,
-      "hpTo1b": 4.33
-    },
-    "nicky lopez": {
-      "name": "Nicky Lopez",
-      "sprintSpeed": 27.3,
-      "bolts": 0,
-      "hpTo1b": 4.32
+      "hpTo1b": 4.5
     },
     "yainer diaz": {
       "name": "Yainer Diaz",
       "sprintSpeed": 27.3,
       "bolts": 0,
       "hpTo1b": 4.37
+    },
+    "nicky lopez": {
+      "name": "Nicky Lopez",
+      "sprintSpeed": 27.3,
+      "bolts": 0,
+      "hpTo1b": 4.32
     },
     "steven kwan": {
       "name": "Steven Kwan",
@@ -1908,6 +1908,12 @@
       "bolts": 1,
       "hpTo1b": 4.51
     },
+    "logan davidson": {
+      "name": "Logan Davidson",
+      "sprintSpeed": 27.2,
+      "bolts": 0,
+      "hpTo1b": 0
+    },
     "tommy pham": {
       "name": "Tommy Pham",
       "sprintSpeed": 27.2,
@@ -1919,12 +1925,6 @@
       "sprintSpeed": 27.2,
       "bolts": 0,
       "hpTo1b": 4.57
-    },
-    "logan davidson": {
-      "name": "Logan Davidson",
-      "sprintSpeed": 27.2,
-      "bolts": 0,
-      "hpTo1b": 0
     },
     "geraldo perdomo": {
       "name": "Geraldo Perdomo",
@@ -1980,6 +1980,12 @@
       "bolts": 0,
       "hpTo1b": 4.51
     },
+    "jj bleday": {
+      "name": "JJ Bleday",
+      "sprintSpeed": 27.1,
+      "bolts": 0,
+      "hpTo1b": 4.45
+    },
     "santiago espinal": {
       "name": "Santiago Espinal",
       "sprintSpeed": 27.1,
@@ -1991,12 +1997,6 @@
       "sprintSpeed": 27.1,
       "bolts": 0,
       "hpTo1b": 4.47
-    },
-    "jj bleday": {
-      "name": "JJ Bleday",
-      "sprintSpeed": 27.1,
-      "bolts": 0,
-      "hpTo1b": 4.45
     },
     "endy rodrguez": {
       "name": "Endy Rodríguez",
@@ -2010,17 +2010,17 @@
       "bolts": 0,
       "hpTo1b": 4.59
     },
-    "jorge polanco": {
-      "name": "Jorge Polanco",
-      "sprintSpeed": 27.1,
-      "bolts": 0,
-      "hpTo1b": 4.35
-    },
     "aaron judge": {
       "name": "Aaron Judge",
       "sprintSpeed": 27.1,
       "bolts": 0,
       "hpTo1b": 4.73
+    },
+    "jorge polanco": {
+      "name": "Jorge Polanco",
+      "sprintSpeed": 27.1,
+      "bolts": 0,
+      "hpTo1b": 4.35
     },
     "jhonkensy noel": {
       "name": "Jhonkensy Noel",
@@ -2040,6 +2040,12 @@
       "bolts": 0,
       "hpTo1b": 4.53
     },
+    "kerry carpenter": {
+      "name": "Kerry Carpenter",
+      "sprintSpeed": 27.1,
+      "bolts": 0,
+      "hpTo1b": 4.47
+    },
     "andrew mccutchen": {
       "name": "Andrew McCutchen",
       "sprintSpeed": 27.1,
@@ -2052,23 +2058,11 @@
       "bolts": 0,
       "hpTo1b": 4.63
     },
-    "kerry carpenter": {
-      "name": "Kerry Carpenter",
-      "sprintSpeed": 27.1,
-      "bolts": 0,
-      "hpTo1b": 4.47
-    },
     "freddy fermin": {
       "name": "Freddy Fermin",
       "sprintSpeed": 27,
       "bolts": 0,
       "hpTo1b": 4.6
-    },
-    "ramn uras": {
-      "name": "Ramón Urías",
-      "sprintSpeed": 27,
-      "bolts": 0,
-      "hpTo1b": 4.63
     },
     "bryce harper": {
       "name": "Bryce Harper",
@@ -2082,29 +2076,23 @@
       "bolts": 0,
       "hpTo1b": 4.47
     },
+    "ramn uras": {
+      "name": "Ramón Urías",
+      "sprintSpeed": 27,
+      "bolts": 0,
+      "hpTo1b": 4.63
+    },
     "gabriel arias": {
       "name": "Gabriel Arias",
       "sprintSpeed": 27,
       "bolts": 0,
       "hpTo1b": 4.51
     },
-    "tyler locklear": {
-      "name": "Tyler Locklear",
+    "gabriel moreno": {
+      "name": "Gabriel Moreno",
       "sprintSpeed": 27,
       "bolts": 0,
-      "hpTo1b": 4.62
-    },
-    "jess snchez": {
-      "name": "Jesús Sánchez",
-      "sprintSpeed": 27,
-      "bolts": 0,
-      "hpTo1b": 4.48
-    },
-    "adolis garca": {
-      "name": "Adolis García",
-      "sprintSpeed": 27,
-      "bolts": 1,
-      "hpTo1b": 4.5
+      "hpTo1b": 4.45
     },
     "johnathan rodrguez": {
       "name": "Johnathan Rodríguez",
@@ -2112,11 +2100,23 @@
       "bolts": 0,
       "hpTo1b": 4.68
     },
-    "gabriel moreno": {
-      "name": "Gabriel Moreno",
+    "adolis garca": {
+      "name": "Adolis García",
+      "sprintSpeed": 27,
+      "bolts": 1,
+      "hpTo1b": 4.5
+    },
+    "jess snchez": {
+      "name": "Jesús Sánchez",
       "sprintSpeed": 27,
       "bolts": 0,
-      "hpTo1b": 4.45
+      "hpTo1b": 4.48
+    },
+    "tyler locklear": {
+      "name": "Tyler Locklear",
+      "sprintSpeed": 27,
+      "bolts": 0,
+      "hpTo1b": 4.62
     },
     "jacob wilson": {
       "name": "Jacob Wilson",
@@ -2136,17 +2136,17 @@
       "bolts": 0,
       "hpTo1b": 4.4
     },
-    "brett baty": {
-      "name": "Brett Baty",
-      "sprintSpeed": 27,
-      "bolts": 0,
-      "hpTo1b": 4.4
-    },
     "luis rengifo": {
       "name": "Luis Rengifo",
       "sprintSpeed": 27,
       "bolts": 0,
       "hpTo1b": 4.36
+    },
+    "brett baty": {
+      "name": "Brett Baty",
+      "sprintSpeed": 27,
+      "bolts": 0,
+      "hpTo1b": 4.4
     },
     "max kepler": {
       "name": "Max Kepler",
@@ -2154,23 +2154,23 @@
       "bolts": 0,
       "hpTo1b": 4.41
     },
-    "gavin sheets": {
-      "name": "Gavin Sheets",
-      "sprintSpeed": 27,
-      "bolts": 0,
-      "hpTo1b": 4.49
-    },
     "connor joe": {
       "name": "Connor Joe",
       "sprintSpeed": 27,
       "bolts": 0,
       "hpTo1b": 4.54
     },
-    "michael toglia": {
-      "name": "Michael Toglia",
+    "gavin sheets": {
+      "name": "Gavin Sheets",
       "sprintSpeed": 27,
       "bolts": 0,
-      "hpTo1b": 4.61
+      "hpTo1b": 4.49
+    },
+    "vidal brujn": {
+      "name": "Vidal Bruján",
+      "sprintSpeed": 27,
+      "bolts": 0,
+      "hpTo1b": 4.4
     },
     "hunter renfroe": {
       "name": "Hunter Renfroe",
@@ -2184,11 +2184,11 @@
       "bolts": 0,
       "hpTo1b": 4.55
     },
-    "vidal brujn": {
-      "name": "Vidal Bruján",
+    "michael toglia": {
+      "name": "Michael Toglia",
       "sprintSpeed": 27,
       "bolts": 0,
-      "hpTo1b": 4.4
+      "hpTo1b": 4.61
     },
     "pablo reyes": {
       "name": "Pablo Reyes",
@@ -2220,17 +2220,17 @@
       "bolts": 0,
       "hpTo1b": 0
     },
-    "jose altuve": {
-      "name": "Jose Altuve",
-      "sprintSpeed": 26.9,
-      "bolts": 20,
-      "hpTo1b": 4.44
-    },
     "mookie betts": {
       "name": "Mookie Betts",
       "sprintSpeed": 26.9,
       "bolts": 0,
       "hpTo1b": 4.49
+    },
+    "jose altuve": {
+      "name": "Jose Altuve",
+      "sprintSpeed": 26.9,
+      "bolts": 20,
+      "hpTo1b": 4.44
     },
     "miguel andujar": {
       "name": "Miguel Andujar",
@@ -2304,17 +2304,17 @@
       "bolts": 0,
       "hpTo1b": 4.54
     },
-    "mickey gasper": {
-      "name": "Mickey Gasper",
-      "sprintSpeed": 26.8,
-      "bolts": 0,
-      "hpTo1b": 4.44
-    },
     "jac caglianone": {
       "name": "Jac Caglianone",
       "sprintSpeed": 26.8,
       "bolts": 0,
       "hpTo1b": 4.39
+    },
+    "mickey gasper": {
+      "name": "Mickey Gasper",
+      "sprintSpeed": 26.8,
+      "bolts": 0,
+      "hpTo1b": 4.44
     },
     "joshua palacios": {
       "name": "Joshua Palacios",
@@ -2334,17 +2334,17 @@
       "bolts": 0,
       "hpTo1b": 4.67
     },
-    "yuli gurriel": {
-      "name": "Yuli Gurriel",
-      "sprintSpeed": 26.8,
-      "bolts": 0,
-      "hpTo1b": 0
-    },
     "nick fortes": {
       "name": "Nick Fortes",
       "sprintSpeed": 26.8,
       "bolts": 0,
       "hpTo1b": 4.53
+    },
+    "yuli gurriel": {
+      "name": "Yuli Gurriel",
+      "sprintSpeed": 26.8,
+      "bolts": 0,
+      "hpTo1b": 0
     },
     "tj friedl": {
       "name": "TJ Friedl",
@@ -2406,17 +2406,17 @@
       "bolts": 0,
       "hpTo1b": 4.57
     },
-    "richie palacios": {
-      "name": "Richie Palacios",
-      "sprintSpeed": 26.7,
-      "bolts": 0,
-      "hpTo1b": 0
-    },
     "riley greene": {
       "name": "Riley Greene",
       "sprintSpeed": 26.7,
       "bolts": 0,
       "hpTo1b": 4.53
+    },
+    "richie palacios": {
+      "name": "Richie Palacios",
+      "sprintSpeed": 26.7,
+      "bolts": 0,
+      "hpTo1b": 0
     },
     "lenyn sosa": {
       "name": "Lenyn Sosa",
@@ -2430,6 +2430,12 @@
       "bolts": 0,
       "hpTo1b": 4.62
     },
+    "ryan mcmahon": {
+      "name": "Ryan McMahon",
+      "sprintSpeed": 26.7,
+      "bolts": 0,
+      "hpTo1b": 4.59
+    },
     "justynhenry malloy": {
       "name": "Justyn-Henry Malloy",
       "sprintSpeed": 26.7,
@@ -2441,12 +2447,6 @@
       "sprintSpeed": 26.7,
       "bolts": 0,
       "hpTo1b": 4.38
-    },
-    "ryan mcmahon": {
-      "name": "Ryan McMahon",
-      "sprintSpeed": 26.7,
-      "bolts": 0,
-      "hpTo1b": 4.59
     },
     "joey bart": {
       "name": "Joey Bart",
@@ -2460,17 +2460,17 @@
       "bolts": 0,
       "hpTo1b": 4.69
     },
-    "ketel marte": {
-      "name": "Ketel Marte",
-      "sprintSpeed": 26.6,
-      "bolts": 0,
-      "hpTo1b": 4.48
-    },
     "trenton brooks": {
       "name": "Trenton Brooks",
       "sprintSpeed": 26.6,
       "bolts": 0,
       "hpTo1b": 0
+    },
+    "ketel marte": {
+      "name": "Ketel Marte",
+      "sprintSpeed": 26.6,
+      "bolts": 0,
+      "hpTo1b": 4.48
     },
     "adam frazier": {
       "name": "Adam Frazier",
@@ -2508,23 +2508,17 @@
       "bolts": 0,
       "hpTo1b": 4.63
     },
-    "graham pauley": {
-      "name": "Graham Pauley",
-      "sprintSpeed": 26.6,
-      "bolts": 0,
-      "hpTo1b": 4.53
-    },
     "starling marte": {
       "name": "Starling Marte",
       "sprintSpeed": 26.6,
       "bolts": 0,
       "hpTo1b": 4.46
     },
-    "brendan donovan": {
-      "name": "Brendan Donovan",
+    "graham pauley": {
+      "name": "Graham Pauley",
       "sprintSpeed": 26.6,
       "bolts": 0,
-      "hpTo1b": 4.43
+      "hpTo1b": 4.53
     },
     "riley adams": {
       "name": "Riley Adams",
@@ -2532,11 +2526,11 @@
       "bolts": 0,
       "hpTo1b": 4.58
     },
-    "adael amador": {
-      "name": "Adael Amador",
-      "sprintSpeed": 26.5,
+    "brendan donovan": {
+      "name": "Brendan Donovan",
+      "sprintSpeed": 26.6,
       "bolts": 0,
-      "hpTo1b": 4.52
+      "hpTo1b": 4.43
     },
     "troy johnston": {
       "name": "Troy Johnston",
@@ -2544,17 +2538,23 @@
       "bolts": 0,
       "hpTo1b": 4.41
     },
-    "dominic canzone": {
-      "name": "Dominic Canzone",
+    "adael amador": {
+      "name": "Adael Amador",
       "sprintSpeed": 26.5,
       "bolts": 0,
-      "hpTo1b": 4.45
+      "hpTo1b": 4.52
     },
     "carlos correa": {
       "name": "Carlos Correa",
       "sprintSpeed": 26.5,
       "bolts": 0,
       "hpTo1b": 4.64
+    },
+    "dominic canzone": {
+      "name": "Dominic Canzone",
+      "sprintSpeed": 26.5,
+      "bolts": 0,
+      "hpTo1b": 4.45
     },
     "alec bohm": {
       "name": "Alec Bohm",
@@ -2706,17 +2706,17 @@
       "bolts": 0,
       "hpTo1b": 4.54
     },
-    "liam hicks": {
-      "name": "Liam Hicks",
-      "sprintSpeed": 26.2,
-      "bolts": 0,
-      "hpTo1b": 4.57
-    },
     "hunter feduccia": {
       "name": "Hunter Feduccia",
       "sprintSpeed": 26.2,
       "bolts": 0,
       "hpTo1b": 4.7
+    },
+    "liam hicks": {
+      "name": "Liam Hicks",
+      "sprintSpeed": 26.2,
+      "bolts": 0,
+      "hpTo1b": 4.57
     },
     "nathaniel lowe": {
       "name": "Nathaniel Lowe",
@@ -2724,17 +2724,17 @@
       "bolts": 0,
       "hpTo1b": 4.51
     },
-    "gleyber torres": {
-      "name": "Gleyber Torres",
-      "sprintSpeed": 26.2,
-      "bolts": 0,
-      "hpTo1b": 4.69
-    },
     "christian walker": {
       "name": "Christian Walker",
       "sprintSpeed": 26.2,
       "bolts": 0,
       "hpTo1b": 4.68
+    },
+    "gleyber torres": {
+      "name": "Gleyber Torres",
+      "sprintSpeed": 26.2,
+      "bolts": 0,
+      "hpTo1b": 4.69
     },
     "josh rojas": {
       "name": "Josh Rojas",
@@ -2766,14 +2766,14 @@
       "bolts": 0,
       "hpTo1b": 4.67
     },
-    "danny jansen": {
-      "name": "Danny Jansen",
+    "enmanuel valdez": {
+      "name": "Enmanuel Valdez",
       "sprintSpeed": 26.1,
       "bolts": 0,
       "hpTo1b": 4.66
     },
-    "enmanuel valdez": {
-      "name": "Enmanuel Valdez",
+    "danny jansen": {
+      "name": "Danny Jansen",
       "sprintSpeed": 26.1,
       "bolts": 0,
       "hpTo1b": 4.66
@@ -2808,17 +2808,17 @@
       "bolts": 0,
       "hpTo1b": 4.66
     },
-    "jarred kelenic": {
-      "name": "Jarred Kelenic",
-      "sprintSpeed": 26.1,
-      "bolts": 0,
-      "hpTo1b": 0
-    },
     "brooks lee": {
       "name": "Brooks Lee",
       "sprintSpeed": 26.1,
       "bolts": 0,
       "hpTo1b": 4.52
+    },
+    "jarred kelenic": {
+      "name": "Jarred Kelenic",
+      "sprintSpeed": 26.1,
+      "bolts": 0,
+      "hpTo1b": 0
     },
     "alex verdugo": {
       "name": "Alex Verdugo",
@@ -2850,17 +2850,17 @@
       "bolts": 0,
       "hpTo1b": 4.82
     },
-    "michael conforto": {
-      "name": "Michael Conforto",
-      "sprintSpeed": 26,
-      "bolts": 0,
-      "hpTo1b": 4.6
-    },
     "nolan schanuel": {
       "name": "Nolan Schanuel",
       "sprintSpeed": 26,
       "bolts": 0,
       "hpTo1b": 4.56
+    },
+    "michael conforto": {
+      "name": "Michael Conforto",
+      "sprintSpeed": 26,
+      "bolts": 0,
+      "hpTo1b": 4.6
     },
     "bob seymour": {
       "name": "Bob Seymour",
@@ -2904,17 +2904,17 @@
       "bolts": 0,
       "hpTo1b": 4.75
     },
-    "anthony santander": {
-      "name": "Anthony Santander",
-      "sprintSpeed": 26,
-      "bolts": 0,
-      "hpTo1b": 4.78
-    },
     "moiss ballesteros": {
       "name": "Moisés Ballesteros",
       "sprintSpeed": 26,
       "bolts": 0,
       "hpTo1b": 4.59
+    },
+    "anthony santander": {
+      "name": "Anthony Santander",
+      "sprintSpeed": 26,
+      "bolts": 0,
+      "hpTo1b": 4.78
     },
     "andrew knizner": {
       "name": "Andrew Knizner",
@@ -2922,11 +2922,11 @@
       "bolts": 0,
       "hpTo1b": 4.73
     },
-    "mitch garver": {
-      "name": "Mitch Garver",
-      "sprintSpeed": 26,
+    "reese mcguire": {
+      "name": "Reese McGuire",
+      "sprintSpeed": 25.9,
       "bolts": 0,
-      "hpTo1b": 4.79
+      "hpTo1b": 4.58
     },
     "francisco alvarez": {
       "name": "Francisco Alvarez",
@@ -2934,11 +2934,11 @@
       "bolts": 0,
       "hpTo1b": 4.65
     },
-    "reese mcguire": {
-      "name": "Reese McGuire",
-      "sprintSpeed": 25.9,
+    "mitch garver": {
+      "name": "Mitch Garver",
+      "sprintSpeed": 26,
       "bolts": 0,
-      "hpTo1b": 4.58
+      "hpTo1b": 4.79
     },
     "miguel amaya": {
       "name": "Miguel Amaya",
@@ -2946,17 +2946,17 @@
       "bolts": 0,
       "hpTo1b": 4.67
     },
-    "miguel rojas": {
-      "name": "Miguel Rojas",
-      "sprintSpeed": 25.9,
-      "bolts": 0,
-      "hpTo1b": 4.65
-    },
     "nolan gorman": {
       "name": "Nolan Gorman",
       "sprintSpeed": 25.9,
       "bolts": 0,
       "hpTo1b": 4.52
+    },
+    "miguel rojas": {
+      "name": "Miguel Rojas",
+      "sprintSpeed": 25.9,
+      "bolts": 0,
+      "hpTo1b": 4.65
     },
     "adrian del castillo": {
       "name": "Adrian Del Castillo",
@@ -2982,17 +2982,17 @@
       "bolts": 0,
       "hpTo1b": 4.51
     },
-    "ryan jeffers": {
-      "name": "Ryan Jeffers",
-      "sprintSpeed": 25.9,
-      "bolts": 0,
-      "hpTo1b": 4.74
-    },
     "emmanuel rivera": {
       "name": "Emmanuel Rivera",
       "sprintSpeed": 25.9,
       "bolts": 0,
       "hpTo1b": 4.78
+    },
+    "ryan jeffers": {
+      "name": "Ryan Jeffers",
+      "sprintSpeed": 25.9,
+      "bolts": 0,
+      "hpTo1b": 4.74
     },
     "ben rortvedt": {
       "name": "Ben Rortvedt",
@@ -3012,17 +3012,17 @@
       "bolts": 0,
       "hpTo1b": 4.62
     },
-    "ronny mauricio": {
-      "name": "Ronny Mauricio",
-      "sprintSpeed": 25.8,
-      "bolts": 0,
-      "hpTo1b": 4.73
-    },
     "austin nola": {
       "name": "Austin Nola",
       "sprintSpeed": 25.8,
       "bolts": 0,
       "hpTo1b": 0
+    },
+    "ronny mauricio": {
+      "name": "Ronny Mauricio",
+      "sprintSpeed": 25.8,
+      "bolts": 0,
+      "hpTo1b": 4.73
     },
     "manny machado": {
       "name": "Manny Machado",
@@ -3030,17 +3030,17 @@
       "bolts": 0,
       "hpTo1b": 4.67
     },
-    "jesse winker": {
-      "name": "Jesse Winker",
-      "sprintSpeed": 25.8,
-      "bolts": 0,
-      "hpTo1b": 0
-    },
     "juan soto": {
       "name": "Juan Soto",
       "sprintSpeed": 25.8,
       "bolts": 0,
       "hpTo1b": 4.58
+    },
+    "jesse winker": {
+      "name": "Jesse Winker",
+      "sprintSpeed": 25.8,
+      "bolts": 0,
+      "hpTo1b": 0
     },
     "kris bryant": {
       "name": "Kris Bryant",
@@ -3084,17 +3084,17 @@
       "bolts": 0,
       "hpTo1b": 4.8
     },
-    "will wilson": {
-      "name": "Will Wilson",
-      "sprintSpeed": 25.6,
-      "bolts": 0,
-      "hpTo1b": 0
-    },
     "dj lemahieu": {
       "name": "DJ LeMahieu",
       "sprintSpeed": 25.6,
       "bolts": 0,
       "hpTo1b": 4.78
+    },
+    "will wilson": {
+      "name": "Will Wilson",
+      "sprintSpeed": 25.6,
+      "bolts": 0,
+      "hpTo1b": 0
     },
     "freddie freeman": {
       "name": "Freddie Freeman",
@@ -3138,6 +3138,12 @@
       "bolts": 0,
       "hpTo1b": 0
     },
+    "vinnie pasquantino": {
+      "name": "Vinnie Pasquantino",
+      "sprintSpeed": 25.5,
+      "bolts": 0,
+      "hpTo1b": 4.74
+    },
     "nolan arenado": {
       "name": "Nolan Arenado",
       "sprintSpeed": 25.5,
@@ -3149,12 +3155,6 @@
       "sprintSpeed": 25.5,
       "bolts": 0,
       "hpTo1b": 4.73
-    },
-    "vinnie pasquantino": {
-      "name": "Vinnie Pasquantino",
-      "sprintSpeed": 25.5,
-      "bolts": 0,
-      "hpTo1b": 4.74
     },
     "spencer horwitz": {
       "name": "Spencer Horwitz",
@@ -3216,17 +3216,17 @@
       "bolts": 0,
       "hpTo1b": 4.72
     },
-    "josh bell": {
-      "name": "Josh Bell",
-      "sprintSpeed": 25.2,
-      "bolts": 0,
-      "hpTo1b": 4.74
-    },
     "matt mervis": {
       "name": "Matt Mervis",
       "sprintSpeed": 25.2,
       "bolts": 0,
       "hpTo1b": 0
+    },
+    "josh bell": {
+      "name": "Josh Bell",
+      "sprintSpeed": 25.2,
+      "bolts": 0,
+      "hpTo1b": 4.74
     },
     "joc pederson": {
       "name": "Joc Pederson",
@@ -3252,17 +3252,17 @@
       "bolts": 0,
       "hpTo1b": 0
     },
-    "ty france": {
-      "name": "Ty France",
-      "sprintSpeed": 25.1,
-      "bolts": 0,
-      "hpTo1b": 4.86
-    },
     "toms nido": {
       "name": "Tomás Nido",
       "sprintSpeed": 25.1,
       "bolts": 0,
       "hpTo1b": 0
+    },
+    "ty france": {
+      "name": "Ty France",
+      "sprintSpeed": 25.1,
+      "bolts": 0,
+      "hpTo1b": 4.86
     },
     "donovan solano": {
       "name": "Donovan Solano",
@@ -3280,7 +3280,7 @@
       "name": "Elias Díaz",
       "sprintSpeed": 25,
       "bolts": 0,
-      "hpTo1b": 4.81
+      "hpTo1b": 4.82
     },
     "jhonny pereda": {
       "name": "Jhonny Pereda",
@@ -3318,17 +3318,17 @@
       "bolts": 0,
       "hpTo1b": 4.89
     },
-    "mike tauchman": {
-      "name": "Mike Tauchman",
-      "sprintSpeed": 24.9,
-      "bolts": 0,
-      "hpTo1b": 4.75
-    },
     "sebastin rivero": {
       "name": "Sebastián Rivero",
       "sprintSpeed": 24.8,
       "bolts": 0,
       "hpTo1b": 0
+    },
+    "mike tauchman": {
+      "name": "Mike Tauchman",
+      "sprintSpeed": 24.9,
+      "bolts": 0,
+      "hpTo1b": 4.75
     },
     "jose herrera": {
       "name": "Jose Herrera",
@@ -3400,7 +3400,7 @@
       "name": "Austin Wynns",
       "sprintSpeed": 24.4,
       "bolts": 0,
-      "hpTo1b": 4.97
+      "hpTo1b": 4.98
     },
     "jose trevino": {
       "name": "Jose Trevino",
@@ -3408,17 +3408,17 @@
       "bolts": 0,
       "hpTo1b": 4.84
     },
-    "alejandro kirk": {
-      "name": "Alejandro Kirk",
-      "sprintSpeed": 24.3,
-      "bolts": 0,
-      "hpTo1b": 4.88
-    },
     "victor caratini": {
       "name": "Victor Caratini",
       "sprintSpeed": 24.3,
       "bolts": 0,
       "hpTo1b": 4.89
+    },
+    "alejandro kirk": {
+      "name": "Alejandro Kirk",
+      "sprintSpeed": 24.3,
+      "bolts": 0,
+      "hpTo1b": 4.88
     },
     "gio urshela": {
       "name": "Gio Urshela",
@@ -3469,6 +3469,6 @@
       "hpTo1b": 5.14
     }
   },
-  "fetchedAt": "2026-06-01T21:44:53.884Z",
+  "fetchedAt": "2026-06-19T21:23:43.936Z",
   "count": 578
 }

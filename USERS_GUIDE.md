@@ -121,7 +121,7 @@ Navigate to the **Best Plays** tab for a pre-built play sheet derived from your 
 
 - Chalk warning — teams in the top-2 by implied total that will be over-owned by the field
 - Contrarian stack — teams ranked #3–#6 by implied total with the lowest average projected ownership
-- Bring-back plays — 2–3 hitters from the opposing team in the same game, creating correlated upside via a game stack
+- Bring-back plays — 1 hitter from the opposing team in the same game as your primary stack (2 in high-total games O/U ≥ 11.0), creating correlated upside via a game stack
 - Top leverage plays — ranked by ceiling / ownership ratio
 - Boom/bust candidates — under-12% ownership players with ceiling > 25 and high ceiling/median ratio
 
@@ -140,6 +140,14 @@ Re-fetch confirmed lineups 60–90 minutes before first pitch, when the most bat
 **Immediately after confirming lineups: activate the Late-Scratch Monitor.**
 
 Click **Monitor Scratches** in the Player Pool tab. The monitor polls confirmed batting orders every 10 minutes and fires a visible alert if any player who was previously confirmed is now absent — meaning a late scratch. This gives you time to swap players before lock rather than discovering the scratch after you have already submitted lineups. Dismiss individual alerts once reviewed.
+
+#### Late Swap Strategy
+
+DraftKings allows you to swap any player in a game that has not yet started, even after the earliest games lock. This is a significant edge source if you use it deliberately:
+
+- **Build late-game exposure intentionally.** Lineups with players from 7:05 PM or 10:05 PM games remain fully swappable until those games lock. If you have conviction on a late-game player but want to wait for confirmed order, submit the lineup with a placeholder and swap within the window.
+- **Use confirmed order to upgrade.** When a late-game player's batting order is posted (typically 60–90 minutes before that game's first pitch), you now have information the early-submission field does not. If a target batter is confirmed in the #2 slot instead of expected #5, his value increased — swap in if you have a live lineup to update.
+- **The Scratch Monitor covers started games only.** For un-started games, you retain full swap flexibility until lock — the monitor is not needed there, but you should manually re-check batting orders for those games before their specific lock time.
 
 #### Step 6 — Build Stacks
 
@@ -337,6 +345,12 @@ The most popular GPP pitcher on any slate is typically owned by 25–40% of the 
 
 When a team has a big inning — six runs on eight hits — every batter in that lineup who participated in the rally scores fantasy points simultaneously. A 5-man stack from that team captures correlated upside that a 3-man stack only partially captures. The field tends to use 3-man stacks because they are "safer." That is precisely why 5-man stacks win large-field GPPs disproportionately — they are structurally differentiated from how most of the field is built.
 
+### Batting Order Adjacency — Stack More Than Just The Team
+
+Not all five batters from the same team are equally correlated. A rally cycles through consecutive batting order positions: a 4-run third inning typically goes through slots 3-4-5-6-7 in sequence. Batters in adjacent order positions (3-4-5, or 2-3-4-5) are far more likely to both participate in the same rally than batters spread across non-adjacent slots (e.g., 1-4-7-8-9).
+
+**Construction implication:** When building a 5-man stack, prefer batters who bat in consecutive or near-consecutive positions in the confirmed order. A 3-4-5-6-7 cluster has structurally higher correlated ceiling than a 1-3-5-7-9 spread stack even from the same team. The optimizer weights players by plate appearances per game (`PA_BY_ORDER`), which naturally favors top-of-order batters, but you should also favor adjacency when selecting which specific players to target within the stack.
+
 ---
 
 ## 6. Fixing Your Construction
@@ -371,18 +385,31 @@ Check the Game Environment Rankings. If your highest-owned stacks come from the 
 
 The **DVP (Defense vs. Position)** scoring factor adjusts player projections based on how many fantasy points the opposing team's defense has been giving up to that position. A second baseman facing a team that allows the most 2B production in the league gets a boost; a shortstop facing the tightest SS defense gets a reduction. This creates differentiation at positions where projections would otherwise be similar — exactly the kind of edge that moves the needle in large fields without requiring you to make a gut call.
 
+### Lever 7 — Concentrate Salary Into Your Stack
+
+GPP ROI correlates with salary concentration in the primary stack. The professional construction model is "studs and value" — not "balanced salary across all positions." The principle: if your 5-man stack + pitcher + bring-back total $38,000–$42,000, the remaining $8,000–$12,000 across 3 roster spots can be filled with minimum-salary or near-minimum value plays at C, 2B, or SS.
+
+These low-salary slots are structural leverage positions:
+
+- Catcher is typically the lowest-ceiling slot in a GPP. Other entrants spend $5,000–$6,000 here because they feel they have to. A $2,700–$3,000 catcher who scores 8–10 DK points is relatively contrarian simply because most lineups "overspend" at C.
+- 2B and SS are salary-inefficient positions on many slates. The top-projected player is often the same for every entry — using a minimum-salary 2B or SS with a soft matchup frees $2,000–$3,000 for an extra stud elsewhere.
+
+**Anti-pattern to avoid:** "Balanced" salary builds (spending $4,500–$5,500 at every position) give you no position with dominant value and typically produce 3-man stacks instead of 5-man stacks. GPP ROI requires structural asymmetry — big spend on the correlated group, value at the lone slots.
+
 ---
 
 ## 7. Performance Benchmarks
 
 Use this table to evaluate your portfolio's construction quality before entering contests.
 
-| Metric | Neutral | Good | Strong |
+| Metric | Needs Work | Acceptable | Strong |
 |---|---|---|---|
-| Cash Rate | 22–26% | 27–32% | 33%+ |
-| Avg Sim ROI | -30% to -15% | -15% to 0% | 0%+ |
-| Top Stack Exposure | < 55% | < 45% | < 35% |
+| Cash Rate | < 22% | 22–29% | 30%+ |
+| Avg Sim ROI | < -20% | -20% to -5% | -5% to 0%+ |
+| Top Stack Exposure | > 55% | 40–55% | < 40% |
 | Unique Players in Portfolio | < 20 | 20–28 | 28+ |
+
+> **Sim ROI calibration gap:** SimROI is measured against a modeled field that assumes optimal opponent construction. Real tournament fields underperform the model because most entrants build suboptimally. A lineup simming at -5% to -10% typically earns +0% to +10% ROI against the actual field. The calibration gap is approximately 10–15 percentage points. Use simROI as a **relative ranking tool** between your own lineups — not as an absolute profitability target. The benchmarks above reflect the relative quality signal, not break-even thresholds.
 
 **The key insight:** A cash rate above 29% with negative simROI is not a failure. It means your projection model is working but your construction is too chalk-heavy. Adjust leverage first — reduce top stack exposure, increase contrarian pitcher usage, tighten overlap — then re-simulate. The model is doing its job. The portfolio needs to be restructured around it.
 
@@ -400,7 +427,15 @@ Contest selection is as important as lineup construction. The right contest for 
 
 **Entry limits:** Single-entry and 3-max contests level the playing field against professional mass-entry operators who run hundreds of lineups. If you are building one or a few lineups, these formats are where your construction advantage matters most.
 
+- **Single-entry:** One lineup must do everything — optimize for ceiling and differentiation simultaneously. Construction must be self-contained.
+- **3-max:** You can enter three correlated lineups covering the same game stack, maximizing upside if your game hits. Run one "chalk" version of the stack and two differentiated versions with alternative CPT/bring-back combos.
+- **20-max / unlimited:** Requires a full portfolio with deliberate diversity. Entering 20 correlated lineups in an unlimited contest reduces your effective edge to one game — a high-variance single bet.
+
 **Opponent skill level:** Seek contests with more casual participants. Tournaments with "Beginner" or "Regular" designations on DraftKings have more casual entrants — your edge is higher there than in contests with no entry restrictions that attract professional players.
+
+**Overlay:** When a guaranteed prize pool contest does not fill completely, the total prize pool exceeds entry fees — this is structurally positive EV for every entrant regardless of lineup quality. Monitor contest fill rates; a 20% overlay (a $100k GPP with only $80k entered) means you are playing with a built-in 20% ROI boost before the first pitch. Satellite and qualifier contests frequently overlay on slower slate days.
+
+**Entry count guidance:** The optimal GPP entry count scales with field size. A reasonable starting rule: enter 3–8% of the contest's total entry count with diverse lineups. For a 1,000-person contest, that means 30–80 lineups. For a 100-person contest, 3–8 lineups. Entering more than 10% of a contest concentrates your exposure to a single game outcome and reduces the diversification benefit of a portfolio.
 
 ### 8.2 Bankroll Rules
 
@@ -425,9 +460,23 @@ The Best Plays tab surfaces the exact plays to make for each contest type, groun
 
 **Single Entry logic:** Pitchers are scored by strikeout rate, matchup quality, and floor. Hitter stacks are built from the top implied team's 1–5 hitters by avg slot score. Value plays are sorted by median/salary.
 
-**GPP logic:** The chalk warning shows which teams are over-represented in projected field ownership — useful for deciding how much of your GPP portfolio to allocate there. The contrarian stack surfaces teams with comparable run environment but lower field ownership. Bring-backs identify the top 2–3 hitters from the opposing team in the contrarian game — these create correlated upside without owning the same team the field is stacking. Leverage plays and boom/bust candidates help you fill the remaining slots.
+**GPP logic:** The chalk warning shows which teams are over-represented in projected field ownership — useful for deciding how much of your GPP portfolio to allocate there. The contrarian stack surfaces teams with comparable run environment but lower field ownership. Bring-backs identify the top 1–2 hitters from the opposing team in the contrarian game — these create correlated upside without owning the same team the field is stacking. One bring-back is standard; two is appropriate when the game O/U is 11.0 or higher and salary allows. Leverage plays and boom/bust candidates help you fill the remaining slots.
 
 **Clicking players:** Every player row in the Best Plays tab is clickable. Clicking adds the player directly to the lineup builder, the same as clicking "+" in the player pool table.
+
+### Leverage Score
+
+Leverage is the primary GPP differentiation metric displayed in the player pool. It measures how much upside a player offers *relative to how often the field will own them*:
+
+```text
+Leverage = (Ceiling / AvgCeiling) / (Ownership% / log10(ContestSize))
+```
+
+High leverage = high ceiling relative to projected ownership. A player with a 32-point ceiling and 8% ownership scores higher leverage than one with 35-point ceiling and 28% ownership — the second player's upside is shared with 28% of entries, which caps your finish-position gain when he performs well.
+
+**How to read it:** Sort the player pool by Leverage to find players where the projection-to-ownership ratio is most favorable. These are your construction anchors for GPP portfolios — not necessarily the highest-projected players, but the players where performance produces the most finish-position improvement because fewer entries share the outcome.
+
+**What leverage is not:** It is not a signal to blindly fade popular players. A high-ownership player with significantly higher ceiling than alternatives can have strong leverage. The metric balances both sides of the equation — ceiling AND ownership — so it rewards genuine differentiation rather than random fading.
 
 ### DVP — Defense vs. Position
 
@@ -478,6 +527,50 @@ The Stack Size setting now includes a **4-man only** option in addition to 3-man
 - You want to target the bring-back slot (the opposing team's batter) in a game stack without committing to a 5-man from the primary team
 
 In Mix mode, the engine uses 5-Man Stack % to determine what fraction of lineups use 5-man stacks and fills the remainder with 3-man stacks. 4-man only mode forces every GPP lineup to use exactly 4 hitters from one team.
+
+### Showdown Construction
+
+DraftKings Showdown is a 6-player format (1 CPT + 5 FLEX) drawn from a single game. The construction theory is fundamentally different from classic — the only game is already selected for you, and the entire edge comes from **which player you captain** and **how you distribute FLEX ownership relative to the field**.
+
+#### The Captain Slot
+
+The CPT slot scores 1.5× DK points and costs 1.5× the player's standard salary. The optimizer selects the highest-value CPT candidate accounting for both the scoring multiplier and CPT-specific ownership. Key principles:
+
+- **CPT ownership ≠ FLEX ownership.** The top-projected player in a showdown will be heavily owned at both CPT and FLEX, but the field over-concentrates CPT specifically — often 35–50% of entries will captain the chalk player. This makes a high-projection player a *worse* CPT than his FLEX ownership suggests.
+- **The best CPT pivot is a player with high ceiling, 10–20% FLEX ownership, and low CPT ownership.** This player appears in enough lineups to be a real play, but the field is not specifically captaining him — giving you a structural advantage when he has a big game.
+- **Punt captain strategy:** Using a minimum-salary player as CPT frees ~$7,500–$9,000 in FLEX salary to stack four or five premium players. This is a legitimate GPP construction when the premium players have high ceilings and the punt captain has a realistic 10+ DK point outcome. It is a high-variance, high-differentiation build.
+
+#### CPT Selection by Contest Type
+
+| Contest Type | CPT Priority |
+|---|---|
+| **Cash / 50-50** | Top-projected player in the game. Salary is less of a concern — maximize expected points in the CPT slot. |
+| **Large-field GPP** | Player with highest ceiling-to-CPT-ownership ratio. Avoid the highest-owned CPT unless conviction is extreme. |
+| **Small-field GPP (< 100 entries)** | Chalk CPT is more viable. Differentiation matters less; focus on projection quality. |
+
+#### FLEX Construction
+
+The 5 FLEX slots cover both teams. Standard GPP construction:
+
+1. **3–4 players from your primary side** (typically the higher-implied team or game-script favorite)
+2. **1–2 players from the opposing side** — the showdown equivalent of a bring-back. These create correlated upside: if the game is high-scoring, both sides score, and your FLEX spread captures it.
+3. **Avoid stacking all 5 FLEX from one team** unless you have extreme conviction on a blowout. Single-sided stacks win only if one team dominates and lose everything in a competitive game.
+
+#### Ownership and Differentiation
+
+Both teams are in the same player pool. The field will over-concentrate on:
+
+- The highest-projected player as CPT
+- Batters 1–3 in the order for both teams
+- The SP of the favored team (if projected for strikeouts)
+
+Differentiation opportunities:
+
+- **Mid-order batter as CPT** (spots 4–6 from a high-implied team)
+- **Opposing team's cleanup hitter as CPT** (underowned in a field that CPTs the "obvious" side)
+- **Bullpen exposure in FLEX** when a closer is projected for a save opportunity in a tight game
+
+> **Post-generation CPT warning:** After building a showdown portfolio, the tool flags any player captaining more than 40% of your lineups. A single CPT dominating your portfolio is the showdown equivalent of a chalk pitcher — it concentrates your entire portfolio on one player's outcome.
 
 ### Source Quality Panel
 
