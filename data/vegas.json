@@ -1,182 +1,182 @@
 {
   "DET": {
-    "impliedTotal": 4.72,
+    "impliedTotal": 4.04,
     "openTotal": 4.75,
     "openAt": "2026-04-24T23:01:27.269Z",
-    "lastFetchedAt": "2026-06-20T16:59:27.240Z"
+    "lastFetchedAt": "2026-06-20T23:48:16.870Z"
   },
   "SD": {
-    "impliedTotal": 3.43,
+    "impliedTotal": 5.51,
     "openTotal": 7.61,
     "openAt": "2026-04-24T23:01:27.269Z",
-    "lastFetchedAt": "2026-06-20T16:59:27.240Z"
+    "lastFetchedAt": "2026-06-20T23:48:16.870Z"
   },
   "KC": {
-    "impliedTotal": 4.52,
+    "impliedTotal": 4.28,
     "openTotal": 4.88,
     "openAt": "2026-04-24T23:01:27.269Z",
-    "lastFetchedAt": "2026-06-20T16:59:27.240Z"
+    "lastFetchedAt": "2026-06-20T23:48:16.870Z"
   },
   "ATL": {
-    "impliedTotal": 3.88,
+    "impliedTotal": 4.99,
     "openTotal": 4.46,
     "openAt": "2026-04-24T23:01:27.269Z",
-    "lastFetchedAt": "2026-06-20T16:59:27.240Z"
+    "lastFetchedAt": "2026-06-20T23:48:16.870Z"
   },
   "LAA": {
     "impliedTotal": 3.77,
     "openTotal": 3.62,
     "openAt": "2026-04-24T23:01:27.269Z",
-    "lastFetchedAt": "2026-06-20T16:59:27.240Z"
+    "lastFetchedAt": "2026-06-20T23:48:16.870Z"
   },
   "HOU": {
-    "impliedTotal": 4.85,
+    "impliedTotal": 4.79,
     "openTotal": 3.86,
     "openAt": "2026-04-24T23:01:27.269Z",
-    "lastFetchedAt": "2026-06-20T16:59:27.240Z"
+    "lastFetchedAt": "2026-06-20T23:48:16.870Z"
   },
   "CLE": {
-    "impliedTotal": 3.65,
+    "impliedTotal": 3.71,
     "openTotal": 3.31,
     "openAt": "2026-04-24T23:01:27.269Z",
-    "lastFetchedAt": "2026-06-20T16:59:27.240Z"
+    "lastFetchedAt": "2026-06-20T23:48:16.870Z"
   },
   "SEA": {
-    "impliedTotal": 3.96,
+    "impliedTotal": 3.97,
     "openTotal": 4.63,
     "openAt": "2026-04-24T23:01:27.269Z",
-    "lastFetchedAt": "2026-06-20T16:59:27.240Z"
+    "lastFetchedAt": "2026-06-20T23:48:16.870Z"
   },
   "ARI": {
-    "impliedTotal": 4.88,
+    "impliedTotal": 4.68,
     "openTotal": 7.89,
     "openAt": "2026-04-24T23:01:27.269Z",
-    "lastFetchedAt": "2026-06-20T16:59:27.240Z"
+    "lastFetchedAt": "2026-06-20T23:48:16.870Z"
   },
   "LAD": {
-    "impliedTotal": 5.39,
+    "impliedTotal": 6.07,
     "openTotal": 5.53,
     "openAt": "2026-04-24T23:01:27.269Z",
-    "lastFetchedAt": "2026-06-20T16:59:27.240Z"
+    "lastFetchedAt": "2026-06-20T23:48:16.870Z"
   },
   "TOR": {
-    "impliedTotal": 4.12,
+    "impliedTotal": 3.76,
     "openTotal": 4.19,
     "openAt": "2026-04-24T23:01:27.269Z",
-    "lastFetchedAt": "2026-06-20T16:59:27.240Z"
+    "lastFetchedAt": "2026-06-20T23:48:16.870Z"
   },
   "COL": {
-    "impliedTotal": 3.66,
+    "impliedTotal": 5.12,
     "openTotal": 3.09,
     "openAt": "2026-04-25T16:42:57.935Z",
-    "lastFetchedAt": "2026-06-20T16:59:27.240Z"
+    "lastFetchedAt": "2026-06-20T23:48:16.870Z"
   },
   "MIA": {
-    "impliedTotal": 4.47,
+    "impliedTotal": 3.46,
     "openTotal": 3.4,
     "openAt": "2026-04-24T23:01:27.269Z",
-    "lastFetchedAt": "2026-06-20T16:59:27.240Z"
+    "lastFetchedAt": "2026-06-20T23:48:16.870Z"
   },
   "BAL": {
-    "impliedTotal": 2.61,
+    "impliedTotal": 3.43,
     "openTotal": 4.07,
     "openAt": "2026-04-24T23:01:27.269Z",
-    "lastFetchedAt": "2026-06-20T16:59:27.240Z"
+    "lastFetchedAt": "2026-06-20T23:48:16.870Z"
   },
   "MIN": {
-    "impliedTotal": 4.12,
+    "impliedTotal": 4.32,
     "openTotal": 3.7,
     "openAt": "2026-04-24T23:01:27.269Z",
-    "lastFetchedAt": "2026-06-20T16:59:27.240Z"
+    "lastFetchedAt": "2026-06-20T23:48:16.870Z"
   },
   "PHI": {
-    "impliedTotal": 4.71,
+    "impliedTotal": 5.33,
     "openTotal": 4.04,
     "openAt": "2026-04-24T23:01:27.269Z",
-    "lastFetchedAt": "2026-06-20T16:59:27.240Z"
+    "lastFetchedAt": "2026-06-20T23:48:16.870Z"
   },
   "TEX": {
-    "impliedTotal": 4.07,
+    "impliedTotal": 2.99,
     "openTotal": 4.28,
     "openAt": "2026-04-24T23:01:27.269Z",
-    "lastFetchedAt": "2026-06-20T16:59:27.240Z"
+    "lastFetchedAt": "2026-06-20T23:48:16.870Z"
   },
   "ATH": {
     "impliedTotal": 5.73,
     "openTotal": 3.22,
     "openAt": "2026-04-24T23:01:27.269Z",
-    "lastFetchedAt": "2026-06-20T16:59:27.240Z"
+    "lastFetchedAt": "2026-06-20T23:48:16.870Z"
   },
   "CIN": {
-    "impliedTotal": 3.36,
+    "impliedTotal": 4.04,
     "openTotal": 4.75,
     "openAt": "2026-04-24T23:01:27.269Z",
-    "lastFetchedAt": "2026-06-20T16:59:27.240Z"
+    "lastFetchedAt": "2026-06-20T23:48:16.870Z"
   },
   "BOS": {
-    "impliedTotal": 3.54,
+    "impliedTotal": 3.03,
     "openTotal": 3.93,
     "openAt": "2026-04-24T23:01:27.269Z",
-    "lastFetchedAt": "2026-06-20T16:59:27.240Z"
+    "lastFetchedAt": "2026-06-20T23:48:16.870Z"
   },
   "NYM": {
-    "impliedTotal": 2.79,
+    "impliedTotal": 3.17,
     "openTotal": 5.41,
     "openAt": "2026-04-25T16:42:57.935Z",
-    "lastFetchedAt": "2026-06-20T16:59:27.240Z"
+    "lastFetchedAt": "2026-06-20T23:48:16.870Z"
   },
   "PIT": {
-    "impliedTotal": 6.84,
+    "impliedTotal": 6.38,
     "openTotal": 3.66,
     "openAt": "2026-04-24T23:01:27.269Z",
-    "lastFetchedAt": "2026-06-20T16:59:27.240Z"
+    "lastFetchedAt": "2026-06-20T23:48:16.870Z"
   },
   "MIL": {
-    "impliedTotal": 3.12,
+    "impliedTotal": 4.01,
     "openTotal": 4.34,
     "openAt": "2026-04-24T23:01:27.269Z",
-    "lastFetchedAt": "2026-06-20T16:59:27.240Z"
+    "lastFetchedAt": "2026-06-20T23:48:16.870Z"
   },
   "CWS": {
-    "impliedTotal": 4.28,
+    "impliedTotal": 3.96,
     "openTotal": 4.71,
     "openAt": "2026-04-24T23:01:27.269Z",
-    "lastFetchedAt": "2026-06-20T16:59:27.240Z"
+    "lastFetchedAt": "2026-06-20T23:48:16.870Z"
   },
   "STL": {
-    "impliedTotal": 4.98,
+    "impliedTotal": 4.72,
     "openTotal": 3.37,
     "openAt": "2026-04-24T23:01:27.269Z",
-    "lastFetchedAt": "2026-06-20T16:59:27.240Z"
+    "lastFetchedAt": "2026-06-20T23:48:16.870Z"
   },
   "TB": {
-    "impliedTotal": 4.19,
+    "impliedTotal": 4.42,
     "openTotal": 4.3,
     "openAt": "2026-04-24T23:01:27.269Z",
-    "lastFetchedAt": "2026-06-20T16:59:27.240Z"
+    "lastFetchedAt": "2026-06-20T23:48:16.870Z"
   },
   "CHC": {
-    "impliedTotal": 4.88,
+    "impliedTotal": 3.24,
     "openTotal": 3.97,
     "openAt": "2026-04-24T23:01:27.269Z",
-    "lastFetchedAt": "2026-06-20T16:59:27.240Z"
+    "lastFetchedAt": "2026-06-20T23:48:16.870Z"
   },
   "WSH": {
-    "impliedTotal": 3.81,
+    "impliedTotal": 3.58,
     "openTotal": 3.79,
     "openAt": "2026-04-24T23:01:27.269Z",
-    "lastFetchedAt": "2026-06-20T16:59:27.240Z"
+    "lastFetchedAt": "2026-06-20T23:48:16.870Z"
   },
   "NYY": {
-    "impliedTotal": 6.14,
+    "impliedTotal": 4.46,
     "openTotal": 5.14,
     "openAt": "2026-04-24T23:01:27.269Z",
-    "lastFetchedAt": "2026-06-20T16:59:27.240Z"
+    "lastFetchedAt": "2026-06-20T23:48:16.870Z"
   },
   "SF": {
-    "impliedTotal": 3.53,
+    "impliedTotal": 4.54,
     "openTotal": 4.1,
     "openAt": "2026-04-24T23:01:27.269Z",
-    "lastFetchedAt": "2026-06-20T16:59:27.240Z"
+    "lastFetchedAt": "2026-06-20T23:48:16.870Z"
   }
 }

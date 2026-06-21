@@ -2407,7 +2407,7 @@ function buildVirtualStack(team, pool, excludeNames, size = 3, vegasData = {}) {
     id: `virtual_${team}_${size}`,
     players: chosen.map(p => p.name),
     team,
-    proj: chosen.reduce((s, p) => s + (p.median || 0), 0),
+    proj: chosen.reduce((s, p) => s + (p.median || p.avgPpg || 0), 0),
     // Blend of max and average: a chalk anchor at 40% own still pulls the score up
     // even when the other players are low-owned. Penalises "one chalk + two values" stacks.
     own: maxOwn * 0.5 + avgOwn * 0.5,
@@ -2704,7 +2704,7 @@ async function buildPortfolio(pool, opts = {}, onProgress = null) {
   // Reduced from 80× after batching yields per-acceptance — fewer wasted attempts needed.
   // stackSize != null is more constrained — every attempt must place a specific-sized stack,
   // so per-attempt rejection rates are much higher. Use 80× budget for forced-stack modes.
-  const maxAttempts = Math.max(500, targetLineups * (stackSize != null ? 80 : 50));
+  const maxAttempts = Math.max(500, targetLineups * (stackSize != null ? 150 : 100));
   let attempts = 0;
 
   // Diagnostic counters — surfaced in return value and console for debugging
@@ -2744,6 +2744,11 @@ async function buildPortfolio(pool, opts = {}, onProgress = null) {
   let effectiveMaxGameExposure = maxGameExposure;
   let gameCapFailStreak = 0;
   let lastGameCapRelaxAt = 0;
+
+  // SP pair cap relaxation: like the game cap, the SP pair cap can hard-lock the final
+  // lineups when only one pitcher duo is viable. effectiveMaxSpPairLineups starts at the
+  // user-set value and is disabled in desperate mode so the build can always complete.
+  let effectiveMaxSpPairLineups = maxSpPairLineups;
 
   // Scale ownership penalty by slate concentration.
   // Baseline = 8 games. Turbo (4 games) → 2× lambda; full main slate (16 games) → 0.5×.
@@ -2966,10 +2971,12 @@ async function buildPortfolio(pool, opts = {}, onProgress = null) {
         newlyChosenStackIds.forEach(id => triedInCurrentRecycleCycle.add(id));
       }
       nullLuStreak++;
-      // Exposure relaxation for null-lu deadlock: use cumulative _diag.nullLu (total nulls,
-      // never resets) rather than nullLuStreak (streak that resets on any dup fail). When
-      // null and dup fails alternate, the streak never accumulates — but cumulative nulls do.
-      if (_diag.nullLu % MAX_NULL_STREAK === 0 && exposureRelax < MAX_EXPOSURE_RELAX) {
+      // Exposure relaxation for null-lu deadlock: gradual in normal mode, immediate snap in desperate.
+      const isDesperateNull = lineups.length < numLineups && attempts > maxAttempts * 0.40;
+      if (isDesperateNull && exposureRelax < numLineups) {
+        exposureRelax = numLineups;
+        dlog(`[Portfolio] Desperate null-lu: exposureRelax jumped to ${exposureRelax} (${lineups.length}/${targetLineups} built)`);
+      } else if (!isDesperateNull && _diag.nullLu % MAX_NULL_STREAK === 0 && exposureRelax < MAX_EXPOSURE_RELAX) {
         exposureRelax++;
         dlog(`[Portfolio] ${_diag.nullLu} total null-lu — exposureRelax +${exposureRelax} (${lineups.length}/${targetLineups} built)`);
       }
@@ -2985,6 +2992,26 @@ async function buildPortfolio(pool, opts = {}, onProgress = null) {
         }
         _diag.incompleteSlotPatterns = _diag.incompleteSlotPatterns || {};
         _diag.incompleteSlotPatterns[emptySlots] = (_diag.incompleteSlotPatterns[emptySlots] || 0) + 1;
+
+        // Exposure relaxation for incomplete lineups. This is the primary escape path for
+        // pitcher-cap exhaustion: incomplete lineups never enter the complete-lineup block
+        // where the normal desperate escalation lives, so dupFailStreak stays at 0 and
+        // that relaxation never triggers — the build stalls permanently at N lineups.
+        //
+        // Two modes:
+        //   Non-desperate (<40% attempts): tick once per MAX_NULL_STREAK incomplete lu, up to MAX_EXPOSURE_RELAX.
+        //   Desperate (>40% attempts and short of target): immediately jump exposureRelax to numLineups,
+        //     the same "snap open" behaviour game-cap and SP-pair-cap already use in desperate mode.
+        //     A gradual tick (60 per step × 12 steps = 720 lu) would exhaust the attempt budget before
+        //     pitcher caps open fully; jumping directly is the only reliable path to 20 lineups.
+        const isDesperateIncomplete = lineups.length < numLineups && attempts > maxAttempts * 0.40;
+        if (isDesperateIncomplete && exposureRelax < numLineups) {
+          exposureRelax = numLineups;
+          dlog(`[Portfolio] Desperate incomplete-lu: exposureRelax jumped to ${exposureRelax} (${lineups.length}/${targetLineups} built)`);
+        } else if (!isDesperateIncomplete && _diag.incompleteLu % MAX_NULL_STREAK === 0 && exposureRelax < MAX_EXPOSURE_RELAX) {
+          exposureRelax++;
+          dlog(`[Portfolio] ${_diag.incompleteLu} total incomplete-lu — exposureRelax +${exposureRelax} (${lineups.length}/${targetLineups} built)`);
+        }
       }
     }
 
@@ -3070,6 +3097,19 @@ async function buildPortfolio(pool, opts = {}, onProgress = null) {
         dlog(`[Portfolio] Exposure cap relaxed +${exposureRelax} after ${dupFailStreak} consecutive dup failures (${lineups.length}/${targetLineups} built)`);
       }
 
+      // Desperate mode: immediately open the game cap and SP pair cap so small slates
+      // and limited pitcher pools don't hard-block the final lineups. The game cap's
+      // normal 5%/80-failure ramp needs 560 game-cap hits to reach 100% — too slow
+      // when the dominant game is the only valid option and maxAttempts is finite.
+      if (desperate && effectiveMaxGameExposure < 1.0 && lineups.length < numLineups) {
+        effectiveMaxGameExposure = 1.0;
+        dlog(`[Portfolio] Game cap opened to 100% in desperate mode (${lineups.length}/${targetLineups} built)`);
+      }
+      if (desperate && maxSpPairLineups > 0 && effectiveMaxSpPairLineups > 0) {
+        effectiveMaxSpPairLineups = 0;
+        dlog(`[Portfolio] SP pair cap disabled in desperate mode (${lineups.length}/${targetLineups} built)`);
+      }
+
       // Early exit: unique lineup space genuinely exhausted — don't burn remaining budget.
       // Uses dupFailStreak (consecutive dup failures) rather than cumulative dup rate so
       // that natural high-dup phases during stack recycling don't trigger a premature exit.
@@ -3104,6 +3144,7 @@ async function buildPortfolio(pool, opts = {}, onProgress = null) {
         dupFailStreak = 0;
         if (prefer5Man === true) consecutive5ManFails++;
         newlyChosenStackIds.forEach(id => triedInCurrentRecycleCycle.add(id));
+        continue;
       }
 
       // Max avg ownership filter: reject high-chalk lineups when a cap is set.
@@ -3134,10 +3175,10 @@ async function buildPortfolio(pool, opts = {}, onProgress = null) {
       // pitcher duo is already at the cap. This breaks the pattern where all lineups
       // share the same elite-SP combo, which concentrates correlated upside/bust risk.
       let spPairBlocked = false;
-      if (!tooSimilar && !sameGameSP && maxSpPairLineups > 0) {
+      if (!tooSimilar && !sameGameSP && effectiveMaxSpPairLineups > 0) {
         const spNames = lu.filter(p => rp(p, 'P')).map(p => p.name).sort();
         const spKey = spNames.join('|');
-        if (spKey && (spPairCounts[spKey] || 0) >= maxSpPairLineups) {
+        if (spKey && (spPairCounts[spKey] || 0) >= effectiveMaxSpPairLineups) {
           _diag.spPairFail = (_diag.spPairFail || 0) + 1;
           spPairBlocked = true;
           dupFailStreak = 0;

@@ -401,16 +401,22 @@ function getEngineContext() {
 
 // Returns calibrated pool for optimizer calls — scoring functions score individual
 // players from this pool, so calibration must be applied at the pool level
+// Normalize server-side MLB API abbreviations to the DK abbreviations used in the salary CSV.
+// Must stay in sync with MLB_TO_DK_ABBR in server.js — add here any abbr that resolveTeamAbbr
+// could return but DK salary files wouldn't use.
+const _DK_ABBR_NORM = { OAK: 'ATH', AZ: 'ARI', WAS: 'WSH', SDP: 'SD', SFG: 'SF', TBR: 'TB', KCR: 'KC' };
+const _toDK = abbr => (abbr && _DK_ABBR_NORM[abbr]) || abbr;
+
 function getCalibratedPool() {
   // Teams that have a confirmed batting order posted — non-starters from these teams are excluded.
   const confirmedTeams = new Set();
   // Teams where a probable starting pitcher has been announced — non-starters excluded.
   const teamsWithProbable = new Set();
   Object.values(STATE.confirmedLineups).forEach(g => {
-    if (g.homeOrder?.length > 0) confirmedTeams.add(g.homeTeam);
-    if (g.awayOrder?.length > 0) confirmedTeams.add(g.awayTeam);
-    if (g.homeProbable) teamsWithProbable.add(g.homeTeam);
-    if (g.awayProbable) teamsWithProbable.add(g.awayTeam);
+    if (g.homeOrder?.length > 0) confirmedTeams.add(_toDK(g.homeTeam));
+    if (g.awayOrder?.length > 0) confirmedTeams.add(_toDK(g.awayTeam));
+    if (g.homeProbable) teamsWithProbable.add(_toDK(g.homeTeam));
+    if (g.awayProbable) teamsWithProbable.add(_toDK(g.awayTeam));
   });
 
   // Manually banned players entered in the "Ban Players" field (applies to all optimizer builds).
@@ -2198,9 +2204,12 @@ function generateLineupsFromBestPlays() {
     const missing = seedNames.filter(n => !STATE.POOL.find(p => p.name === n));
     if (missing.length) dlog('[BestPlays lineups] seedOptimizer: missing from POOL: %s', missing.join(', '));
     const seedPlayers = seedNames
-      .map(name => STATE.POOL.find(p => p.name === name))
+      .map(name => pool.find(p => p.name === name))
       .filter(p => p && !excludeNames.has(p.name));
-    const exclude = new Set([...excludeNames, ...missing]);
+    // Names in seedNames that are in STATE.POOL but filtered out by calibration (benched/scratched)
+    const notCalibrated = seedNames.filter(n => !missing.includes(n) && !seedPlayers.some(p => p.name === n));
+    if (notCalibrated.length) dlog('[BestPlays lineups] seedOptimizer: not in calibrated pool (benched/scratched?): %s', notCalibrated.join(', '));
+    const exclude = new Set([...excludeNames, ...missing, ...notCalibrated]);
     const usable = pool.filter(p => !exclude.has(p.name));
     if (seedPlayers.length < 2) {
       console.warn('[BestPlays lineups] seedOptimizer: only %d seed players (need ≥2) — lineup skipped. seeds=%s', seedPlayers.length, seedNames.join(', '));
@@ -3190,12 +3199,14 @@ function validatePortfolioSettings() {
   const lockedTeams = getCheckedTeams('port-lock-teams');
   const bannedTeams = getCheckedTeams('port-ban-teams');
 
-  // Check pitcher viability: viable pitchers × maxExposurePitcher must cover 2 slots × numLineups
-  const viablePitchers = STATE.POOL.filter(p => rp(p, 'P') && p.salary > 0 && (p.median > 0 || p.avgPpg > 0)).length;
+  // Check pitcher viability: use the calibrated pool so scratched/benched pitchers
+  // don't inflate the count and mask a real shortage.
+  const viablePitchers = getCalibratedPool().filter(p => rp(p, 'P') && p.salary > 0 && (p.median > 0 || p.avgPpg > 0)).length;
   const neededPitcherAppearances = 2 * numLineups; // 2 P slots per lineup
-  const maxPitcherAppearances = Math.ceil(viablePitchers * pitcherMaxPct * numLineups);
+  // Correct formula: each pitcher can appear at most floor(numLineups * pitcherMaxPct) times.
+  const maxPitcherAppearances = viablePitchers * Math.floor(numLineups * pitcherMaxPct);
   if (viablePitchers > 0 && maxPitcherAppearances < neededPitcherAppearances) {
-    warnings.push(`<strong>Pitcher exposure too low:</strong> ${viablePitchers} viable pitchers at ${Math.round(pitcherMaxPct * 100)}% max = ~${maxPitcherAppearances} total appearances, but ${neededPitcherAppearances} are needed (${numLineups} lineups × 2 P slots). Some pitchers will exceed their cap or lineups will fail. Raise pitcher exposure or reduce lineup count.`);
+    warnings.push(`<strong>Pitcher exposure too low:</strong> ${viablePitchers} viable pitcher${viablePitchers === 1 ? '' : 's'} at ${Math.round(pitcherMaxPct * 100)}% max = ${maxPitcherAppearances} total appearances, but ${neededPitcherAppearances} are needed (${numLineups} lineups × 2 P slots). The engine will auto-relax the cap to complete the portfolio, but consider raising Pitcher Exposure or adding more pitchers.`);
   }
 
   // Warn when 5-man only is selected but not enough 5-man stacks are loaded
@@ -3499,6 +3510,19 @@ function generatePortfolio() {
             }
           }
         } catch (_) { /* network failure — use whatever lineup data we already have */ }
+
+        // Silently refresh injury data so IL/DL players placed on the list in the
+        // last 48 hours are caught even if the user hasn't manually fetched injuries.
+        try {
+          const injRes = await fetch('/api/injuries');
+          if (injRes.ok) {
+            const injData = await injRes.json();
+            if (injData.success && injData.flagged?.length) {
+              STATE.injuryData = injData.flagged;
+              applyInjuriesToPool();
+            }
+          }
+        } catch (_) { /* ignore — use existing injury flags if present */ }
       }
 
       // Warn about teams that still don't have confirmed lineups after the refresh.
